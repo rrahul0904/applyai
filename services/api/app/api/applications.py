@@ -7,10 +7,20 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
 from app.core.database import get_session
-from app.models import Application, ApplicationEvent, ApplicationNote, Job, User
+from app.models import (
+    Application,
+    ApplicationEvent,
+    ApplicationNote,
+    Company,
+    Job,
+    JobLocation,
+    User,
+)
 from app.schemas import (
     ApplicationCreate,
     ApplicationEventResponse,
+    ApplicationJobSummary,
+    ApplicationListItem,
     ApplicationNoteResponse,
     ApplicationNoteWrite,
     ApplicationResponse,
@@ -73,19 +83,46 @@ def response_for(application: Application, session: Session) -> ApplicationRespo
     )
 
 
-@router.get("", response_model=list[ApplicationResponse])
+@router.get("", response_model=list[ApplicationListItem])
 def list_applications(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
-) -> list[ApplicationResponse]:
-    applications = list(
-        session.scalars(
-            select(Application)
-            .where(Application.user_id == user.id)
-            .order_by(Application.updated_at.desc())
-        )
+) -> list[ApplicationListItem]:
+    first_location = (
+        select(JobLocation.location_text)
+        .where(JobLocation.job_id == Job.id)
+        .order_by(JobLocation.id)
+        .limit(1)
+        .scalar_subquery()
     )
-    return [response_for(application, session) for application in applications]
+    rows = session.execute(
+        select(
+            Application,
+            Job.title,
+            Company.canonical_name,
+            first_location.label("location"),
+        )
+        .join(Job, Job.id == Application.job_id)
+        .join(Company, Company.id == Job.company_id)
+        .where(Application.user_id == user.id)
+        .order_by(Application.updated_at.desc())
+    )
+    return [
+        ApplicationListItem(
+            id=application.id,
+            job_id=application.job_id,
+            current_status=application.current_status,
+            created_at=application.created_at,
+            updated_at=application.updated_at,
+            job=ApplicationJobSummary(
+                id=application.job_id,
+                title=title,
+                company_name=company_name,
+                location=location,
+            ),
+        )
+        for application, title, company_name, location in rows
+    ]
 
 
 @router.get("/{application_id}", response_model=ApplicationResponse)

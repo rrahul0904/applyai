@@ -1,7 +1,10 @@
+import base64
+import json
 import uuid
+from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -21,6 +24,7 @@ from app.schemas import (
     ApplicationEventResponse,
     ApplicationJobSummary,
     ApplicationListItem,
+    ApplicationListPage,
     ApplicationNoteResponse,
     ApplicationNoteWrite,
     ApplicationResponse,
@@ -42,6 +46,26 @@ VALID_STATUSES = {
     "REJECTED",
     "WITHDRAWN",
 }
+
+
+def encode_cursor(application: Application) -> str:
+    payload = json.dumps(
+        {"updated_at": application.updated_at.isoformat(), "id": str(application.id)}
+    ).encode()
+    return base64.urlsafe_b64encode(payload).decode()
+
+
+def decode_cursor(value: str | None) -> tuple[datetime | None, uuid.UUID | None]:
+    if not value:
+        return None, None
+    try:
+        payload = json.loads(base64.urlsafe_b64decode(value.encode()).decode())
+        return datetime.fromisoformat(payload["updated_at"]), uuid.UUID(payload["id"])
+    except (ValueError, KeyError, json.JSONDecodeError):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "INVALID_CURSOR", "message": "Application cursor is invalid"},
+        )
 
 
 def response_for(application: Application, session: Session) -> ApplicationResponse:
@@ -83,11 +107,14 @@ def response_for(application: Application, session: Session) -> ApplicationRespo
     )
 
 
-@router.get("", response_model=list[ApplicationListItem])
+@router.get("", response_model=ApplicationListPage)
 def list_applications(
+    cursor: str | None = Query(default=None, max_length=500),
+    limit: int = Query(default=20, ge=1, le=50),
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
-) -> list[ApplicationListItem]:
+) -> ApplicationListPage:
+    cursor_at, cursor_id = decode_cursor(cursor)
     first_location = (
         select(JobLocation.location_text)
         .where(JobLocation.job_id == Job.id)
@@ -95,7 +122,7 @@ def list_applications(
         .limit(1)
         .scalar_subquery()
     )
-    rows = session.execute(
+    statement = (
         select(
             Application,
             Job.title,
@@ -105,9 +132,22 @@ def list_applications(
         .join(Job, Job.id == Application.job_id)
         .join(Company, Company.id == Job.company_id)
         .where(Application.user_id == user.id)
-        .order_by(Application.updated_at.desc())
     )
-    return [
+    if cursor_at and cursor_id:
+        statement = statement.where(
+            or_(
+                Application.updated_at < cursor_at,
+                and_(Application.updated_at == cursor_at, Application.id < cursor_id),
+            )
+        )
+    rows = list(
+        session.execute(
+            statement.order_by(Application.updated_at.desc(), Application.id.desc()).limit(limit + 1)
+        )
+    )
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    items = [
         ApplicationListItem(
             id=application.id,
             job_id=application.job_id,
@@ -123,6 +163,11 @@ def list_applications(
         )
         for application, title, company_name, location in rows
     ]
+    return ApplicationListPage(
+        items=items,
+        next_cursor=encode_cursor(rows[-1][0]) if has_more and rows else None,
+        returned=len(items),
+    )
 
 
 @router.get("/{application_id}", response_model=ApplicationResponse)
@@ -150,7 +195,7 @@ def create_application(
     job = session.get(Job, payload.job_id)
     if job is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
-    if job.status in {"CLOSED", "ARCHIVED"}:
+    if job.status in {"CLOSED", "ARCHIVED", "STALE"}:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": "JOB_CLOSED", "message": "This job is no longer accepting applications"},

@@ -1,6 +1,5 @@
 import hashlib
 import json
-import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -35,7 +34,6 @@ def normalize_text(value: str) -> str:
 
 
 def material_payload(payload: dict) -> dict:
-    # Fetch time is transport metadata, not a source-content change.
     return {key: value for key, value in payload.items() if key != "_applyai_fetched_at"}
 
 
@@ -97,7 +95,6 @@ class JobIngestionPipeline:
             except Exception:
                 counts["failed"] += 1
 
-        # Freshness transitions are only safe after a complete successful board pass.
         if counts["failed"] == 0 and connector.key == "greenhouse":
             freshness = self.apply_freshness(
                 connector_key=connector.key,
@@ -308,9 +305,7 @@ class JobIngestionPipeline:
                 reason="INGESTED",
             )
         )
-        self.session.add(
-            JobVersion(job_id=job.id, version_number=1, snapshot=item.raw_payload)
-        )
+        self.session.add(JobVersion(job_id=job.id, version_number=1, snapshot=item.raw_payload))
         self.session.flush()
         self.refresh_search(job)
         return job
@@ -368,9 +363,7 @@ class JobIngestionPipeline:
             select(JobLocation).where(JobLocation.job_id == job.id).order_by(JobLocation.id).limit(1)
         )
         if location is None:
-            self.session.add(
-                JobLocation(job_id=job.id, location_text=primary_location, work_mode=item.work_mode)
-            )
+            self.session.add(JobLocation(job_id=job.id, location_text=primary_location, work_mode=item.work_mode))
         else:
             location.location_text = primary_location
             location.work_mode = item.work_mode
@@ -423,12 +416,8 @@ class JobIngestionPipeline:
         self.refresh_search(job)
 
     def refresh_search(self, job: Job) -> None:
-        company_name = self.session.scalar(
-            select(Company.canonical_name).where(Company.id == job.company_id)
-        ) or ""
-        skills = list(
-            self.session.scalars(select(JobSkill.name).where(JobSkill.job_id == job.id))
-        )
+        company_name = self.session.scalar(select(Company.canonical_name).where(Company.id == job.company_id)) or ""
+        skills = list(self.session.scalars(select(JobSkill.name).where(JobSkill.job_id == job.id)))
         requirements = list(
             self.session.scalars(select(JobRequirement.text).where(JobRequirement.job_id == job.id))
         )
@@ -447,15 +436,11 @@ class JobIngestionPipeline:
     def add_version(self, job: Job, item: NormalizedJob) -> None:
         next_version = (
             self.session.scalar(
-                select(func.coalesce(func.max(JobVersion.version_number), 0)).where(
-                    JobVersion.job_id == job.id
-                )
+                select(func.coalesce(func.max(JobVersion.version_number), 0)).where(JobVersion.job_id == job.id)
             )
             or 0
         ) + 1
-        self.session.add(
-            JobVersion(job_id=job.id, version_number=next_version, snapshot=item.raw_payload)
-        )
+        self.session.add(JobVersion(job_id=job.id, version_number=next_version, snapshot=item.raw_payload))
 
     def ingest_one(
         self,
@@ -490,9 +475,7 @@ class JobIngestionPipeline:
             source.last_seen_at = now
             source.checkpoint = self.source_checkpoint(item=item, existing=source.checkpoint)
 
-        link = self.session.scalar(
-            select(JobSourceLink).where(JobSourceLink.job_source_id == source.id)
-        )
+        link = self.session.scalar(select(JobSourceLink).where(JobSourceLink.job_source_id == source.id))
         dedup_reason: str | None = None
         dedup_confidence: Decimal | None = None
         created_job = False
@@ -514,9 +497,7 @@ class JobIngestionPipeline:
                 dedup_reason = "NEW_CANONICAL_JOB"
             elif dedup_confidence is not None:
                 job.dedup_confidence = dedup_confidence
-            self.session.add(
-                JobSourceLink(job_id=job.id, job_source_id=source.id, is_primary=created_job)
-            )
+            self.session.add(JobSourceLink(job_id=job.id, job_source_id=source.id, is_primary=created_job))
 
         source.checkpoint = self.source_checkpoint(
             item=item,
@@ -526,9 +507,10 @@ class JobIngestionPipeline:
         )
         source.last_seen_at = now
         job.last_seen_at = now
-        if job.status in {"UNKNOWN", "STALE"}:
+        if job.status in {"UNKNOWN", "STALE", "CLOSED"}:
             previous = job.status
             job.status = "ACTIVE"
+            job.closed_at = None
             self.session.add(
                 JobStatusHistory(
                     job_id=job.id,
@@ -546,7 +528,6 @@ class JobIngestionPipeline:
             )
         )
         if existing_raw is not None:
-            # Freshness is already updated above. No duplicate raw/version row is created.
             return "created" if created_job else "unchanged"
 
         self.session.add(
@@ -557,7 +538,6 @@ class JobIngestionPipeline:
                 normalization_status="NORMALIZED",
             )
         )
-
         changed = False if created_job else self.canonical_changed(job, item)
         if changed:
             self.apply_canonical_update(job, item)
@@ -565,6 +545,26 @@ class JobIngestionPipeline:
         if created_job:
             return "created"
         return "updated" if changed else "unchanged"
+
+    def canonical_status_from_sources(self, job_id, current_status: str) -> str:
+        sources = list(
+            self.session.scalars(
+                select(JobSource)
+                .join(JobSourceLink, JobSourceLink.job_source_id == JobSource.id)
+                .where(JobSourceLink.job_id == job_id)
+            )
+        )
+        if not sources:
+            return current_status
+        checkpoints = [dict(source.checkpoint or {}) for source in sources]
+        if all(bool(checkpoint.get("confirmed_closed")) for checkpoint in checkpoints):
+            return "CLOSED"
+        misses = [int(checkpoint.get("miss_count") or 0) for checkpoint in checkpoints]
+        if any(miss < self.settings.job_unknown_after_misses for miss in misses):
+            return "ACTIVE"
+        if all(miss >= self.settings.job_stale_after_misses for miss in misses):
+            return "STALE"
+        return "UNKNOWN"
 
     def apply_freshness(
         self,
@@ -582,38 +582,39 @@ class JobIngestionPipeline:
                 )
             )
         )
+        affected_job_ids = set()
         for source in sources:
             if source.external_job_id in seen_external_ids:
                 continue
             checkpoint = dict(source.checkpoint or {})
-            misses = int(checkpoint.get("miss_count") or 0) + 1
-            checkpoint["miss_count"] = misses
+            checkpoint["miss_count"] = int(checkpoint.get("miss_count") or 0) + 1
             source.checkpoint = checkpoint
-            link = self.session.scalar(
-                select(JobSourceLink).where(JobSourceLink.job_source_id == source.id)
-            )
-            if link is None:
-                continue
-            job = self.session.get(Job, link.job_id)
-            if job is None or job.status == "CLOSED":
-                continue
+            link = self.session.scalar(select(JobSourceLink).where(JobSourceLink.job_source_id == source.id))
+            if link is not None:
+                affected_job_ids.add(link.job_id)
 
-            target_status = job.status
-            if misses >= self.settings.job_stale_after_misses:
-                target_status = "STALE"
-            elif misses >= self.settings.job_unknown_after_misses:
-                target_status = "UNKNOWN"
-            if target_status != job.status:
-                previous = job.status
-                job.status = target_status
-                self.session.add(
-                    JobStatusHistory(
-                        job_id=job.id,
-                        from_status=previous,
-                        to_status=target_status,
-                        reason=f"SOURCE_MISSED_{misses}_RUNS",
-                    )
+        for job_id in affected_job_ids:
+            job = self.session.get(Job, job_id)
+            if job is None:
+                continue
+            target_status = self.canonical_status_from_sources(job.id, job.status)
+            if target_status == job.status:
+                continue
+            previous = job.status
+            job.status = target_status
+            if target_status == "CLOSED":
+                job.closed_at = utcnow()
+                counts["closed"] += 1
+            elif target_status == "STALE":
+                counts["stale"] += 1
+            else:
+                job.closed_at = None
+            self.session.add(
+                JobStatusHistory(
+                    job_id=job.id,
+                    from_status=previous,
+                    to_status=target_status,
+                    reason="SOURCE_FRESHNESS_EVALUATED",
                 )
-                if target_status == "STALE":
-                    counts["stale"] += 1
+            )
         return counts

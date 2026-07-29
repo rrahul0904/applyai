@@ -29,9 +29,13 @@ class Settings(BaseSettings):
     s3_bucket: str | None = None
     s3_region: str = "us-east-1"
     s3_endpoint_url: str | None = None
+    task_queue_provider: str = "memory"
+    sqs_queue_url: str | None = None
+    sqs_region: str = "us-east-1"
     web_origin: str = "http://localhost:3000"
     max_resume_bytes: int = 5 * 1024 * 1024
     seed_development_jobs: bool = False
+    greenhouse_board_tokens: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def guard_development_auth(self) -> "Settings":
@@ -47,6 +51,12 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "Development authentication requires DEV_AUTH_SECRET with at least 16 characters"
                 )
+        if self.task_queue_provider not in {"memory", "sqs"}:
+            raise ValueError("TASK_QUEUE_PROVIDER must be memory or sqs")
+        if self.task_queue_provider == "sqs" and not self.sqs_queue_url:
+            raise ValueError("SQS_QUEUE_URL is required when TASK_QUEUE_PROVIDER=sqs")
+        if environment == "production" and self.task_queue_provider != "sqs":
+            raise ValueError("Production requires TASK_QUEUE_PROVIDER=sqs")
         return self
 
 

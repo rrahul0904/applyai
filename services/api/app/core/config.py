@@ -38,12 +38,19 @@ class Settings(BaseSettings):
     greenhouse_board_tokens: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def guard_development_auth(self) -> "Settings":
+    def guard_runtime_configuration(self) -> "Settings":
         environment = self.app_env.lower()
+        durable_environment = environment in {"staging", "production"}
+
+        if self.web_origin == "*":
+            raise ValueError("WEB_ORIGIN cannot be '*' when credentialed CORS is enabled")
+
         if environment == "production" and (
             self.dev_auth_enabled or self.auth_provider == "dev-test"
         ):
             raise ValueError("Development authentication cannot run in production")
+        if durable_environment and self.auth_provider != "clerk":
+            raise ValueError(f"{environment.title()} requires AUTH_PROVIDER=clerk")
         if self.auth_provider == "dev-test":
             if not self.dev_auth_enabled:
                 raise ValueError("AUTH_PROVIDER=dev-test requires DEV_AUTH_ENABLED=true")
@@ -51,12 +58,29 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "Development authentication requires DEV_AUTH_SECRET with at least 16 characters"
                 )
+
+        if self.object_storage_provider not in {"local", "s3"}:
+            raise ValueError("OBJECT_STORAGE_PROVIDER must be local or s3")
+        if self.object_storage_provider == "s3" and not self.s3_bucket:
+            raise ValueError("S3_BUCKET is required when OBJECT_STORAGE_PROVIDER=s3")
+        if durable_environment and self.object_storage_provider != "s3":
+            raise ValueError(f"{environment.title()} requires OBJECT_STORAGE_PROVIDER=s3")
+
         if self.task_queue_provider not in {"memory", "sqs"}:
             raise ValueError("TASK_QUEUE_PROVIDER must be memory or sqs")
         if self.task_queue_provider == "sqs" and not self.sqs_queue_url:
             raise ValueError("SQS_QUEUE_URL is required when TASK_QUEUE_PROVIDER=sqs")
-        if environment == "production" and self.task_queue_provider != "sqs":
-            raise ValueError("Production requires TASK_QUEUE_PROVIDER=sqs")
+        if durable_environment and self.task_queue_provider != "sqs":
+            raise ValueError(f"{environment.title()} requires TASK_QUEUE_PROVIDER=sqs")
+
+        if durable_environment:
+            if not self.clerk_issuer or not self.clerk_jwks_url:
+                raise ValueError(
+                    f"{environment.title()} requires CLERK_ISSUER and CLERK_JWKS_URL"
+                )
+            if not self.web_origin.startswith("https://"):
+                raise ValueError(f"{environment.title()} requires an HTTPS WEB_ORIGIN")
+
         return self
 
 

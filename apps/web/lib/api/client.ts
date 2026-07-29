@@ -67,6 +67,18 @@ export type JobDetail = components["schemas"]["JobDetail"];
 export type JobPage = components["schemas"]["JobSearchPage"];
 export type Application = components["schemas"]["ApplicationResponse"];
 export type ApplicationNote = components["schemas"]["ApplicationNoteResponse"];
+
+// These are generated-server shapes introduced in Milestone 2.6. They remain
+// local until the OpenAPI generator can execute again; CI will own the drift check.
+export type ResumeUploadIntent = {
+  upload_mode: "DIRECT_S3" | "PROXY";
+  resume_id: string | null;
+  resume_version_id: string | null;
+  upload_url: string | null;
+  upload_headers: Record<string, string>;
+  expires_in_seconds: number | null;
+};
+
 export type ApplicationListItem = {
   id: string;
   job_id: string;
@@ -80,6 +92,61 @@ export type ApplicationListItem = {
     location: string | null;
   };
 };
+
+export type ApplicationListPage = {
+  items: ApplicationListItem[];
+  next_cursor: string | null;
+  returned: number;
+};
+
+async function uploadResume(file: File): Promise<ResumeVersion> {
+  const intent = await request<ResumeUploadIntent>("/resumes/upload-intents", {
+    method: "POST",
+    body: JSON.stringify({
+      filename: file.name,
+      content_type: file.type,
+      file_size: file.size,
+    }),
+  });
+
+  if (intent.upload_mode === "PROXY") {
+    const body = new FormData();
+    body.append("file", file);
+    return request<ResumeVersion>("/resumes", { method: "POST", body });
+  }
+
+  if (!intent.upload_url || !intent.resume_version_id) {
+    throw new ApiError(500, {
+      code: "UPLOAD_INTENT_INVALID",
+      message: "The resume upload could not be prepared.",
+    });
+  }
+
+  let uploadResponse: Response;
+  try {
+    uploadResponse = await fetch(intent.upload_url, {
+      method: "PUT",
+      headers: intent.upload_headers,
+      body: file,
+    });
+  } catch {
+    throw new ApiError(0, {
+      code: "UPLOAD_NETWORK_ERROR",
+      message: "The resume upload was interrupted. Please try again.",
+    });
+  }
+  if (!uploadResponse.ok) {
+    throw new ApiError(uploadResponse.status, {
+      code: "UPLOAD_FAILED",
+      message: "The resume could not be uploaded to secure storage.",
+    });
+  }
+
+  return request<ResumeVersion>(
+    `/resumes/versions/${intent.resume_version_id}/upload-complete`,
+    { method: "POST" },
+  );
+}
 
 export const api = {
   auth: {
@@ -106,11 +173,7 @@ export const api = {
   resumes: {
     list: (signal?: AbortSignal) =>
       request<ResumeVersion[]>("/resumes", { signal }),
-    upload: (file: File) => {
-      const body = new FormData();
-      body.append("file", file);
-      return request<ResumeVersion>("/resumes", { method: "POST", body });
-    },
+    upload: uploadResume,
     extraction: (resumeId: string, signal?: AbortSignal) =>
       request<ResumeExtraction>(`/resumes/${resumeId}/extraction`, { signal }),
     confirm: (resumeId: string, payload: ProfileWrite) =>
@@ -133,8 +196,12 @@ export const api = {
       request<void>(`/jobs/${id}/save`, { method: "DELETE" }),
   },
   applications: {
-    list: (signal?: AbortSignal) =>
-      request<ApplicationListItem[]>("/applications", { signal }),
+    list: (signal?: AbortSignal, cursor?: string) => {
+      const params = new URLSearchParams();
+      if (cursor) params.set("cursor", cursor);
+      const suffix = params.size ? `?${params.toString()}` : "";
+      return request<ApplicationListPage>(`/applications${suffix}`, { signal });
+    },
     detail: (id: string, signal?: AbortSignal) =>
       request<Application>(`/applications/${id}`, { signal }),
     create: (jobId: string) =>

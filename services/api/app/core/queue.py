@@ -1,3 +1,4 @@
+import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from threading import Lock
@@ -42,25 +43,34 @@ class SqsTaskQueue(TaskQueue):
         self.client = boto3.client("sqs", region_name=region)
 
     def enqueue(self, task: Task) -> None:
-        import json
-
-        self.client.send_message(
-            QueueUrl=self.queue_url,
-            MessageBody=json.dumps(
+        kwargs: dict[str, Any] = {
+            "QueueUrl": self.queue_url,
+            "MessageBody": json.dumps(
                 {
                     "task_type": task.task_type,
                     "payload": task.payload,
                     "idempotency_key": task.idempotency_key,
                 }
             ),
-            MessageDeduplicationId=task.idempotency_key,
-            MessageGroupId=task.task_type,
-        )
+            "MessageAttributes": {
+                "task_type": {"DataType": "String", "StringValue": task.task_type},
+                "idempotency_key": {"DataType": "String", "StringValue": task.idempotency_key},
+            },
+        }
+        # FIFO queues support broker-level deduplication. Standard queues still rely on
+        # consumer/domain idempotency and therefore must not receive FIFO-only fields.
+        if self.queue_url.endswith(".fifo"):
+            kwargs["MessageDeduplicationId"] = task.idempotency_key
+            kwargs["MessageGroupId"] = task.task_type
+        self.client.send_message(**kwargs)
 
 
 _development_queue = InMemoryTaskQueue()
 
 
 def get_task_queue(settings: Settings = Depends(get_settings)) -> TaskQueue:
-    del settings
+    if settings.task_queue_provider == "sqs":
+        if not settings.sqs_queue_url:
+            raise RuntimeError("SQS_QUEUE_URL is required for the SQS queue provider")
+        return SqsTaskQueue(settings.sqs_queue_url, settings.sqs_region)
     return _development_queue

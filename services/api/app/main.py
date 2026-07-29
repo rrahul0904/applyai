@@ -2,9 +2,12 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.api import applications, jobs, me, onboarding, profiles, resumes
 from app.core.config import get_settings
+from app.core.database import engine
 
 
 settings = get_settings()
@@ -35,6 +38,7 @@ async def http_error(_request: Request, exc: HTTPException) -> JSONResponse:
             409: "CONFLICT",
             422: "INVALID_REQUEST",
             429: "RATE_LIMITED",
+            503: "NOT_READY",
         }
         detail = {
             "code": code_by_status.get(exc.status_code, "REQUEST_ERROR"),
@@ -82,6 +86,22 @@ async def unexpected_error(_request: Request, _exc: Exception) -> JSONResponse:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/ready")
+def ready() -> dict[str, str]:
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "NOT_READY",
+                "message": "A required service is unavailable",
+            },
+        ) from exc
+    return {"status": "ready"}
 
 
 for router in (

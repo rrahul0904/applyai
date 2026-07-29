@@ -18,8 +18,9 @@ logger = logging.getLogger("applyai.resume_worker")
 def process_message(body: str, settings: Settings) -> bool:
     """Process one queue body.
 
-    Returns True when the message can be acknowledged. Parser failures return False so
-    SQS can retry and ultimately move the message to the queue's configured DLQ.
+    Returns True only when the durable state proves the message can be acknowledged.
+    Parser failures and active processing states return False so SQS can retry and,
+    after the configured receive threshold, use the queue's DLQ/redrive policy.
     """
     try:
         message = json.loads(body)
@@ -28,7 +29,10 @@ def process_message(body: str, settings: Settings) -> bool:
         return False
 
     if message.get("task_type") != "RESUME_PARSE":
-        logger.warning("resume_worker_unsupported_task", extra={"task_type": message.get("task_type")})
+        logger.warning(
+            "resume_worker_unsupported_task",
+            extra={"task_type": message.get("task_type")},
+        )
         return True
 
     resume_version_value = (message.get("payload") or {}).get("resume_version_id")
@@ -62,11 +66,15 @@ def process_message(body: str, settings: Settings) -> bool:
                 extra={"resume_version_id": str(resume_version_id)},
             )
             return True
-        # A duplicate delivery may observe a currently active PROCESSING attempt. It is
-        # safe for that duplicate message to be acknowledged because the original
-        # delivery remains responsible for processing and the DB lease permits recovery.
         if version.processing_status == "PROCESSING":
-            return True
+            # Do not acknowledge merely because another attempt appears active. The
+            # original delivery may have died after persisting PROCESSING. Leaving
+            # this message retryable allows the DB lease to age out and recover it.
+            logger.info(
+                "resume_worker_processing_in_progress",
+                extra={"resume_version_id": str(resume_version_id)},
+            )
+            return False
         return False
 
 

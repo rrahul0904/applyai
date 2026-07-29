@@ -1,6 +1,10 @@
+import uuid
+from types import SimpleNamespace
+
 import pytest
 
 from app.core.config import Settings
+from app.workers import resume as resume_worker
 from app.workers.resume import process_message
 
 
@@ -53,6 +57,14 @@ def test_credentialed_cors_rejects_wildcard_origin():
         Settings(web_origin="*")
 
 
+def test_visibility_heartbeat_must_be_shorter_than_visibility_timeout():
+    with pytest.raises(ValueError, match="visibility heartbeat"):
+        Settings(
+            sqs_visibility_timeout_seconds=120,
+            sqs_visibility_heartbeat_seconds=120,
+        )
+
+
 def test_sqs_production_configuration_is_accepted():
     settings = Settings(app_env="production", **DURABLE_SETTINGS)
     assert settings.task_queue_provider == "sqs"
@@ -69,3 +81,33 @@ def test_resume_worker_retries_malformed_messages():
     settings = Settings()
     assert process_message("not-json", settings) is False
     assert process_message('{"task_type":"RESUME_PARSE","payload":{}}', settings) is False
+
+
+def test_resume_worker_does_not_ack_active_processing_state(monkeypatch):
+    resume_version_id = uuid.uuid4()
+
+    class FakeSession:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def get(self, model, value):
+            del model, value
+            return SimpleNamespace(processing_status="PROCESSING")
+
+    monkeypatch.setattr(resume_worker, "get_object_storage", lambda settings: object())
+    monkeypatch.setattr(
+        resume_worker,
+        "process_resume_version",
+        lambda resume_version_id, storage: None,
+    )
+    monkeypatch.setattr(resume_worker, "SessionLocal", lambda: FakeSession())
+
+    body = (
+        '{"task_type":"RESUME_PARSE","payload":{"resume_version_id":"'
+        + str(resume_version_id)
+        + '"}}'
+    )
+    assert process_message(body, Settings()) is False

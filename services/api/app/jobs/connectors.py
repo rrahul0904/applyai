@@ -54,6 +54,9 @@ class JobSourceConnector(ABC):
     def health(self) -> ConnectorHealth:
         raise NotImplementedError
 
+    def source_company_identity(self) -> str:
+        return self.key
+
 
 class DevelopmentSeedConnector(JobSourceConnector):
     key = "development-seed"
@@ -112,7 +115,6 @@ class _TextExtractor(HTMLParser):
 
 
 def html_to_text(value: str) -> str:
-    # Greenhouse documents that hosted-editor HTML is returned as HTML entities.
     decoded = unescape(unescape(value))
     parser = _TextExtractor()
     parser.feed(decoded)
@@ -120,11 +122,7 @@ def html_to_text(value: str) -> str:
 
 
 class GreenhouseJobBoardConnector(JobSourceConnector):
-    """Public Greenhouse Job Board connector.
-
-    This connector only reads Greenhouse's documented public GET endpoints. It does
-    not submit applications, authenticate, scrape career pages, or bypass access controls.
-    """
+    """Public Greenhouse Job Board connector using documented public GET endpoints."""
 
     key = "greenhouse"
     base_url = "https://boards-api.greenhouse.io/v1/boards"
@@ -148,6 +146,10 @@ class GreenhouseJobBoardConnector(JobSourceConnector):
         )
         self._last_fetch_at: datetime | None = None
         self._last_count = 0
+        self._company_name: str | None = None
+
+    def source_company_identity(self) -> str:
+        return self.board_token
 
     def close(self) -> None:
         if self._owns_client:
@@ -159,6 +161,7 @@ class GreenhouseJobBoardConnector(JobSourceConnector):
         board_response.raise_for_status()
         board_payload = board_response.json()
         company_name = str(board_payload.get("name") or self.board_token).strip()
+        self._company_name = company_name
 
         jobs_response = self.client.get(
             f"{self.base_url}/{self.board_token}/jobs",
@@ -175,12 +178,20 @@ class GreenhouseJobBoardConnector(JobSourceConnector):
         for item in jobs:
             if not isinstance(item, dict) or item.get("id") is None or not item.get("title"):
                 continue
+            post_id = str(item["id"])
+            internal_job_id = item.get("internal_job_id")
             records.append(
                 {
                     **item,
                     "_applyai_company_name": company_name,
                     "_applyai_board_token": self.board_token,
+                    "_applyai_greenhouse_post_id": post_id,
+                    "_applyai_internal_job_id": (
+                        str(internal_job_id) if internal_job_id is not None else None
+                    ),
+                    "_applyai_source_updated_at": item.get("updated_at"),
                     "_applyai_fetched_at": fetched_at.isoformat(),
+                    "_applyai_company_source_url": f"{self.base_url}/{self.board_token}",
                     "data_origin": "GREENHOUSE_PUBLIC_API",
                 }
             )
@@ -216,8 +227,12 @@ class GreenhouseJobBoardConnector(JobSourceConnector):
         if not description:
             description = "Description not provided by source."
 
+        post_id = str(payload["id"])
+        board_token = str(payload.get("_applyai_board_token") or self.board_token)
         return NormalizedJob(
-            external_job_id=str(payload["id"]),
+            # Greenhouse post ids are only source identities within a board. The board
+            # token is therefore part of the deterministic source identity.
+            external_job_id=f"{board_token}:{post_id}",
             company_name=str(payload.get("_applyai_company_name") or self.board_token),
             title=str(payload["title"]).strip(),
             description=description,
@@ -231,7 +246,6 @@ class GreenhouseJobBoardConnector(JobSourceConnector):
             salary_provenance=None,
             skills=[],
             requirements=[],
-            # Greenhouse exposes updated_at, not a reliable original posting timestamp.
             posted_at=None,
             raw_payload=payload,
         )
@@ -239,6 +253,7 @@ class GreenhouseJobBoardConnector(JobSourceConnector):
     def checkpoint(self) -> dict[str, Any]:
         return {
             "board_token": self.board_token,
+            "company_name": self._company_name,
             "last_fetch_at": self._last_fetch_at.isoformat() if self._last_fetch_at else None,
             "count": self._last_count,
         }
@@ -250,4 +265,8 @@ class GreenhouseJobBoardConnector(JobSourceConnector):
             response.raise_for_status()
             return ConnectorHealth(True, checked_at, "Greenhouse public board is reachable")
         except httpx.HTTPError as exc:
-            return ConnectorHealth(False, checked_at, f"Greenhouse health check failed: {type(exc).__name__}")
+            return ConnectorHealth(
+                False,
+                checked_at,
+                f"Greenhouse health check failed: {type(exc).__name__}",
+            )

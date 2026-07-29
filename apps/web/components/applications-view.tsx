@@ -9,12 +9,8 @@ import { formatDate, titleCase } from "@/lib/utils";
 
 export function ApplicationsView() {
   const applications = useQuery({
-    queryKey: ["applications", "with-jobs"],
-    queryFn: async ({ signal }) => {
-      const items = await api.applications.list(signal);
-      const jobs = await Promise.all(items.map((item) => api.jobs.detail(item.job_id, signal)));
-      return items.map((item, index) => ({ application: item, job: jobs[index] }));
-    },
+    queryKey: ["applications"],
+    queryFn: ({ signal }) => api.applications.list(signal),
   });
 
   return (
@@ -24,9 +20,9 @@ export function ApplicationsView() {
         <div className="ui-card application-list">{[1, 2, 3].map((item) => <Skeleton className="skeleton-row" key={item} />)}</div>
       ) : applications.data?.length ? (
         <div className="ui-card application-list">
-          {applications.data.map(({ application, job }) => (
+          {applications.data.map((application) => (
             <Link className="application-row" href={`/applications/${application.id}`} key={application.id}>
-              <div><strong className="role">{job.title}</strong><span className="company">{job.company_name} · {job.location ?? "Location flexible"}</span></div>
+              <div><strong className="role">{application.job.title}</strong><span className="company">{application.job.company_name} · {application.job.location ?? "Location flexible"}</span></div>
               <Badge tone={application.current_status === "OFFER" ? "success" : application.current_status === "REJECTED" ? "danger" : "info"}>{titleCase(application.current_status)}</Badge>
               <span className="activity">Updated {formatDate(application.updated_at)}</span>
               <ArrowRight size={17} aria-hidden="true" />

@@ -1,17 +1,19 @@
 # Current Repository State
 
-Updated: 2026-07-28
+Updated: 2026-07-29
 
 ## Source control
 
 - Repository: `rrahul0904/applyai`
 - Default branch: `main`
 - Active implementation branch: `agent/applyai-milestone-one`
-- Pull request: #1, open and draft
-- The branch preserves the existing Next.js + FastAPI + PostgreSQL architecture.
-- No destructive reset/clean operation was used.
+- Pull request: #1, open, draft, mergeable
+- Audited source snapshot immediately before this documentation update: `c17c105c906ad6a8e527bfba4351ced414821da2`
+- PR metadata at that snapshot: 59 commits, 127 changed files
+- Frozen architecture remains Next.js + FastAPI + PostgreSQL/Alembic + Clerk + S3/SQS + Vercel/AWS target
+- No destructive reset/clean operation was used
 
-This document records the source-controlled GitHub state. Local-only untracked files and machine-specific environment state are not observable from the remote repository and are therefore not claimed here.
+This document records source-controlled GitHub state. Local-only files, workstation credentials, and external cloud configuration are not observable from the remote repository and are not claimed.
 
 ## Architecture observed
 
@@ -32,16 +34,16 @@ Implemented in source control:
 
 - authenticated candidate shell
 - dashboard
+- persisted onboarding workflow
+- PDF/DOCX resume upload and deterministic extraction
+- manual onboarding fallback
+- candidate profile editor
+- experience, education, skills, roles, location, work mode, compensation
 - URL-backed job search and filters
-- job cards
 - job detail workspace
 - saved jobs workspace
 - applications list
-- application detail, status history, and notes
-- resume workspace
-- persisted onboarding workflow
-- PDF/DOCX upload and deterministic extraction
-- candidate profile editor
+- application detail, immutable status history, and private notes
 - settings workspace backed by real account/profile data
 
 ## Backend domains observed
@@ -49,9 +51,10 @@ Implemented in source control:
 Implemented in source control:
 
 - Clerk/dev identity abstraction and internal UUID mapping
-- owner-scoped candidate profile APIs
-- resume metadata, object-storage provider, queue provider, extraction state, and dedicated SQS worker
-- production guard that rejects memory-queue resume execution
+- owner-scoped candidate profile/resume/saved-job/application/note APIs
+- resume object-storage provider and queue provider
+- dedicated SQS resume worker
+- production/staging durable-provider guardrails
 - canonical job/company/source models
 - PostgreSQL search provider and cursor pagination
 - saved-job uniqueness
@@ -61,7 +64,76 @@ Implemented in source control:
 - public Greenhouse connector with deterministic normalization and raw provenance
 - configured Greenhouse ingestion runner
 - normalized API errors
-- health endpoint
+- `/health` liveness
+- `/ready` database readiness
+
+## Milestone 2.5 changes now present
+
+### CI structure
+
+`.github/workflows/ci.yml` now defines independent jobs:
+
+- Web lint
+- Web typecheck
+- Web tests
+- Web production build
+- API migration validation
+- API tests
+
+Pinned/runtime choices:
+
+- Node 22.13.0
+- pnpm 10.13.1
+- Python 3.12.11
+- PostgreSQL 17
+
+### Frontend behavior testing
+
+Vitest is configured and source-controlled tests now cover:
+
+- job detail rendering
+- save-job mutation
+- application creation from job detail
+- application list rendering
+- regression check against list-level job-detail API fan-out
+- application timeline
+- application status changes
+- private-note creation/deletion
+- saved-job empty and persisted states
+
+These tests are not yet claimed passing because no available runner has executed them observably.
+
+### Performance hardening
+
+Completed in source:
+
+- `/applications` list now returns a lightweight application + job summary projection
+- list responses no longer load events/notes per application
+- applications web list no longer requests job detail once per row
+- job list company/location/compensation assembly is batch-loaded
+- saved-job related rows are batch-loaded
+- saved-job list is explicitly bounded
+
+Still required:
+
+- measured SQL query counts
+- query-plan review
+- measured browser request counts
+- dashboard/profile/application-detail audit
+- complete saved-list pagination strategy
+
+### Runtime/staging safety
+
+Completed in source:
+
+- credentialed CORS uses exact `WEB_ORIGIN`
+- wildcard credentialed CORS is rejected
+- staging/production require Clerk auth configuration
+- staging/production require HTTPS `WEB_ORIGIN`
+- staging/production require S3 object storage
+- staging/production require SQS task queue
+- production development auth remains prohibited
+- `.env.example` documents durable staging requirements
 
 ## Migration state
 
@@ -70,87 +142,80 @@ Alembic revisions currently in the branch:
 - `8f21ae7d52d5_initial_canonical_schema.py`
 - `0db19a1adb4d_candidate_milestone_one_fields.py`
 
-The latest Candidate MVP, queue/worker, and Greenhouse connector changes do not require a schema migration because they use already-present profile, preference, resume, source, job, saved-job, application, and onboarding fields.
+The Milestone 2.5 changes in this pass use existing schema fields and do not add a migration.
 
-## Test state
+## Current verification blocker
 
-Previously reported on PR #1 before the current Candidate MVP changes:
+Clean local verification was attempted from the execution sandbox and failed before checkout:
 
-- web production build: passed
-- web lint: passed
-- backend tests: 11 passed
+```text
+fatal: unable to access 'https://github.com/rrahul0904/applyai.git/':
+Could not resolve host: github.com
+```
 
-New source-controlled tests added during Milestone 2 work:
+The latest observed GitHub Actions run for implementation head `a0bffc923301226d870341c57c8ffa28792c856f` was `30420175430`.
 
-- onboarding workflow persistence and completion guardrails
-- Greenhouse public connector fetch/normalization/health/token validation
-- production SQS configuration guardrails
-- resume worker malformed/unsupported-message behavior
+All six jobs were created but completed failure with no connector-visible steps and no logs:
 
-A GitHub Actions workflow now defines:
+- Web lint
+- Web typecheck
+- Web tests
+- Web production build
+- API migration validation
+- API tests
 
-- web dependency install, lint, and production build
-- PostgreSQL 17 test service
-- Alembic zero-to-head
-- Alembic drift check
-- backend pytest
-
-Observed GitHub Actions state: workflow runs are created, but both jobs terminate as failures before the connector exposes any job steps or log artifact. Therefore the new Candidate MVP changes are **implemented but not yet verified by a successful CI run**; application test failures are not inferred without logs.
+Therefore the current source is **implemented but not current-head verified**. No old test counts are reused.
 
 ## Environment state
 
-Repository examples exist for web and API environment variables. Real production values are intentionally absent from source control.
+Repository examples exist for web/API environment variables. Real staging/production values are intentionally absent from source control.
 
-Production resume execution now requires:
+Staging/production API startup now requires durable values for at least:
 
 ```text
-TASK_QUEUE_PROVIDER=sqs
-SQS_QUEUE_URL=...
+DATABASE_URL
+AUTH_PROVIDER=clerk
+CLERK_ISSUER
+CLERK_JWKS_URL
 OBJECT_STORAGE_PROVIDER=s3
-S3_BUCKET=...
+S3_BUCKET
+TASK_QUEUE_PROVIDER=sqs
+SQS_QUEUE_URL
+WEB_ORIGIN=https://...
 ```
 
-External configuration still required for production verification:
+External staging configuration still required:
 
-- Clerk production keys/issuer/audience configuration
-- production PostgreSQL/Aurora endpoint
-- private S3 bucket and IAM permissions
-- SQS queue + DLQ/redrive policy and worker deployment
-- Vercel web environment
-- ECS/Fargate API and worker environment
-- monitoring/secrets configuration
+- real Clerk environment
+- real PostgreSQL/Aurora endpoint
+- private S3 bucket + IAM
+- SQS queue + DLQ/redrive policy
+- ECS/Fargate API
+- ECS/Fargate resume worker
+- Vercel web deployment
+- secrets/monitoring configuration
 
-## Known technical debt found during audit
+## Known technical debt
 
-1. Job list/detail assembly performs multiple follow-up queries per job and should be optimized with explicit joins/eager loading before scale testing.
-2. The applications web list currently resolves job details with parallel API requests; the API should expose an application summary projection to remove this fan-out.
-3. Resume upload creates a new resume aggregate for each upload rather than deliberately versioning an existing master resume.
-4. Playwright Candidate MVP acceptance coverage is not yet implemented.
-5. Frontend behavior tests are not yet implemented even though Vitest/Testing Library dependencies exist.
-6. Greenhouse is connected to the canonical ingestion pipeline, but cross-source deduplication, deterministic company-alias resolution, and repeated-miss freshness transitions still need hardening before calling real ingestion complete.
-7. SQS worker retry behavior depends on an externally configured redrive/DLQ policy and has not yet been integration-tested against AWS.
-
-## Preserve
-
-- Next.js App Router
-- FastAPI modular monolith
-- PostgreSQL + SQLAlchemy + Alembic
-- Clerk identity mapping
-- provider interfaces for storage, queues, search, and job sources
-- canonical job/source provenance model
-- deterministic resume extraction boundary
-- typed web API client
-- existing ApplyAI visual system
+1. Playwright Candidate MVP journey is not implemented.
+2. Onboarding/resume/profile/settings frontend behavior coverage is incomplete.
+3. Greenhouse company resolution, multi-signal deduplication, repeated-ingestion idempotency/freshness, and scheduling remain incomplete.
+4. Resume worker idempotency and DLQ behavior are not staging-tested.
+5. S3/SQS/Clerk integrations are not staging-tested.
+6. Accessibility/security acceptance execution remains pending.
+7. Search/query performance is improved structurally but not measured yet.
 
 ## Immediate implementation sequence
 
-1. Resolve GitHub Actions runner/execution failure and obtain a green build/test/migration run.
-2. Add frontend behavior tests for onboarding, profile, job save, application status, and notes.
-3. Add deterministic Playwright candidate acceptance journey using development auth/test data.
-4. Optimize job/application projections to remove N+1/fan-out behavior.
-5. Integration-test SQS resume retry, DLQ, S3, and idempotency behavior in AWS/staging.
-6. Harden Greenhouse/company resolution, cross-source deduplication, and explicit freshness lifecycle; schedule ingestion.
-7. Validate real Clerk authentication and cross-user isolation in an integration environment.
-8. Prepare repeatable staging deployment and production configuration.
+1. Restore an executable clean verification environment and obtain observable current-head results.
+2. Fix any real lint/typecheck/test/build/migration failures revealed there.
+3. Finish onboarding/resume/profile/settings Vitest coverage.
+4. Implement deterministic Playwright Candidate MVP logout/login persistence journey.
+5. Complete measured query/request-count audit and remaining pagination work.
+6. Harden Greenhouse company resolution, deduplication, idempotency, freshness, and ingestion health.
+7. Validate S3/SQS/worker retry + DLQ + idempotency in staging.
+8. Validate real Clerk authentication and two-user isolation in staging.
+9. Deploy Vercel/AWS staging and run the full Candidate MVP smoke test.
+10. Run security/accessibility/mobile-web acceptance and update the final report.
 
-Only after Candidate MVP and real job ingestion are verified should matching/AI work begin.
+Do not begin matching/AI work until Candidate MVP + real ingestion + staging are verified.

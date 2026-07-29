@@ -68,7 +68,8 @@ describe("ProfileView", () => {
 
   it("loads persisted candidate profile and preferences", async () => {
     renderProfile();
-    expect(await screen.findByDisplayValue("Senior Data Engineer")).toBeDefined();
+    const currentTitle = await screen.findByLabelText("Current title") as HTMLInputElement;
+    expect(currentTitle.value).toBe("Senior Data Engineer");
     expect(screen.getByDisplayValue("Boston, MA")).toBeDefined();
     expect(screen.getByText("Python ×")).toBeDefined();
     expect(screen.getByText("Primary · Staff Data Engineer")).toBeDefined();
@@ -97,7 +98,7 @@ describe("ProfileView", () => {
 
   it("adds structured skills and roles instead of freeform profile blobs", async () => {
     renderProfile();
-    await screen.findByDisplayValue("Senior Data Engineer");
+    await screen.findByLabelText("Current title");
 
     fireEvent.change(screen.getByLabelText("Add skill"), { target: { value: "PostgreSQL" } });
     fireEvent.click(screen.getByRole("button", { name: "Add skill" }));

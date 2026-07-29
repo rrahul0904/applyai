@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, FileText, Upload } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { api, type Profile, type ProfileWrite } from "@/lib/api/client";
 import { Button, ErrorState, Field, Input, Progress, Textarea } from "@/components/ui";
 
@@ -169,13 +169,23 @@ export function OnboardingView() {
   const extraction = useQuery({
     queryKey: ["resume-extraction", latestResume?.resume_id],
     queryFn: ({ signal }) => api.resumes.extraction(latestResume!.resume_id, signal),
-    enabled: Boolean(latestResume && ["NEEDS_REVIEW", "FAILED", "COMPLETED"].includes(latestResume.processing_status)),
+    enabled: Boolean(
+      latestResume
+      && ["NEEDS_REVIEW", "FAILED", "COMPLETED"].includes(latestResume.processing_status),
+    ),
     retry: false,
   });
 
   useEffect(() => {
-    if (stage === "RESUME_PROCESSING" && latestResume?.processing_status === "NEEDS_REVIEW" && extraction.data) {
-      setDraft((current) => extractedDraft(extraction.data.structured_data as Record<string, unknown> | null, current));
+    if (
+      stage === "RESUME_PROCESSING"
+      && latestResume?.processing_status === "NEEDS_REVIEW"
+      && extraction.data
+    ) {
+      setDraft((current) => extractedDraft(
+        extraction.data.structured_data as Record<string, unknown> | null,
+        current,
+      ));
     }
   }, [stage, latestResume?.processing_status, extraction.data]);
 
@@ -184,8 +194,21 @@ export function OnboardingView() {
     onSuccess: (data) => queryClient.setQueryData(["onboarding"], data),
   });
   const saveMutation = useMutation({
-    mutationFn: () => api.profile.save(toPayload(draft)),
-    onSuccess: (data) => queryClient.setQueryData(["profile"], data),
+    mutationFn: async () => {
+      const payload = toPayload(draft);
+      const shouldConfirmResume = stage === "PROFILE_REVIEW"
+        && latestResume?.processing_status === "NEEDS_REVIEW"
+        && extraction.data?.status === "NEEDS_REVIEW";
+      if (shouldConfirmResume) {
+        return api.resumes.confirm(latestResume.resume_id, payload);
+      }
+      return api.profile.save(payload);
+    },
+    onSuccess: async (data) => {
+      queryClient.setQueryData(["profile"], data);
+      await queryClient.invalidateQueries({ queryKey: ["resumes"] });
+      await queryClient.invalidateQueries({ queryKey: ["resume-extraction"] });
+    },
   });
   const uploadMutation = useMutation({
     mutationFn: (file: File) => api.resumes.upload(file),

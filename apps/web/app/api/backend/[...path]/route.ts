@@ -2,16 +2,9 @@ import { auth } from "@clerk/nextjs/server";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { DEV_USER_COOKIE, devAuthEnabled } from "@/lib/auth/session";
+import { MAX_PROXY_BODY_BYTES, safeBackendPath } from "@/lib/api/backend-path";
 
 type RouteContext = { params: Promise<{ path: string[] }> };
-
-const MAX_PROXY_BODY_BYTES = 1024 * 1024;
-const SAFE_SEGMENT = /^[A-Za-z0-9_-]+$/;
-
-function safeBackendPath(path: string[]): string | null {
-  if (!path.length || path.some((segment) => !SAFE_SEGMENT.test(segment))) return null;
-  return path.join("/");
-}
 
 async function forward(request: NextRequest, context: RouteContext) {
   const baseUrl = process.env.APPLYAI_API_URL;

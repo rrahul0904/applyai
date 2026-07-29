@@ -54,7 +54,24 @@ def test_application_event_history_and_owner_isolation(
         "APPLIED",
     ]
 
+    listing = client.get("/api/v1/applications")
+    assert listing.status_code == 200
+    assert len(listing.json()) == 1
+    summary = listing.json()[0]
+    assert summary["id"] == application_id
+    assert summary["job_id"] == str(job_id)
+    assert summary["current_status"] == "APPLIED"
+    assert summary["job"] == {
+        "id": str(job_id),
+        "title": "Product Operations Manager",
+        "company_name": "Northstar Health",
+        "location": "Boston, MA",
+    }
+    assert "events" not in summary
+    assert "notes" not in summary
+
     switch_user("clerk_user_b", "b@example.com")
+    assert client.get("/api/v1/applications").json() == []
     isolated_get = client.get(f"/api/v1/applications/{application_id}")
     isolated_patch = client.patch(
         f"/api/v1/applications/{application_id}/status",

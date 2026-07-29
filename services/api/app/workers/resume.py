@@ -1,5 +1,6 @@
 import json
 import logging
+import threading
 import uuid
 
 import boto3
@@ -28,8 +29,6 @@ def process_message(body: str, settings: Settings) -> bool:
 
     if message.get("task_type") != "RESUME_PARSE":
         logger.warning("resume_worker_unsupported_task", extra={"task_type": message.get("task_type")})
-        # Unknown tasks do not belong on this worker queue. Acknowledge them so they do
-        # not create an infinite retry loop.
         return True
 
     resume_version_value = (message.get("payload") or {}).get("resume_version_id")
@@ -39,6 +38,7 @@ def process_message(body: str, settings: Settings) -> bool:
         logger.warning("resume_worker_invalid_resume_version_id")
         return False
 
+    logger.info("resume_worker_received", extra={"resume_version_id": str(resume_version_id)})
     storage = get_object_storage(settings)
     process_resume_version(resume_version_id, storage)
 
@@ -56,7 +56,39 @@ def process_message(body: str, settings: Settings) -> bool:
                 extra={"resume_version_id": str(resume_version_id)},
             )
             return False
-    return True
+        if version.processing_status in {"NEEDS_REVIEW", "COMPLETED"}:
+            logger.info(
+                "resume_worker_completed",
+                extra={"resume_version_id": str(resume_version_id)},
+            )
+            return True
+        # A duplicate delivery may observe a currently active PROCESSING attempt. It is
+        # safe for that duplicate message to be acknowledged because the original
+        # delivery remains responsible for processing and the DB lease permits recovery.
+        if version.processing_status == "PROCESSING":
+            return True
+        return False
+
+
+def _visibility_heartbeat(
+    *,
+    client,
+    queue_url: str,
+    receipt_handle: str,
+    settings: Settings,
+    stop: threading.Event,
+) -> None:
+    while not stop.wait(settings.sqs_visibility_heartbeat_seconds):
+        try:
+            client.change_message_visibility(
+                QueueUrl=queue_url,
+                ReceiptHandle=receipt_handle,
+                VisibilityTimeout=settings.sqs_visibility_timeout_seconds,
+            )
+            logger.info("resume_worker_visibility_extended")
+        except Exception:
+            logger.exception("resume_worker_visibility_extension_failed")
+            return
 
 
 def run_worker(settings: Settings | None = None) -> None:
@@ -65,22 +97,41 @@ def run_worker(settings: Settings | None = None) -> None:
         raise RuntimeError("Resume worker requires TASK_QUEUE_PROVIDER=sqs and SQS_QUEUE_URL")
 
     client = boto3.client("sqs", region_name=settings.sqs_region)
-    logger.info("resume_worker_started")
+    logger.info(
+        "resume_worker_started",
+        extra={"visibility_timeout": settings.sqs_visibility_timeout_seconds},
+    )
     while True:
         response = client.receive_message(
             QueueUrl=settings.sqs_queue_url,
             MaxNumberOfMessages=1,
-            WaitTimeSeconds=20,
-            VisibilityTimeout=120,
+            WaitTimeSeconds=settings.sqs_wait_time_seconds,
+            VisibilityTimeout=settings.sqs_visibility_timeout_seconds,
             AttributeNames=["ApproximateReceiveCount"],
         )
         for message in response.get("Messages", []):
             receipt_handle = message["ReceiptHandle"]
             acknowledged = False
+            heartbeat_stop = threading.Event()
+            heartbeat = threading.Thread(
+                target=_visibility_heartbeat,
+                kwargs={
+                    "client": client,
+                    "queue_url": settings.sqs_queue_url,
+                    "receipt_handle": receipt_handle,
+                    "settings": settings,
+                    "stop": heartbeat_stop,
+                },
+                daemon=True,
+            )
+            heartbeat.start()
             try:
                 acknowledged = process_message(message.get("Body", ""), settings)
             except Exception:
                 logger.exception("resume_worker_unexpected_failure")
+            finally:
+                heartbeat_stop.set()
+                heartbeat.join(timeout=1)
 
             if acknowledged:
                 client.delete_message(

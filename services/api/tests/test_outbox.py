@@ -1,6 +1,8 @@
 import uuid
 
+import pytest
 from sqlalchemy import create_engine, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
@@ -70,4 +72,18 @@ def test_outbox_idempotency_key_is_unique(database_url):
             select(TaskOutbox.id).where(TaskOutbox.idempotency_key == "same-task")
         )
         assert first_id is not None
+
+        session.add(
+            TaskOutbox(
+                event_type="RESUME_PARSE",
+                aggregate_type="RESUME_VERSION",
+                aggregate_id=uuid.uuid4(),
+                payload={},
+                idempotency_key="same-task",
+                status="PENDING",
+            )
+        )
+        with pytest.raises(IntegrityError):
+            session.commit()
+        session.rollback()
     engine.dispose()

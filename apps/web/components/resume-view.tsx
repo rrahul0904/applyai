@@ -41,7 +41,7 @@ export function ResumeView() {
           {resumes.data.map((resume) => <Card className="profile-card" key={resume.id}>
             <div className="section-header"><div><h2>{resume.filename}</h2><p>Uploaded {formatDate(resume.created_at)} · {(resume.file_size / 1024).toFixed(0)} KB</p></div><Badge tone={statusTone(resume.processing_status)}>{titleCase(resume.processing_status)}</Badge></div>
             {resume.processing_status === "NEEDS_REVIEW" ? <div className="button-row"><Link className="ui-button ui-button-secondary ui-button-small" href="/onboarding">Review extracted profile</Link></div> : null}
-            {resume.processing_status === "FAILED" ? <p className="field-error">We couldn't read this file completely. Upload another version or continue editing your profile manually.</p> : null}
+            {resume.processing_status === "FAILED" ? <p className="field-error">We couldn&apos;t read this file completely. Upload another version or continue editing your profile manually.</p> : null}
           </Card>)}
         </div>
       ) : (

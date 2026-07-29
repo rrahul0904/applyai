@@ -129,7 +129,11 @@ async def upload_resume(
                 idempotency_key=f"resume-parse:{version.id}",
             )
         )
-        background_tasks.add_task(process_resume_version, version.id, storage)
+        # Local/test development can process immediately. Production is required by
+        # Settings validation to use SQS, so untrusted document work never runs in
+        # the API container there.
+        if settings.task_queue_provider == "memory":
+            background_tasks.add_task(process_resume_version, version.id, storage)
     except Exception:
         session.rollback()
         storage.delete(key=storage_key)

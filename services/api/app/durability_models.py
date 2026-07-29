@@ -25,11 +25,13 @@ Index(
     ResumeExtraction.__table__.c.parser_version,
     unique=True,
 )
+# PostgreSQL can scan this B-tree backward for the updated_at/id descending keyset
+# order once user_id is fixed by equality, so a portable ascending definition is enough.
 Index(
     "ix_applications_user_updated_id",
     Application.__table__.c.user_id,
-    Application.__table__.c.updated_at.desc(),
-    Application.__table__.c.id.desc(),
+    Application.__table__.c.updated_at,
+    Application.__table__.c.id,
 )
 Index(
     "ix_job_source_links_job_source_id",

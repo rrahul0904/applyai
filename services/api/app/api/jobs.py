@@ -146,7 +146,7 @@ def list_jobs(
                     cursor_id=cursor_id,
                 )
             ).limit(limit + 1)
-        ).unique()
+        )
     )
     has_more = len(jobs) > limit
     jobs = jobs[:limit]

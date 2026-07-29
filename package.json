@@ -13,6 +13,9 @@
     "test:web": "pnpm --dir apps/web test",
     "dev:api": "uv run --project services/api uvicorn app.main:app --reload --port 8000",
     "test:api": "uv run --project services/api pytest",
+    "openapi:export": "uv run --project services/api python services/api/scripts/export_openapi.py > apps/web/.openapi.json",
+    "openapi:generate": "pnpm openapi:export && pnpm --dir apps/web exec openapi-typescript .openapi.json -o lib/api/schema.d.ts && rm apps/web/.openapi.json",
+    "openapi:check": "pnpm openapi:generate && git diff --exit-code -- apps/web/lib/api/schema.d.ts",
     "test": "pnpm test:web && pnpm test:api"
   }
 }

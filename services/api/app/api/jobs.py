@@ -1,6 +1,6 @@
-import uuid
 import base64
 import json
+import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -49,6 +49,43 @@ def summary_for(
         saved=saved,
         data_origin=job.data_origin,
     )
+
+
+def related_rows_for_jobs(
+    session: Session,
+    jobs: list[Job],
+) -> tuple[
+    dict[uuid.UUID, Company],
+    dict[uuid.UUID, JobLocation],
+    dict[uuid.UUID, JobCompensation],
+]:
+    if not jobs:
+        return {}, {}, {}
+
+    job_ids = [job.id for job in jobs]
+    company_ids = {job.company_id for job in jobs}
+    companies = {
+        company.id: company
+        for company in session.scalars(select(Company).where(Company.id.in_(company_ids)))
+    }
+
+    locations: dict[uuid.UUID, JobLocation] = {}
+    for location in session.scalars(
+        select(JobLocation)
+        .where(JobLocation.job_id.in_(job_ids))
+        .order_by(JobLocation.id)
+    ):
+        locations.setdefault(location.job_id, location)
+
+    compensations: dict[uuid.UUID, JobCompensation] = {}
+    for compensation in session.scalars(
+        select(JobCompensation)
+        .where(JobCompensation.job_id.in_(job_ids))
+        .order_by(JobCompensation.id)
+    ):
+        compensations.setdefault(compensation.job_id, compensation)
+
+    return companies, locations, compensations
 
 
 def get_search_provider() -> SearchProvider:
@@ -113,22 +150,33 @@ def list_jobs(
     )
     has_more = len(jobs) > limit
     jobs = jobs[:limit]
-    saved_ids = set(
-        session.scalars(select(SavedJob.job_id).where(SavedJob.user_id == user.id))
+    job_ids = [job.id for job in jobs]
+    saved_ids = (
+        set(
+            session.scalars(
+                select(SavedJob.job_id).where(
+                    SavedJob.user_id == user.id,
+                    SavedJob.job_id.in_(job_ids),
+                )
+            )
+        )
+        if job_ids
+        else set()
     )
+    companies, locations, compensations = related_rows_for_jobs(session, jobs)
     results: list[JobSummary] = []
     for job in jobs:
-        company_row = session.get(Company, job.company_id)
+        company_row = companies.get(job.company_id)
         if company_row is None:
             continue
-        location_row = session.scalar(
-            select(JobLocation).where(JobLocation.job_id == job.id).limit(1)
-        )
-        compensation = session.scalar(
-            select(JobCompensation).where(JobCompensation.job_id == job.id).limit(1)
-        )
         results.append(
-            summary_for(job, company_row, location_row, compensation, job.id in saved_ids)
+            summary_for(
+                job,
+                company_row,
+                locations.get(job.id),
+                compensations.get(job.id),
+                job.id in saved_ids,
+            )
         )
     return JobSearchPage(
         items=results,
@@ -139,31 +187,35 @@ def list_jobs(
 
 @router.get("/saved", response_model=list[JobSummary])
 def list_saved_jobs(
+    limit: int = Query(default=50, ge=1, le=100),
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> list[JobSummary]:
     saved_rows = list(
-        session.scalars(
-            select(SavedJob)
+        session.execute(
+            select(SavedJob, Job)
+            .join(Job, Job.id == SavedJob.job_id)
             .where(SavedJob.user_id == user.id)
             .order_by(SavedJob.created_at.desc())
+            .limit(limit)
         )
     )
+    jobs = [job for _, job in saved_rows]
+    companies, locations, compensations = related_rows_for_jobs(session, jobs)
     results: list[JobSummary] = []
-    for saved in saved_rows:
-        job = session.get(Job, saved.job_id)
-        if job is None:
-            continue
-        company = session.get(Company, job.company_id)
+    for _, job in saved_rows:
+        company = companies.get(job.company_id)
         if company is None:
             continue
-        location_row = session.scalar(
-            select(JobLocation).where(JobLocation.job_id == job.id).limit(1)
+        results.append(
+            summary_for(
+                job,
+                company,
+                locations.get(job.id),
+                compensations.get(job.id),
+                True,
+            )
         )
-        compensation = session.scalar(
-            select(JobCompensation).where(JobCompensation.job_id == job.id).limit(1)
-        )
-        results.append(summary_for(job, company, location_row, compensation, True))
     return results
 
 

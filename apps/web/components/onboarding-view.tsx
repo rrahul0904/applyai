@@ -178,7 +178,7 @@ export function OnboardingView() {
 
   useEffect(() => {
     if (
-      stage === "RESUME_PROCESSING"
+      ["RESUME_PROCESSING", "PROFILE_REVIEW"].includes(stage)
       && latestResume?.processing_status === "NEEDS_REVIEW"
       && extraction.data
     ) {

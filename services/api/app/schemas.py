@@ -154,6 +154,22 @@ class ApplicationResponse(BaseModel):
     notes: list["ApplicationNoteResponse"] = Field(default_factory=list)
 
 
+class ApplicationJobSummary(BaseModel):
+    id: uuid.UUID
+    title: str
+    company_name: str
+    location: str | None
+
+
+class ApplicationListItem(BaseModel):
+    id: uuid.UUID
+    job_id: uuid.UUID
+    current_status: str
+    created_at: datetime
+    updated_at: datetime
+    job: ApplicationJobSummary
+
+
 class ApplicationNoteWrite(BaseModel):
     body: str = Field(min_length=1, max_length=5000)
 

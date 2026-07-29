@@ -134,11 +134,12 @@ def get_profile(
     return response_for(profile, preference, roles, experiences, education, skills)
 
 
-@router.put("", response_model=ProfileResponse)
-def put_profile(
+def save_profile(
+    *,
     payload: ProfileReviewWrite,
-    user: User = Depends(get_current_user),
-    session: Session = Depends(get_session),
+    user: User,
+    session: Session,
+    commit: bool,
 ) -> ProfileResponse:
     profile = session.scalar(select(CandidateProfile).where(CandidateProfile.user_id == user.id))
     if profile is None:
@@ -218,6 +219,17 @@ def put_profile(
         if item.name.strip()
     ]
     session.add_all([*experiences, *education, *skills])
-    session.commit()
-    session.refresh(profile)
+    session.flush()
+    if commit:
+        session.commit()
+        session.refresh(profile)
     return response_for(profile, preference, roles, experiences, education, skills)
+
+
+@router.put("", response_model=ProfileResponse)
+def put_profile(
+    payload: ProfileReviewWrite,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> ProfileResponse:
+    return save_profile(payload=payload, user=user, session=session, commit=True)

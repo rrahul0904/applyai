@@ -4,11 +4,16 @@ Updated: 2026-07-28
 
 ## Executive Summary
 
-Milestone 2 work moved ApplyAI from a backend-heavy foundation to a source-controlled candidate journey that now includes persisted onboarding, resume review, profile editing, job detail, saved jobs, application tracking, notes, resume management, and settings.
+Milestone 2 has moved ApplyAI from a backend-heavy foundation to a source-controlled candidate workflow covering onboarding, resume review, profile editing, job detail, saved jobs, application tracking, notes, resume management, and settings.
 
-The architecture was preserved. No matching, LLM, mobile, employer portal, billing, OpenSearch, Kafka, or Kubernetes scope was introduced.
+This coding pass also completed two important infrastructure/data slices that were missing from the original PR:
 
-Candidate MVP remains **PARTIAL** because the latest changes have not yet produced a successful CI run, Playwright acceptance coverage is not implemented, resume parsing still uses an in-process background path in addition to the queue boundary, real ATS ingestion is not implemented, and production Clerk/AWS/deployment configuration is external.
+- production resume execution now has a real SQS provider and dedicated worker boundary;
+- the first legitimate real-job connector now exists for the public Greenhouse Job Board API, including deterministic tests and a configured ingestion runner.
+
+The frozen architecture was preserved. No matching, LLM, mobile, employer portal, billing, OpenSearch, Kafka, or Kubernetes scope was introduced.
+
+Candidate MVP remains **PARTIAL** because the current branch still lacks a successful latest build/test/migration run, Playwright acceptance coverage, frontend behavior tests, formal accessibility validation, and live Clerk/S3/SQS/staging verification. GitHub Actions runs are being created but currently terminate before the connector exposes executable steps or logs, so no application test failure is inferred from those runs.
 
 ## Architecture Preserved
 
@@ -18,37 +23,43 @@ Next.js App Router + React + TypeScript + Tailwind
                    FastAPI
                       ↓
 PostgreSQL / SQLAlchemy / Alembic
-      ↓              ↓             ↓
- candidate         jobs        applications
-      ↓              ↓             ↓
-  S3 boundary    search       immutable events
+      ↓              ↓               ↓
+ candidate         jobs          applications
+      ↓              ↓               ↓
+ private S3      PostgreSQL FTS   immutable events
       ↓
- SQS boundary / future durable worker
+     SQS
+      ↓
+resume worker
+
+public Greenhouse Job Board API
+      ↓
+connector → raw source → normalize → canonical job pipeline
 ```
 
-Preserved decisions:
+Preserved principles:
 
-- Clerk identity with internal UUID user ownership
-- FastAPI modular monolith
-- PostgreSQL as system of record and current search engine
-- S3-compatible resume storage
-- SQS-compatible asynchronous task boundary
-- deterministic development data separated by `data_origin`
-- no AI/matching expansion before real candidate/job data is reliable
+- Clerk subject maps to internal UUID ownership.
+- FastAPI remains a modular monolith.
+- PostgreSQL remains the system of record and current search engine.
+- Resume binary content stays outside PostgreSQL.
+- Source provenance/raw job payloads are preserved.
+- Development job data remains explicitly marked.
+- AI/matching remains deferred until real candidate/job data is reliable.
 
-## Features Completed in Source Control
+## Completed in Source Control
 
 ### Authentication
 
 Preserved existing Clerk and guarded development authentication architecture.
 
-No client-supplied user ID authorization was introduced by Milestone 2 changes.
+No client-supplied user ID authorization was introduced.
+
+Production configuration still requires live Clerk verification.
 
 ### Onboarding
 
-Added persisted candidate onboarding UI and hardened backend progression.
-
-Stages now represented:
+Implemented persisted onboarding stages:
 
 ```text
 ACCOUNT_CREATED
@@ -63,98 +74,113 @@ REVIEW
 COMPLETE
 ```
 
-Resume processing is optional so a candidate may continue manually.
+Implemented:
 
-Backend completion now requires:
+- explicit legal forward transitions;
+- resume-processing branch;
+- manual/resume-less path;
+- ability to revisit earlier persisted steps;
+- backend completion eligibility.
 
-- a current title or headline
-- at least one target role
-- at least one work mode
+Completion requires:
 
-Completion can no longer jump around the persisted workflow.
+- current title or headline;
+- at least one target role;
+- at least one work mode.
 
 ### Resume
 
-Existing PDF/DOCX deterministic extraction was confirmed in code.
+Existing deterministic PDF/DOCX extraction was retained and exposed through the candidate journey.
 
-New candidate UI supports:
+Candidate UI now supports:
 
-- upload
-- processing state
-- failure/manual fallback
-- review-required state
-- resume history display
+- PDF/DOCX upload;
+- queued/processing state;
+- failure/manual fallback;
+- review-required state;
+- extracted profile review;
+- resume history display.
 
 ### Profile
 
 Added `/profile` editor for:
 
-- current title
-- headline
-- summary
-- years of experience
-- experience records
-- education records
-- skills
-- target roles
-- preferred location
-- work modes
-- minimum compensation
+- current title;
+- headline;
+- summary;
+- years of experience;
+- experience;
+- education;
+- skills;
+- target roles;
+- preferred location;
+- work modes;
+- minimum compensation.
 
-Candidate edits are persisted through the existing profile API.
+Candidate edits persist through the canonical profile API.
 
 ### Jobs
 
-Added `/jobs/[id]` candidate job detail workspace.
+Added `/jobs/[id]` candidate job workspace.
 
-Displays only source-backed data:
+Displays source-backed fields only:
 
-- title
-- company
-- location
-- work mode
-- employment type
-- compensation
-- posted/freshness dates
-- description
-- requirements
-- skills
-- source URL when present
-- development-data indicator
+- title;
+- company;
+- location;
+- work mode;
+- employment type;
+- compensation;
+- posted/freshness fields;
+- description;
+- requirements;
+- skills;
+- source URL when present;
+- development-data indicator.
 
-Actions are real:
+Real actions:
 
-- save/unsave writes through saved-job API
-- track application creates/reuses the canonical candidate/job application
+- save/unsave;
+- create/reuse application;
+- open application workspace.
 
 ### Saved Jobs
 
-Added `/saved` using the existing authenticated saved-job API.
+Added `/saved` backed by authenticated saved-job persistence.
 
-Includes loading, error, results, empty state, unsave, and navigation to job detail.
+Supports loading, error, empty, list, unsave, and job navigation states.
 
 ### Applications
 
-Added `/applications` and `/applications/[id]`.
+Added:
 
-The application workspace supports:
+```text
+/applications
+/applications/[id]
+```
 
-- persisted current status
-- immutable status-event timeline
-- add private note
-- delete private note
-- navigation back to the canonical job
+Supports:
+
+- create/reuse canonical candidate/job application;
+- current status;
+- immutable event timeline;
+- private notes;
+- note deletion;
+- navigation back to canonical job.
+
+### Resume Workspace
+
+Added `/resume` for upload/history/status and review/failure guidance.
 
 ### Settings
 
-Added `/settings` with only real backed functionality:
+Added `/settings` exposing only backed behavior:
 
-- account identity/status
-- onboarding state
-- target roles
-- location/work-mode preferences
-- privacy explanation
-- link to edit candidate profile/preferences
+- account identity/status;
+- onboarding state;
+- job preferences;
+- privacy explanation;
+- profile/preferences edit path.
 
 No fake notification or discoverability controls were added.
 
@@ -186,139 +212,121 @@ New routes:
 /settings
 ```
 
-The existing candidate shell, dashboard, job search, job cards, shared UI primitives, and API client were preserved.
+The existing shell, dashboard, job search, job cards, API client, and design system were preserved.
 
 ## Backend Changes
 
-`services/api/app/api/onboarding.py` now contains:
+### Onboarding
 
-- explicit stage order
-- explicit legal forward transitions
-- ability to revisit earlier steps
-- optional resume-processing branch
-- backend completion eligibility checks
+`services/api/app/api/onboarding.py` now contains explicit workflow transitions and backend completion validation.
+
+### Production Queue Boundary
+
+`services/api/app/core/config.py` now supports:
+
+```text
+TASK_QUEUE_PROVIDER
+SQS_QUEUE_URL
+SQS_REGION
+```
+
+Production rejects the in-memory task queue.
+
+`services/api/app/core/queue.py` now actually selects SQS when configured rather than always returning the development in-memory queue.
+
+Standard and FIFO SQS queues are both supported; FIFO-only deduplication/group fields are sent only to FIFO queue URLs.
+
+### Resume Worker
+
+Added:
+
+```text
+services/api/app/workers/resume.py
+```
+
+Production flow:
+
+```text
+upload
+↓
+private S3 provider
+↓
+ResumeVersion = QUEUED
+↓
+SQS RESUME_PARSE event
+↓
+dedicated resume worker
+↓
+PROCESSING
+↓
+NEEDS_REVIEW or FAILED
+↓
+ack only successful/review-ready work
+```
+
+Failed parsing is left unacknowledged for SQS retry/redrive behavior. An external DLQ/redrive policy is still required and must be verified in staging.
+
+The API schedules inline background parsing only when the configured queue is the development memory queue.
+
+## Real Job Ingestion
+
+Real ingestion is now **PARTIAL**, not NOT STARTED.
+
+Added `GreenhouseJobBoardConnector` using Greenhouse's public Job Board GET endpoints.
+
+Implemented connector behavior:
+
+- explicit board token validation;
+- board/company identity lookup;
+- public job fetch with full content;
+- raw source payload preservation;
+- source data origin marker `GREENHOUSE_PUBLIC_API`;
+- deterministic HTML-to-text description normalization;
+- source job ID/title/application URL;
+- primary/office location extraction;
+- conservative work-mode inference only when source location text says remote/hybrid;
+- unknown employment type/seniority rather than invented values;
+- no fabricated salary/skills/requirements;
+- connector health;
+- checkpoint metadata.
+
+Added configured runner:
+
+```bash
+cd services/api
+uv run python -m app.jobs.ingest
+```
+
+with:
+
+```text
+GREENHOUSE_BOARD_TOKENS=["company-board-token"]
+```
+
+Remaining before real ingestion is COMPLETE:
+
+- scheduled production execution;
+- deterministic company alias resolution;
+- stronger cross-source deduplication;
+- explicit repeated-miss freshness/stale transitions;
+- production-scale ingestion tests/metrics.
 
 ## Database Changes
 
-No new migration was required for this implementation slice.
+No new migration was required during this coding pass.
 
-Existing migrations:
+Existing migrations remain:
 
 ```text
 8f21ae7d52d5_initial_canonical_schema.py
 0db19a1adb4d_candidate_milestone_one_fields.py
 ```
 
-The new workflows use existing persisted fields and tables.
+Current changes use existing persisted candidate, resume, job/source, application, and onboarding structures.
 
-## Migrations
+## Testing Added
 
-A GitHub Actions CI job was added to execute:
-
-```bash
-alembic upgrade head
-alembic check
-pytest
-```
-
-against PostgreSQL 17.
-
-The workflow definition is committed, but no successful workflow result is currently available for the latest branch head, so migration verification is not claimed for this iteration.
-
-## Authentication
-
-Current source supports:
-
-- Clerk web authentication
-- JWT verification boundary in FastAPI
-- development auth when explicitly enabled
-- internal user UUID mapping
-- owner-scoped candidate APIs
-
-External/live verification remains required for production Clerk keys, issuer/audience values, and end-to-end login/logout behavior.
-
-## Resume Pipeline
-
-Current implementation path:
-
-```text
-upload
-↓
-private object storage provider
-↓
-ResumeVersion = QUEUED
-↓
-queue event
-↓
-in-process background parser (current development implementation)
-↓
-PROCESSING
-↓
-NEEDS_REVIEW or FAILED
-↓
-candidate review
-↓
-COMPLETED
-```
-
-Production gap: parsing must move to the durable SQS worker path with bounded retries and DLQ behavior instead of relying on API-process background execution.
-
-## Candidate Profile
-
-The candidate profile is structured separately from extracted resume text and remains the canonical candidate representation.
-
-Current provenance design distinguishes document-extracted data from candidate-verified edits.
-
-## Job Search
-
-Existing PostgreSQL search/filter/cursor API is preserved.
-
-Candidate search state is URL-backed.
-
-Performance debt remains in job result assembly because company/location/compensation are loaded through multiple follow-up queries per job.
-
-## Saved Jobs
-
-Saved jobs remain protected by composite candidate/job ownership.
-
-The UI is now implemented but requires browser/E2E persistence verification before the domain is called complete.
-
-## Application Tracking
-
-Existing uniqueness prevents duplicate applications per candidate/job.
-
-Status transitions append immutable events.
-
-Notes are candidate/application scoped.
-
-The new web list currently resolves job details using parallel API calls. A future application-summary API projection should remove this fan-out.
-
-## Job Ingestion
-
-Real ingestion remains **NOT STARTED**.
-
-The next implementation should complete one legitimate Greenhouse connector before Lever or Ashby.
-
-Required order:
-
-```text
-FETCH
-RAW SOURCE RECORD
-VALIDATE
-NORMALIZE
-RESOLVE COMPANY
-DEDUPLICATE
-CREATE/UPDATE CANONICAL JOB
-LINK SOURCE
-UPDATE FRESHNESS
-SEARCH DOCUMENT
-```
-
-No unauthorized scraping should be introduced.
-
-## Testing
-
-Previously reported before these changes:
+Existing PR #1 reported before these changes:
 
 ```text
 web build: passed
@@ -326,120 +334,153 @@ web lint: passed
 backend: 11 passed
 ```
 
-New test code:
+Those counts apply to the earlier PR head only.
 
-- persisted onboarding-stage test
-- out-of-order transition rejection
-- completion-minimum validation
-- optional resume-processing transition
+New backend test source now covers:
 
-New CI workflow:
+- onboarding stage persistence;
+- out-of-order onboarding rejection;
+- onboarding completion minimums;
+- optional resume-processing path;
+- Greenhouse fetch/normalization;
+- Greenhouse health/token validation;
+- production SQS requirement;
+- required SQS queue URL;
+- supported production SQS configuration;
+- resume worker malformed/unsupported-message behavior.
 
-- web dependency install
-- web lint
-- web production build
-- PostgreSQL 17 service
-- API dependency install
-- Alembic zero-to-head
-- Alembic drift check
-- backend pytest
+A CI workflow now defines:
 
-Current verified count for the new branch head: **not available**.
+```text
+web install
+web lint
+web production build
+PostgreSQL 17
+API dependency install
+Alembic zero-to-head
+Alembic drift check
+backend pytest
+```
 
-No test number is invented in this report.
+### Current verification result
+
+GitHub Actions workflow runs are created on the branch, but the observed jobs currently terminate as failures before job steps/log artifacts are exposed through the GitHub integration. Therefore:
+
+```text
+backend latest passed count: NOT VERIFIED
+frontend latest passed count: NOT VERIFIED
+Playwright: NOT STARTED
+```
+
+No test count is invented.
 
 ## Security
 
-Preserved/implemented:
+Implemented/preserved:
 
-- authenticated candidate endpoints
-- account-scoped profile/resume/saved-job/application/note ownership
-- private resume storage boundary
-- no raw S3 key exposure in normal resume responses
-- file extension/content-type/size/empty validation
-- normalized API errors
-- no candidate data in development job records
-- no AI-generated candidate facts
+- authenticated candidate endpoints;
+- owner-scoped candidate resources;
+- protected application notes;
+- private object-storage boundary;
+- no raw storage key in normal resume API responses;
+- resume file extension/content-type/size/empty validation;
+- production rejects development auth;
+- production now rejects in-memory resume queue execution;
+- SQS task payload contains opaque IDs, not resume contents;
+- no resume content is intentionally logged;
+- Greenhouse integration uses public API reads rather than access-control bypass/scraping;
+- no AI-generated candidate facts.
 
-Remaining security work:
+Remaining:
 
-- live auth integration verification
-- production S3/IAM validation
-- malware scanning decision/implementation
-- durable worker security/IAM
-- rate-limit implementation/validation
-- formal security test pass for IDOR, XSS, SSRF, log redaction, and upload edge cases
+- live Clerk integration test;
+- production S3/IAM verification;
+- SQS IAM + DLQ/redrive verification;
+- malware-scanning decision/implementation;
+- rate limiting;
+- formal IDOR/XSS/SSRF/log-redaction/upload security pass.
 
 ## Accessibility
 
-The existing shared UI and new forms use semantic labels, buttons, headings, focus-visible styling, and reduced-motion support.
+Shared/new UI uses semantic labels, headings, buttons, visible focus styling, and reduced-motion support.
 
-A formal keyboard/screen-reader/automated accessibility test has not yet been run; therefore accessibility is **PARTIAL**.
+Formal keyboard, screen-reader, and automated accessibility verification is still pending.
 
 ## Performance
 
-Known issues to address before scale testing:
+Known performance debt:
 
-1. Job API list/detail data assembly issues follow-up SQL queries for related records.
-2. Saved-job list uses per-record follow-up queries.
-3. Application list UI performs parallel job-detail requests.
-4. Application backend response construction loads events/notes per application.
+1. job list/detail assembly performs follow-up related-record queries;
+2. saved-job assembly performs per-job related queries;
+3. applications web list performs parallel job-detail API calls;
+4. application backend response assembly loads events/notes per application.
 
-Next step: replace these with explicit joined/eager-loaded projections and then measure query plans for the core APIs.
+Next performance slice should build joined/eager-loaded summary projections and measure query plans for core endpoints.
 
 ## Production Readiness
 
-Added source-controlled CI definition.
+Improved in this pass:
+
+- source-controlled CI workflow;
+- production SQS selection;
+- production memory-queue guard;
+- independent resume worker;
+- SQS FIFO/standard handling;
+- SQS configuration examples;
+- Greenhouse production connector boundary;
+- Greenhouse configured ingestion runner;
+- README operational commands.
 
 Still required:
 
-- first successful CI run on current branch
-- frontend behavior tests
-- Playwright Candidate MVP journey
-- production Clerk integration
-- private S3 integration
-- durable SQS worker + DLQ
-- legitimate real ATS ingestion
-- staging Vercel/ECS/Aurora deployment
-- CloudWatch/structured logging verification
-- production secrets configuration
+- successful CI run on current head;
+- frontend behavior tests;
+- Playwright candidate persistence journey;
+- live Clerk integration;
+- private S3 integration;
+- real SQS + DLQ/redrive integration;
+- scheduled Greenhouse ingestion/freshness lifecycle;
+- Vercel/ECS/Aurora staging deployment;
+- structured logging/CloudWatch verification;
+- secrets/IAM validation.
 
 ## Known Limitations
 
-- Candidate MVP code is not yet CI-verified after the latest changes.
-- Resume uploads are not deliberately versioned under an existing master resume aggregate.
-- Resume parsing still has an API background-task execution path.
-- Real ATS data is not present.
+- Current Candidate MVP source has not yet passed a latest-head CI run.
+- Resume uploads create a new resume aggregate instead of deliberately versioning the existing master resume.
+- Greenhouse ingestion is functional at connector/runner level but freshness and cross-source dedup still need hardening.
 - Application list/job presentation needs a backend summary projection.
-- Frontend test suite and Playwright acceptance test are not yet implemented.
+- Frontend behavior tests and Playwright are not yet implemented.
 - Production resources are not deployed/verified.
 
-## Blocked Items
+## Blocked by External Configuration / Platform
 
-Blocked by external configuration/infrastructure:
+- GitHub Actions currently terminates jobs before usable step/log evidence is available.
+- Clerk production credentials/configuration.
+- AWS S3 bucket/IAM.
+- AWS SQS queue/DLQ/IAM.
+- ECS/Fargate API/worker resources.
+- Aurora production database.
+- Vercel production environment.
 
-- live Clerk production authentication
-- AWS S3/SQS integration
-- ECS/Fargate worker/API deployment
-- Aurora production database
-- Vercel production environment
+## Next Engineering Sequence
 
-Not externally blocked and should be implemented next:
+1. Resolve CI runner/execution failure and obtain green lint/build/migrations/backend tests.
+2. Add frontend behavior tests.
+3. Add Playwright Candidate MVP persistence journey.
+4. Remove job/application N+1/fan-out behavior.
+5. Stage-test S3/SQS resume worker retries, idempotency, and DLQ.
+6. Harden Greenhouse company resolution, deduplication, freshness, scheduling, and metrics.
+7. Verify real Clerk authentication/isolation.
+8. Deploy and validate staging.
 
-- frontend tests
-- Playwright
-- query optimization
-- durable worker code
-- Greenhouse connector
-- CI fixes until green
+Only then should Milestone 3 matching begin.
 
 ## Next Milestone
 
-Milestone 2 must first be completed and verified.
-
-After Candidate MVP + real job ingestion are complete, the planned next milestone is:
-
 # APPLYAI MILESTONE 3 — JOB INTELLIGENCE & MATCHING
+
+Not implemented yet.
 
 ```text
 Candidate Profile
@@ -461,8 +502,6 @@ Feature Ranking
 Explainable Match
 ```
 
-Possible later technologies include pgvector, embeddings, reranking, feature scoring, and LLM assistance. None should be added before the Milestone 2 acceptance criteria pass.
-
 ## Status Matrix
 
 ```text
@@ -471,9 +510,9 @@ Authentication: PARTIAL
 Resume Pipeline: PARTIAL
 Profile: PARTIAL
 Job Search: PARTIAL
-Real Job Ingestion: NOT STARTED
+Real Job Ingestion: PARTIAL
 Applications: PARTIAL
-Testing: PARTIAL
+Testing: BLOCKED
 Production Deployment: BLOCKED
 AI Matching: NOT STARTED
 Mobile: NOT STARTED

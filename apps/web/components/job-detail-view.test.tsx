@@ -42,7 +42,6 @@ const job: Awaited<ReturnType<typeof api.jobs.detail>> = {
   minimum_compensation: 180000,
   maximum_compensation: 220000,
   compensation_provenance: "SOURCE_REPORTED",
-  currency: "USD",
   description: "Build reliable data products.",
   requirements: ["Python", "PostgreSQL"],
   skills: ["Python", "SQL"],

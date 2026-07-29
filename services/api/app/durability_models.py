@@ -8,11 +8,11 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
-from app.models import Resume, ResumeExtraction
+from app.models import Application, JobSourceLink, Resume, ResumeExtraction
 
 
-# Keep Alembic metadata aligned with the explicit integrity indexes introduced in
-# the Milestone 2.6 migration.
+# Keep Alembic metadata aligned with explicit integrity/performance indexes introduced
+# in the Milestone 2.6 migration. Each one corresponds to a current query path.
 Index(
     "uq_resumes_one_master_per_user",
     Resume.__table__.c.user_id,
@@ -24,6 +24,16 @@ Index(
     ResumeExtraction.__table__.c.resume_version_id,
     ResumeExtraction.__table__.c.parser_version,
     unique=True,
+)
+Index(
+    "ix_applications_user_updated_id",
+    Application.__table__.c.user_id,
+    Application.__table__.c.updated_at.desc(),
+    Application.__table__.c.id.desc(),
+)
+Index(
+    "ix_job_source_links_job_source_id",
+    JobSourceLink.__table__.c.job_source_id,
 )
 
 
@@ -37,6 +47,9 @@ def created_at() -> Mapped[datetime]:
 
 class TaskOutbox(Base):
     __tablename__ = "task_outbox"
+    __table_args__ = (
+        Index("ix_task_outbox_claim", "status", "available_at", "created_at"),
+    )
 
     id: Mapped[uuid.UUID] = uuid_pk()
     event_type: Mapped[str] = mapped_column(String(80), nullable=False)

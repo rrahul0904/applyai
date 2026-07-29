@@ -17,8 +17,84 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # One candidate has one canonical master resume. Replacement uploads become
-    # versions of this row rather than additional master Resume aggregates.
+    # Previous upload behavior could create a new is_master=true Resume on every
+    # replacement. Consolidate those rows before enforcing the invariant. Storage
+    # keys stay untouched; ResumeVersion ids also stay stable for downstream FKs.
+    op.execute(
+        """
+        WITH master_versions AS (
+          SELECT
+            rv.id,
+            ROW_NUMBER() OVER (
+              PARTITION BY r.user_id
+              ORDER BY rv.created_at, rv.id
+            ) AS seq
+          FROM resume_versions rv
+          JOIN resumes r ON r.id = rv.resume_id
+          WHERE r.is_master IS TRUE
+        )
+        UPDATE resume_versions rv
+        SET version_number = -mv.seq
+        FROM master_versions mv
+        WHERE rv.id = mv.id
+        """
+    )
+    op.execute(
+        """
+        WITH ranked_masters AS (
+          SELECT
+            id,
+            user_id,
+            FIRST_VALUE(id) OVER (
+              PARTITION BY user_id
+              ORDER BY created_at, id
+            ) AS canonical_id
+          FROM resumes
+          WHERE is_master IS TRUE
+        )
+        UPDATE resume_versions rv
+        SET resume_id = rm.canonical_id
+        FROM ranked_masters rm
+        WHERE rv.resume_id = rm.id
+          AND rm.id <> rm.canonical_id
+        """
+    )
+    op.execute(
+        """
+        WITH ranked_masters AS (
+          SELECT
+            id,
+            ROW_NUMBER() OVER (
+              PARTITION BY user_id
+              ORDER BY created_at, id
+            ) AS rn
+          FROM resumes
+          WHERE is_master IS TRUE
+        )
+        DELETE FROM resumes r
+        USING ranked_masters rm
+        WHERE r.id = rm.id AND rm.rn > 1
+        """
+    )
+    op.execute(
+        """
+        WITH renumbered AS (
+          SELECT
+            rv.id,
+            ROW_NUMBER() OVER (
+              PARTITION BY rv.resume_id
+              ORDER BY rv.created_at, rv.id
+            ) AS seq
+          FROM resume_versions rv
+          JOIN resumes r ON r.id = rv.resume_id
+          WHERE r.is_master IS TRUE
+        )
+        UPDATE resume_versions rv
+        SET version_number = rn.seq
+        FROM renumbered rn
+        WHERE rv.id = rn.id
+        """
+    )
     op.create_index(
         "uq_resumes_one_master_per_user",
         "resumes",
@@ -27,8 +103,34 @@ def upgrade() -> None:
         postgresql_where=sa.text("is_master IS TRUE"),
     )
 
-    # One parser execution state per resume version/parser. Redelivery reuses this
-    # extraction row while attempts are recorded separately below.
+    # Old at-least-once processing could leave multiple extraction rows. Keep the
+    # strongest/latest durable result for each version/parser before adding the
+    # uniqueness guard used by the new idempotent processor.
+    op.execute(
+        """
+        WITH ranked AS (
+          SELECT
+            id,
+            ROW_NUMBER() OVER (
+              PARTITION BY resume_version_id, parser_version
+              ORDER BY
+                CASE status
+                  WHEN 'COMPLETED' THEN 4
+                  WHEN 'NEEDS_REVIEW' THEN 3
+                  WHEN 'PROCESSING' THEN 2
+                  WHEN 'FAILED' THEN 1
+                  ELSE 0
+                END DESC,
+                created_at DESC,
+                id DESC
+            ) AS rn
+          FROM resume_extractions
+        )
+        DELETE FROM resume_extractions re
+        USING ranked r
+        WHERE re.id = r.id AND r.rn > 1
+        """
+    )
     op.create_index(
         "uq_resume_extractions_version_parser",
         "resume_extractions",
@@ -102,7 +204,9 @@ def upgrade() -> None:
     op.create_index("ix_job_ingestion_runs_connector", "job_ingestion_runs", ["connector"])
     op.create_index("ix_job_ingestion_runs_source_company", "job_ingestion_runs", ["source_company"])
 
-    # Keep lexical search state correct regardless of which code path mutates a job.
+    # Keep title/description lexical state safe even when a mutation happens outside
+    # the ingestion service. Ingestion additionally refreshes the richer document
+    # containing company, skills, and requirements.
     op.execute(
         """
         CREATE OR REPLACE FUNCTION applyai_refresh_job_search_vector()

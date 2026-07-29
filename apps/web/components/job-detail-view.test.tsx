@@ -29,7 +29,7 @@ vi.mock("@/lib/api/client", () => ({
   },
 }));
 
-const job = {
+const job: Awaited<ReturnType<typeof api.jobs.detail>> = {
   id: "job-1",
   title: "Senior Data Engineer",
   company_name: "ApplyAI Labs",
@@ -37,8 +37,11 @@ const job = {
   location: "Boston, MA",
   work_mode: "HYBRID",
   employment_type: "FULL_TIME",
+  seniority: "SENIOR",
+  status: "ACTIVE",
   minimum_compensation: 180000,
   maximum_compensation: 220000,
+  compensation_provenance: "SOURCE_REPORTED",
   currency: "USD",
   description: "Build reliable data products.",
   requirements: ["Python", "PostgreSQL"],
@@ -47,7 +50,7 @@ const job = {
   posted_at: "2026-07-20T00:00:00Z",
   last_seen_at: "2026-07-28T00:00:00Z",
   source_url: "https://example.com/jobs/job-1",
-} as Awaited<ReturnType<typeof api.jobs.detail>>;
+};
 
 function renderJobDetail() {
   const queryClient = new QueryClient({
@@ -67,8 +70,8 @@ function renderJobDetail() {
 describe("JobDetailView", () => {
   beforeEach(() => {
     vi.mocked(api.jobs.detail).mockResolvedValue(job);
-    vi.mocked(api.savedJobs.save).mockResolvedValue({} as Awaited<ReturnType<typeof api.savedJobs.save>>);
-    vi.mocked(api.savedJobs.unsave).mockResolvedValue({} as Awaited<ReturnType<typeof api.savedJobs.unsave>>);
+    vi.mocked(api.savedJobs.save).mockResolvedValue(undefined);
+    vi.mocked(api.savedJobs.unsave).mockResolvedValue(undefined);
     vi.mocked(api.applications.create).mockResolvedValue({ id: "application-1" } as Awaited<ReturnType<typeof api.applications.create>>);
   });
 

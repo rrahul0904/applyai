@@ -22,6 +22,15 @@ def test_database_is_at_alembic_head(database_url):
         extraction_indexes = {
             index["name"] for index in inspector.get_indexes("resume_extractions")
         }
+        application_indexes = {
+            index["name"] for index in inspector.get_indexes("applications")
+        }
+        source_link_indexes = {
+            index["name"] for index in inspector.get_indexes("job_source_links")
+        }
+        outbox_indexes = {
+            index["name"] for index in inspector.get_indexes("task_outbox")
+        }
     engine.dispose()
     assert current == expected_head
     assert {
@@ -44,3 +53,6 @@ def test_database_is_at_alembic_head(database_url):
     }.issubset(tables)
     assert "uq_resumes_one_master_per_user" in resume_indexes
     assert "uq_resume_extractions_version_parser" in extraction_indexes
+    assert "ix_applications_user_updated_id" in application_indexes
+    assert "ix_job_source_links_job_source_id" in source_link_indexes
+    assert "ix_task_outbox_claim" in outbox_indexes

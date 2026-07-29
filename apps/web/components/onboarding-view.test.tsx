@@ -104,7 +104,8 @@ describe("OnboardingView", () => {
 
     renderOnboarding();
 
-    expect(await screen.findByLabelText("Current title")).toHaveValue("Senior Data Engineer");
+    const currentTitle = await screen.findByLabelText("Current title") as HTMLInputElement;
+    expect(currentTitle.value).toBe("Senior Data Engineer");
     expect(screen.getByDisplayValue("Example Labs")).toBeDefined();
     expect(screen.getByText("Python ×")).toBeDefined();
   });

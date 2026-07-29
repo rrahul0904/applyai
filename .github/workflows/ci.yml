@@ -19,7 +19,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
       - name: Enable Corepack
         run: corepack enable
       - name: Install dependencies
@@ -49,6 +48,9 @@ jobs:
     env:
       DATABASE_URL: postgresql+psycopg://applyai:applyai@localhost:5432/applyai_test
       TEST_DATABASE_URL: postgresql+psycopg://applyai:applyai@localhost:5432/applyai_test
+    defaults:
+      run:
+        working-directory: services/api
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -58,10 +60,10 @@ jobs:
         with:
           enable-cache: true
       - name: Install API dependencies
-        run: uv sync --project services/api --group dev --locked
+        run: uv sync --group dev --locked
       - name: Apply migrations from zero to head
-        run: uv run --project services/api alembic -c services/api/alembic.ini upgrade head
+        run: uv run alembic upgrade head
       - name: Check migration drift
-        run: uv run --project services/api alembic -c services/api/alembic.ini check
+        run: uv run alembic check
       - name: Run backend tests
-        run: uv run --project services/api pytest
+        run: uv run pytest

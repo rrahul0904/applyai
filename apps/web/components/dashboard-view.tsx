@@ -30,9 +30,10 @@ export function DashboardView() {
     queryFn: ({ signal }) => api.savedJobs.list(signal),
   });
   const applications = useQuery({
-    queryKey: ["applications"],
+    queryKey: ["applications", "dashboard"],
     queryFn: ({ signal }) => api.applications.list(signal),
   });
+  const applicationItems = applications.data?.items ?? [];
 
   useEffect(() => {
     if (me.data && !me.data.onboarding_completed) router.replace("/onboarding");
@@ -133,9 +134,9 @@ export function DashboardView() {
               title="Applications"
               action={<Link href="/applications" className="text-button">See all</Link>}
             />
-            {applications.isLoading ? <Skeleton className="skeleton-tall" /> : applications.data?.length ? (
+            {applications.isLoading ? <Skeleton className="skeleton-tall" /> : applicationItems.length ? (
               <div className="list-stack">
-                {applications.data.slice(0, 4).map((application) => (
+                {applicationItems.slice(0, 4).map((application) => (
                   <Link className="nav-link" href={`/applications/${application.id}`} key={application.id}>
                     <BriefcaseBusiness size={17} />
                     <span>{titleCase(application.current_status)}<small className="muted"> · updated {formatDate(application.updated_at)}</small></span>

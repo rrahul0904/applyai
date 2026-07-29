@@ -1,10 +1,10 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
 import uuid
 
 from sqlalchemy import Numeric, Select, and_, cast, func, or_, select
+from sqlalchemy.orm import aliased
 
 from app.models import Company, Job, JobCompensation, JobLocation
 
@@ -20,16 +20,13 @@ class JobSearchQuery:
     minimum_salary: int | None = None
     posted_within_days: int | None = None
     target_role: str | None = None
-    cursor_rank: Decimal | None = None
     cursor_at: datetime | None = None
     cursor_id: uuid.UUID | None = None
 
 
-def relevance_expression(keyword: str):
+def relevance_expression(search_vector, keyword: str):
     query = func.websearch_to_tsquery("english", keyword.strip())
-    # Numeric rounding gives the cursor a stable serialized rank rather than relying
-    # on binary float equality across requests.
-    return cast(func.ts_rank_cd(Job.search_vector, query), Numeric(12, 8))
+    return cast(func.ts_rank_cd(search_vector, query), Numeric(12, 8))
 
 
 class SearchProvider(ABC):
@@ -46,9 +43,10 @@ class PostgresSearchProvider(SearchProvider):
             .where(Job.status == "ACTIVE")
         )
         rank = None
+        ts_query = None
         if query.keyword:
             ts_query = func.websearch_to_tsquery("english", query.keyword.strip())
-            rank = relevance_expression(query.keyword)
+            rank = relevance_expression(Job.search_vector, query.keyword)
             statement = statement.where(Job.search_vector.op("@@")(ts_query))
         if query.location:
             statement = statement.where(
@@ -91,13 +89,19 @@ class PostgresSearchProvider(SearchProvider):
 
         sort_at = func.coalesce(Job.posted_at, Job.first_seen_at)
         if query.cursor_at and query.cursor_id:
-            if rank is not None and query.cursor_rank is not None:
+            if rank is not None and ts_query is not None:
+                cursor_job = aliased(Job)
+                cursor_rank = (
+                    select(relevance_expression(cursor_job.search_vector, query.keyword or ""))
+                    .where(cursor_job.id == query.cursor_id)
+                    .scalar_subquery()
+                )
                 statement = statement.where(
                     or_(
-                        rank < query.cursor_rank,
-                        and_(rank == query.cursor_rank, sort_at < query.cursor_at),
+                        rank < cursor_rank,
+                        and_(rank == cursor_rank, sort_at < query.cursor_at),
                         and_(
-                            rank == query.cursor_rank,
+                            rank == cursor_rank,
                             sort_at == query.cursor_at,
                             Job.id < query.cursor_id,
                         ),

@@ -78,7 +78,7 @@ describe("JobDetailView", () => {
     renderJobDetail();
 
     expect(await screen.findByRole("heading", { name: "Senior Data Engineer" })).toBeDefined();
-    expect(screen.getByText("ApplyAI Labs")).toBeDefined();
+    expect(screen.getAllByText("ApplyAI Labs").length).toBeGreaterThan(0);
     expect(screen.getByText("Boston, MA")).toBeDefined();
     expect(screen.getByText("Build reliable data products.")).toBeDefined();
     expect(screen.getByRole("link", { name: "Open source listing" }).getAttribute("href")).toBe(job.source_url);

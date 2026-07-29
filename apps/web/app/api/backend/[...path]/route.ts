@@ -5,6 +5,14 @@ import { DEV_USER_COOKIE, devAuthEnabled } from "@/lib/auth/session";
 
 type RouteContext = { params: Promise<{ path: string[] }> };
 
+const MAX_PROXY_BODY_BYTES = 1024 * 1024;
+const SAFE_SEGMENT = /^[A-Za-z0-9_-]+$/;
+
+function safeBackendPath(path: string[]): string | null {
+  if (!path.length || path.some((segment) => !SAFE_SEGMENT.test(segment))) return null;
+  return path.join("/");
+}
+
 async function forward(request: NextRequest, context: RouteContext) {
   const baseUrl = process.env.APPLYAI_API_URL;
   if (!baseUrl) {
@@ -19,6 +27,28 @@ async function forward(request: NextRequest, context: RouteContext) {
     );
   }
 
+  const { path } = await context.params;
+  const normalizedPath = safeBackendPath(path);
+  if (!normalizedPath) {
+    return NextResponse.json(
+      { error: { code: "INVALID_BACKEND_PATH", message: "The requested API path is invalid." } },
+      { status: 400 },
+    );
+  }
+
+  const declaredLength = Number(request.headers.get("content-length") ?? "0");
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_PROXY_BODY_BYTES) {
+    return NextResponse.json(
+      {
+        error: {
+          code: "REQUEST_TOO_LARGE",
+          message: "This request is too large for the application proxy.",
+        },
+      },
+      { status: 413 },
+    );
+  }
+
   const headers = new Headers();
   const contentType = request.headers.get("content-type");
   if (contentType) headers.set("content-type", contentType);
@@ -28,12 +58,7 @@ async function forward(request: NextRequest, context: RouteContext) {
     const secret = process.env.DEV_AUTH_SECRET;
     if (!email || !secret) {
       return NextResponse.json(
-        {
-          error: {
-            code: "AUTH_REQUIRED",
-            message: "Sign in to continue.",
-          },
-        },
+        { error: { code: "AUTH_REQUIRED", message: "Sign in to continue." } },
         { status: 401 },
       );
     }
@@ -43,12 +68,7 @@ async function forward(request: NextRequest, context: RouteContext) {
     const { userId, getToken } = await auth();
     if (!userId) {
       return NextResponse.json(
-        {
-          error: {
-            code: "AUTH_REQUIRED",
-            message: "Sign in to continue.",
-          },
-        },
+        { error: { code: "AUTH_REQUIRED", message: "Sign in to continue." } },
         { status: 401 },
       );
     }
@@ -67,13 +87,23 @@ async function forward(request: NextRequest, context: RouteContext) {
     headers.set("authorization", `Bearer ${token}`);
   }
 
-  const { path } = await context.params;
-  const target = new URL(`/api/v1/${path.join("/")}`, baseUrl);
+  const target = new URL(`/api/v1/${normalizedPath}`, baseUrl);
   target.search = request.nextUrl.search;
-  const body =
-    request.method === "GET" || request.method === "HEAD"
-      ? undefined
-      : await request.arrayBuffer();
+  let body: ArrayBuffer | undefined;
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    body = await request.arrayBuffer();
+    if (body.byteLength > MAX_PROXY_BODY_BYTES) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "REQUEST_TOO_LARGE",
+            message: "This request is too large for the application proxy.",
+          },
+        },
+        { status: 413 },
+      );
+    }
+  }
 
   try {
     const response = await fetch(target, {

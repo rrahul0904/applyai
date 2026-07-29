@@ -89,6 +89,21 @@ class ResumeVersionResponse(BaseModel):
     created_at: datetime
 
 
+class ResumeUploadIntentWrite(BaseModel):
+    filename: str = Field(min_length=1, max_length=255)
+    content_type: str = Field(min_length=1, max_length=120)
+    file_size: int = Field(gt=0)
+
+
+class ResumeUploadIntentResponse(BaseModel):
+    upload_mode: str
+    resume_id: uuid.UUID | None = None
+    resume_version_id: uuid.UUID | None = None
+    upload_url: str | None = None
+    upload_headers: dict[str, str] = Field(default_factory=dict)
+    expires_in_seconds: int | None = None
+
+
 class ResumeExtractionResponse(BaseModel):
     id: uuid.UUID
     resume_version_id: uuid.UUID
@@ -168,6 +183,12 @@ class ApplicationListItem(BaseModel):
     created_at: datetime
     updated_at: datetime
     job: ApplicationJobSummary
+
+
+class ApplicationListPage(BaseModel):
+    items: list[ApplicationListItem]
+    next_cursor: str | None
+    returned: int
 
 
 class ApplicationNoteWrite(BaseModel):

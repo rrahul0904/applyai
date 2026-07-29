@@ -1,0 +1,206 @@
+import io
+import re
+import uuid
+from abc import ABC, abstractmethod
+from datetime import datetime
+
+from docx import Document
+from pypdf import PdfReader
+from sqlalchemy import select
+
+from app.core.database import SessionLocal
+from app.core.storage import ObjectStorageProvider
+from app.models import ResumeExtraction, ResumeVersion
+
+
+class OcrProvider(ABC):
+    @abstractmethod
+    def extract(self, content: bytes, content_type: str) -> str:
+        raise NotImplementedError
+
+
+def extract_document_text(content: bytes, content_type: str) -> str:
+    if content_type == "application/pdf":
+        reader = PdfReader(io.BytesIO(content))
+        return "\n".join(page.extract_text() or "" for page in reader.pages)
+    if (
+        content_type
+        == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ):
+        document = Document(io.BytesIO(content))
+        return "\n".join(paragraph.text for paragraph in document.paragraphs)
+    raise ValueError("UNSUPPORTED_DOCUMENT_TYPE")
+
+
+def parse_month(value: str) -> str | None:
+    value = value.strip()
+    for fmt in ("%Y-%m", "%Y", "%b %Y", "%B %Y"):
+        try:
+            parsed = datetime.strptime(value, fmt)
+            return parsed.date().replace(day=1).isoformat()
+        except ValueError:
+            continue
+    return None
+
+
+def split_date_range(value: str) -> tuple[str | None, str | None]:
+    parts = re.split(r"\s+(?:-|–|—|to)\s+", value.strip(), maxsplit=1)
+    start = parse_month(parts[0]) if parts else None
+    end = None
+    if len(parts) > 1 and parts[1].lower() not in {"present", "current"}:
+        end = parse_month(parts[1])
+    return start, end
+
+
+def structure_resume(text: str) -> dict:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    section = "basic"
+    sections: dict[str, list[str]] = {
+        "basic": [],
+        "experience": [],
+        "education": [],
+        "skills": [],
+        "certifications": [],
+    }
+    headings = {
+        "experience": "experience",
+        "professional experience": "experience",
+        "work experience": "experience",
+        "education": "education",
+        "skills": "skills",
+        "technical skills": "skills",
+        "certifications": "certifications",
+    }
+    for line in lines:
+        normalized = line.lower().rstrip(":")
+        if normalized in headings:
+            section = headings[normalized]
+            continue
+        sections[section].append(line)
+
+    email_match = re.search(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", text)
+    name = next(
+        (
+            line
+            for line in sections["basic"]
+            if "@" not in line and not re.search(r"\d{3}[-.)\s]\d{3}", line)
+        ),
+        None,
+    )
+    current_title = sections["basic"][1] if len(sections["basic"]) > 1 else None
+
+    experiences: list[dict] = []
+    achievements: list[str] = []
+    for line in sections["experience"]:
+        if line.startswith(("•", "-", "*")):
+            bullet = line.lstrip("•-* ").strip()
+            if bullet:
+                achievements.append(bullet)
+                if experiences:
+                    existing = experiences[-1].get("description") or ""
+                    experiences[-1]["description"] = "\n".join(
+                        item for item in [existing, bullet] if item
+                    )
+            continue
+        parts = [part.strip() for part in re.split(r"\s*\|\s*", line)]
+        if len(parts) >= 2:
+            start_date, end_date = split_date_range(parts[2]) if len(parts) >= 3 else (None, None)
+            experiences.append(
+                {
+                    "title": parts[0],
+                    "company_name": parts[1],
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "description": None,
+                    "provenance": "DOCUMENT_EXTRACTED",
+                }
+            )
+
+    education: list[dict] = []
+    for line in sections["education"]:
+        parts = [part.strip() for part in re.split(r"\s*\|\s*", line)]
+        if not parts:
+            continue
+        degree_parts = [part.strip() for part in parts[0].split(",", maxsplit=1)]
+        education.append(
+            {
+                "degree": degree_parts[0] or None,
+                "field_of_study": degree_parts[1] if len(degree_parts) > 1 else None,
+                "institution": parts[1] if len(parts) > 1 else "Not specified",
+                "start_date": None,
+                "end_date": parse_month(parts[2]) if len(parts) > 2 else None,
+                "provenance": "DOCUMENT_EXTRACTED",
+            }
+        )
+
+    skill_text = ", ".join(sections["skills"])
+    skills = [
+        {
+            "name": skill.strip(),
+            "provenance": "DOCUMENT_EXTRACTED",
+        }
+        for skill in re.split(r"[,;•]", skill_text)
+        if skill.strip()
+    ]
+    certifications = [
+        item.lstrip("•-* ").strip()
+        for item in sections["certifications"]
+        if item.lstrip("•-* ").strip()
+    ]
+
+    return {
+        "basic_profile": {
+            "name": name,
+            "email": email_match.group(0) if email_match else None,
+            "current_title": current_title,
+            "provenance": "DOCUMENT_EXTRACTED",
+        },
+        "experiences": experiences,
+        "education": education,
+        "skills": skills,
+        "certifications": certifications,
+        "achievements": achievements,
+    }
+
+
+def process_resume_version(
+    resume_version_id: uuid.UUID,
+    storage: ObjectStorageProvider,
+) -> None:
+    with SessionLocal() as session:
+        version = session.get(ResumeVersion, resume_version_id)
+        if version is None or version.processing_status in {"NEEDS_REVIEW", "COMPLETED"}:
+            return
+        version.processing_status = "PROCESSING"
+        session.commit()
+
+        extraction = ResumeExtraction(
+            resume_version_id=version.id,
+            parser_version="deterministic-v1",
+            status="PROCESSING",
+        )
+        session.add(extraction)
+        session.commit()
+        session.refresh(extraction)
+
+        try:
+            content = storage.get(key=version.storage_key)
+            text = extract_document_text(content, version.content_type).strip()
+            if len(text) < 120 or len(text.split()) < 20:
+                extraction.extracted_text = text or None
+                extraction.status = "NEEDS_REVIEW"
+                extraction.error_code = "INSUFFICIENT_TEXT"
+                version.processing_status = "NEEDS_REVIEW"
+            else:
+                extraction.extracted_text = text
+                extraction.structured_data = structure_resume(text)
+                extraction.status = "NEEDS_REVIEW"
+                version.processing_status = "NEEDS_REVIEW"
+            session.commit()
+        except Exception as exc:
+            extraction.status = "FAILED"
+            extraction.error_code = (
+                str(exc) if str(exc) in {"UNSUPPORTED_DOCUMENT_TYPE"} else "EXTRACTION_FAILED"
+            )
+            version.processing_status = "FAILED"
+            session.commit()

@@ -67,6 +67,19 @@ export type JobDetail = components["schemas"]["JobDetail"];
 export type JobPage = components["schemas"]["JobSearchPage"];
 export type Application = components["schemas"]["ApplicationResponse"];
 export type ApplicationNote = components["schemas"]["ApplicationNoteResponse"];
+export type ApplicationListItem = {
+  id: string;
+  job_id: string;
+  current_status: string;
+  created_at: string;
+  updated_at: string;
+  job: {
+    id: string;
+    title: string;
+    company_name: string;
+    location: string | null;
+  };
+};
 
 export const api = {
   auth: {
@@ -121,7 +134,7 @@ export const api = {
   },
   applications: {
     list: (signal?: AbortSignal) =>
-      request<Application[]>("/applications", { signal }),
+      request<ApplicationListItem[]>("/applications", { signal }),
     detail: (id: string, signal?: AbortSignal) =>
       request<Application>(`/applications/${id}`, { signal }),
     create: (jobId: string) =>

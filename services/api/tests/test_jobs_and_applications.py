@@ -56,8 +56,9 @@ def test_application_event_history_and_owner_isolation(
 
     listing = client.get("/api/v1/applications")
     assert listing.status_code == 200
-    assert len(listing.json()) == 1
-    summary = listing.json()[0]
+    assert listing.json()["returned"] == 1
+    assert listing.json()["next_cursor"] is None
+    summary = listing.json()["items"][0]
     assert summary["id"] == application_id
     assert summary["job_id"] == str(job_id)
     assert summary["current_status"] == "APPLIED"
@@ -71,7 +72,9 @@ def test_application_event_history_and_owner_isolation(
     assert "notes" not in summary
 
     switch_user("clerk_user_b", "b@example.com")
-    assert client.get("/api/v1/applications").json() == []
+    isolated_listing = client.get("/api/v1/applications").json()
+    assert isolated_listing["items"] == []
+    assert isolated_listing["returned"] == 0
     isolated_get = client.get(f"/api/v1/applications/{application_id}")
     isolated_patch = client.patch(
         f"/api/v1/applications/{application_id}/status",
@@ -79,3 +82,14 @@ def test_application_event_history_and_owner_isolation(
     )
     assert isolated_get.status_code == 404
     assert isolated_patch.status_code == 404
+
+
+def test_application_list_rejects_invalid_cursor(client):
+    response = client.get("/api/v1/applications", params={"cursor": "not-a-valid-cursor"})
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "INVALID_CURSOR"
+
+
+def test_application_list_limit_is_bounded(client):
+    assert client.get("/api/v1/applications", params={"limit": 51}).status_code == 422
+    assert client.get("/api/v1/applications", params={"limit": 0}).status_code == 422

@@ -2,9 +2,9 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
-import { api, type ProfileWrite } from "@/lib/api/client";
+import { api, type Profile, type ProfileWrite } from "@/lib/api/client";
 import { Badge, Button, Card, ErrorState, Field, Input, PageHeader, Skeleton, Textarea } from "@/components/ui";
 
 const emptyProfile: ProfileWrite = {
@@ -21,43 +21,42 @@ const emptyProfile: ProfileWrite = {
   skills: [],
 };
 
+function toProfileWrite(profile: Profile | null | undefined): ProfileWrite {
+  if (!profile) return emptyProfile;
+  return {
+    headline: profile.headline ?? null,
+    current_title: profile.current_title ?? null,
+    summary: profile.summary ?? null,
+    years_experience: profile.years_experience ?? null,
+    target_roles: profile.target_roles ?? [],
+    location_text: profile.location_text ?? null,
+    work_modes: profile.work_modes ?? [],
+    minimum_compensation: profile.minimum_compensation ?? null,
+    experiences: profile.experiences ?? [],
+    education: profile.education ?? [],
+    skills: profile.skills ?? [],
+  };
+}
+
 export function ProfileView() {
   const queryClient = useQueryClient();
   const profile = useQuery({ queryKey: ["profile"], queryFn: ({ signal }) => api.profile.get(signal) });
-  const [draft, setDraft] = useState<ProfileWrite>(emptyProfile);
-  const [loaded, setLoaded] = useState(false);
+  const [draftOverride, setDraft] = useState<ProfileWrite | null>(null);
   const [role, setRole] = useState("");
   const [skill, setSkill] = useState("");
-
-  useEffect(() => {
-    if (!loaded && profile.data !== undefined) {
-      setDraft(profile.data ? {
-        headline: profile.data.headline ?? null,
-        current_title: profile.data.current_title ?? null,
-        summary: profile.data.summary ?? null,
-        years_experience: profile.data.years_experience ?? null,
-        target_roles: profile.data.target_roles ?? [],
-        location_text: profile.data.location_text ?? null,
-        work_modes: profile.data.work_modes ?? [],
-        minimum_compensation: profile.data.minimum_compensation ?? null,
-        experiences: profile.data.experiences ?? [],
-        education: profile.data.education ?? [],
-        skills: profile.data.skills ?? [],
-      } : emptyProfile);
-      setLoaded(true);
-    }
-  }, [loaded, profile.data]);
+  const draft = draftOverride ?? toProfileWrite(profile.data);
 
   const save = useMutation({
     mutationFn: () => api.profile.save(draft),
     onSuccess: (data) => {
       queryClient.setQueryData(["profile"], data);
+      setDraft(toProfileWrite(data));
       toast.success("Profile saved");
     },
     onError: (error) => toast.error(error.message),
   });
 
-  if (profile.isLoading || !loaded) return <Skeleton className="page-skeleton" />;
+  if (profile.isLoading) return <Skeleton className="page-skeleton" />;
   if (profile.isError) return <ErrorState message={profile.error.message} retry={() => profile.refetch()} />;
 
   const experiences = draft.experiences ?? [];

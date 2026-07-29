@@ -3,8 +3,9 @@
 ApplyAI is a structured career platform that helps candidates discover relevant
 jobs, prepare applications, and preserve their job-search history.
 
-The repository is currently in a foundation-validation milestone. Advanced AI,
-employer, mobile, and public-launch work is intentionally paused.
+The repository is currently focused on the Candidate MVP and legitimate real-job
+ingestion. Advanced AI, employer, mobile, and public-launch work is intentionally
+paused until the candidate workflow and job-data foundation are verified.
 
 ## Repository
 
@@ -13,6 +14,7 @@ apps/
   web/                 Official Next.js App Router client
 services/
   api/                 FastAPI modular monolith
+  api/app/workers/     Durable background workers
 docs/                  Product and architecture decisions
 compose.yaml           Local PostgreSQL
 ```
@@ -56,6 +58,50 @@ pnpm dev:api
 
 Authentication requires the Clerk values documented in
 `apps/web/.env.example` and `services/api/.env.example`.
+
+## Resume processing
+
+Development uses the in-memory queue and may process resumes from the API's local
+background-task path for a deterministic developer experience.
+
+Production is guarded to require SQS. Configure:
+
+```text
+TASK_QUEUE_PROVIDER=sqs
+SQS_QUEUE_URL=...
+SQS_REGION=us-east-1
+OBJECT_STORAGE_PROVIDER=s3
+S3_BUCKET=...
+```
+
+Then run the worker independently from the API container:
+
+```bash
+cd services/api
+uv run python -m app.workers.resume
+```
+
+Configure an SQS dead-letter queue/redrive policy so repeated parser failures are
+bounded and observable.
+
+## Greenhouse ingestion
+
+ApplyAI includes a connector for Greenhouse's public Job Board GET API. Configure
+explicit board tokens as a JSON array:
+
+```text
+GREENHOUSE_BOARD_TOKENS=["example-company","another-company"]
+```
+
+Run ingestion:
+
+```bash
+cd services/api
+uv run python -m app.jobs.ingest
+```
+
+The connector preserves raw source payloads and source provenance. It does not
+submit applications or scrape authenticated/private career systems.
 
 ## Validation
 

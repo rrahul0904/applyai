@@ -12,7 +12,7 @@ from app.core.auth import get_current_user
 from app.core.config import Settings, get_settings
 from app.core.database import get_session
 from app.core.outbox import add_task_outbox_event, publish_outbox_once
-from app.core.queue import Task, get_task_queue
+from app.core.queue import Task, TaskQueue, get_task_queue
 from app.core.storage import ObjectStorageProvider, get_object_storage
 from app.models import Resume, ResumeExtraction, ResumeVersion, User
 from app.schemas import (
@@ -72,8 +72,6 @@ def get_or_create_master_resume(
     if resume is not None:
         return resume
 
-    # The partial unique index is the final concurrency guard. A savepoint lets a
-    # concurrent creator win without aborting the outer request transaction.
     try:
         with session.begin_nested():
             resume = Resume(user_id=user.id, name=Path(filename).stem, is_master=True)
@@ -101,7 +99,6 @@ def create_pending_version(
     extension: str,
 ) -> ResumeVersion:
     resume = get_or_create_master_resume(session, user=user, filename=filename)
-    # Lock the canonical resume so version-number allocation is serialized.
     session.execute(select(Resume.id).where(Resume.id == resume.id).with_for_update())
     next_version = (
         session.scalar(
@@ -188,12 +185,16 @@ def create_resume_upload_intent(
         file_size=payload.file_size,
         extension=extension,
     )
-    session.commit()
-    upload_url = storage.create_presigned_put(
-        key=version.storage_key,
-        content_type=version.content_type,
-        expires_in_seconds=settings.s3_upload_expiration_seconds,
-    )
+    try:
+        upload_url = storage.create_presigned_put(
+            key=version.storage_key,
+            content_type=version.content_type,
+            expires_in_seconds=settings.s3_upload_expiration_seconds,
+        )
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
     return ResumeUploadIntentResponse(
         upload_mode="DIRECT_S3",
         resume_id=version.resume_id,
@@ -217,6 +218,7 @@ def complete_resume_upload(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
     storage: ObjectStorageProvider = Depends(get_object_storage),
+    queue: TaskQueue = Depends(get_task_queue),
     settings: Settings = Depends(get_settings),
 ) -> ResumeVersion:
     version = session.scalar(
@@ -251,10 +253,8 @@ def complete_resume_upload(
     session.commit()
     session.refresh(version)
 
-    # Development keeps the simple local path, but still records the same durable
-    # outbox event. Durable environments run a separate outbox publisher process.
     if settings.task_queue_provider == "memory":
-        publish_outbox_once(settings, queue=get_task_queue(settings))
+        publish_outbox_once(settings, queue=queue)
         background_tasks.add_task(process_resume_version, version.id, storage)
     return version
 
@@ -283,10 +283,9 @@ async def upload_resume(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
     storage: ObjectStorageProvider = Depends(get_object_storage),
+    queue: TaskQueue = Depends(get_task_queue),
     settings: Settings = Depends(get_settings),
 ) -> ResumeVersion:
-    # File bodies are only accepted through the API in local development. Durable
-    # environments must use the direct-to-S3 intent/completion flow above.
     if storage.supports_direct_upload:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -323,7 +322,7 @@ async def upload_resume(
         raise
 
     session.refresh(version)
-    publish_outbox_once(settings, queue=get_task_queue(settings))
+    publish_outbox_once(settings, queue=queue)
     background_tasks.add_task(process_resume_version, version.id, storage)
     return version
 

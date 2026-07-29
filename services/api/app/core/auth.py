@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from functools import lru_cache
 from hmac import compare_digest
 
 import jwt
@@ -30,13 +31,18 @@ class AuthProvider(ABC):
 
 
 class ClerkAuthProvider(AuthProvider):
-    def __init__(self, settings: Settings) -> None:
-        self.settings = settings
-        self.jwks_client = (
-            PyJWKClient(settings.clerk_jwks_url, cache_keys=True)
-            if settings.clerk_jwks_url
-            else None
-        )
+    def __init__(
+        self,
+        *,
+        jwks_url: str | None,
+        issuer: str | None,
+        audience: str | None,
+    ) -> None:
+        self.issuer = issuer
+        self.audience = audience
+        # PyJWKClient caches the JWKS and signing keys while still refreshing when a
+        # previously unseen key id appears, which preserves Clerk key rotation.
+        self.jwks_client = PyJWKClient(jwks_url, cache_keys=True) if jwks_url else None
 
     def authenticate(self, request: Request) -> AuthClaims:
         authorization = request.headers.get("authorization", "")
@@ -46,7 +52,7 @@ class ClerkAuthProvider(AuthProvider):
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail={"code": "AUTH_REQUIRED", "message": "Authentication required"},
             )
-        if not self.jwks_client or not self.settings.clerk_issuer:
+        if not self.jwks_client or not self.issuer:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail={
@@ -59,11 +65,11 @@ class ClerkAuthProvider(AuthProvider):
             signing_key = self.jwks_client.get_signing_key_from_jwt(token)
             decode_options: dict[str, object] = {
                 "algorithms": ["RS256"],
-                "issuer": self.settings.clerk_issuer,
+                "issuer": self.issuer,
                 "options": {"require": ["exp", "iat", "nbf", "sub"]},
             }
-            if self.settings.clerk_audience:
-                decode_options["audience"] = self.settings.clerk_audience
+            if self.audience:
+                decode_options["audience"] = self.audience
             else:
                 decode_options["options"] = {
                     "require": ["exp", "iat", "nbf", "sub"],
@@ -96,8 +102,8 @@ class ClerkAuthProvider(AuthProvider):
 
 class DevTestAuthProvider(AuthProvider):
     def __init__(self, settings: Settings) -> None:
-        if settings.app_env.lower() == "production":
-            raise RuntimeError("Development authentication cannot run in production")
+        if settings.app_env.lower() in {"staging", "production"}:
+            raise RuntimeError("Development authentication cannot run in staging or production")
         if not settings.dev_auth_enabled or not settings.dev_auth_secret:
             raise RuntimeError("Development authentication requires explicit configuration")
         self.secret = settings.dev_auth_secret
@@ -121,10 +127,23 @@ class DevTestAuthProvider(AuthProvider):
         )
 
 
+@lru_cache(maxsize=8)
+def _cached_clerk_provider(
+    jwks_url: str | None,
+    issuer: str | None,
+    audience: str | None,
+) -> ClerkAuthProvider:
+    return ClerkAuthProvider(jwks_url=jwks_url, issuer=issuer, audience=audience)
+
+
 def get_auth_provider(settings: Settings = Depends(get_settings)) -> AuthProvider:
     if settings.auth_provider == "dev-test":
         return DevTestAuthProvider(settings)
-    return ClerkAuthProvider(settings)
+    return _cached_clerk_provider(
+        settings.clerk_jwks_url,
+        settings.clerk_issuer,
+        settings.clerk_audience,
+    )
 
 
 def get_auth_claims(

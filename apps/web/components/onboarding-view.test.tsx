@@ -104,7 +104,7 @@ describe("OnboardingView", () => {
 
     renderOnboarding();
 
-    expect(await screen.findByDisplayValue("Senior Data Engineer")).toBeDefined();
+    expect(await screen.findByLabelText("Current title")).toHaveValue("Senior Data Engineer");
     expect(screen.getByDisplayValue("Example Labs")).toBeDefined();
     expect(screen.getByText("Python ×")).toBeDefined();
   });
@@ -118,7 +118,7 @@ describe("OnboardingView", () => {
     vi.mocked(api.resumes.extraction).mockResolvedValue(extraction);
 
     renderOnboarding();
-    const title = await screen.findByDisplayValue("Senior Data Engineer");
+    const title = await screen.findByLabelText("Current title");
     fireEvent.change(title, { target: { value: "Principal Data Engineer" } });
     fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
 

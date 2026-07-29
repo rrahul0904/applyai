@@ -14,6 +14,7 @@ def greenhouse_handler(request: httpx.Request) -> httpx.Response:
                 "jobs": [
                     {
                         "id": 127817,
+                        "internal_job_id": 4815,
                         "title": "Senior Data Engineer",
                         "updated_at": "2026-07-25T10:55:28-05:00",
                         "location": {"name": "Remote - United States"},
@@ -42,9 +43,14 @@ def test_greenhouse_fetch_and_normalize_public_job_board():
     assert len(records) == 1
     assert records[0]["data_origin"] == "GREENHOUSE_PUBLIC_API"
     assert records[0]["_applyai_company_name"] == "Example Labs"
+    assert records[0]["_applyai_board_token"] == "example"
+    assert records[0]["_applyai_greenhouse_post_id"] == "127817"
+    assert records[0]["_applyai_internal_job_id"] == "4815"
+    assert records[0]["_applyai_source_updated_at"] == "2026-07-25T10:55:28-05:00"
+    assert records[0]["_applyai_fetched_at"]
 
     job = connector.normalize(records[0])
-    assert job.external_job_id == "127817"
+    assert job.external_job_id == "example:127817"
     assert job.company_name == "Example Labs"
     assert job.title == "Senior Data Engineer"
     assert job.application_url == "https://boards.greenhouse.io/example/jobs/127817"
@@ -54,7 +60,9 @@ def test_greenhouse_fetch_and_normalize_public_job_board():
     assert job.seniority == "UNKNOWN"
     assert job.description == "Build reliable data platforms."
     assert job.posted_at is None
+    assert connector.source_company_identity() == "example"
     assert connector.checkpoint()["count"] == 1
+    assert connector.checkpoint()["board_token"] == "example"
 
 
 def test_greenhouse_health_uses_public_board_endpoint():

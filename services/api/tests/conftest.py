@@ -18,23 +18,37 @@ os.environ.setdefault(
 from app.core.auth import AuthClaims, get_auth_claims  # noqa: E402
 from app.core.database import get_session  # noqa: E402
 from app.core.queue import InMemoryTaskQueue, get_task_queue  # noqa: E402
-from app.core.storage import ObjectStorageProvider, get_object_storage  # noqa: E402
+from app.core.storage import (  # noqa: E402
+    ObjectStorageProvider,
+    StorageObjectMetadata,
+    get_object_storage,
+)
 from app.main import app  # noqa: E402
 
 
 class MemoryStorage(ObjectStorageProvider):
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}
+        self.content_types: dict[str, str] = {}
 
     def put(self, *, key: str, content, content_type: str) -> None:
-        del content_type
         self.objects[key] = content.read()
+        self.content_types[key] = content_type
 
     def delete(self, *, key: str) -> None:
         self.objects.pop(key, None)
+        self.content_types.pop(key, None)
 
     def get(self, *, key: str) -> bytes:
         return self.objects[key]
+
+    def head(self, *, key: str) -> StorageObjectMetadata:
+        content = self.objects[key]
+        return StorageObjectMetadata(
+            size=len(content),
+            content_type=self.content_types.get(key),
+            etag=f'"memory-{len(content)}"',
+        )
 
 
 @pytest.fixture(scope="session")

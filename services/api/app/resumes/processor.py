@@ -2,15 +2,20 @@ import io
 import re
 import uuid
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from docx import Document
 from pypdf import PdfReader
-from sqlalchemy import select
+from sqlalchemy import func, select
 
+from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.core.storage import ObjectStorageProvider
+from app.durability_models import ResumeProcessingAttempt
 from app.models import ResumeExtraction, ResumeVersion
+
+
+PARSER_VERSION = "deterministic-v1"
 
 
 class OcrProvider(ABC):
@@ -135,10 +140,7 @@ def structure_resume(text: str) -> dict:
 
     skill_text = ", ".join(sections["skills"])
     skills = [
-        {
-            "name": skill.strip(),
-            "provenance": "DOCUMENT_EXTRACTED",
-        }
+        {"name": skill.strip(), "provenance": "DOCUMENT_EXTRACTED"}
         for skill in re.split(r"[,;•]", skill_text)
         if skill.strip()
     ]
@@ -167,40 +169,103 @@ def process_resume_version(
     resume_version_id: uuid.UUID,
     storage: ObjectStorageProvider,
 ) -> None:
+    settings = get_settings()
     with SessionLocal() as session:
-        version = session.get(ResumeVersion, resume_version_id)
+        version = session.scalar(
+            select(ResumeVersion)
+            .where(ResumeVersion.id == resume_version_id)
+            .with_for_update()
+        )
         if version is None or version.processing_status in {"NEEDS_REVIEW", "COMPLETED"}:
             return
-        version.processing_status = "PROCESSING"
-        session.commit()
+        if version.upload_status != "UPLOADED":
+            return
 
-        extraction = ResumeExtraction(
+        extraction = session.scalar(
+            select(ResumeExtraction).where(
+                ResumeExtraction.resume_version_id == version.id,
+                ResumeExtraction.parser_version == PARSER_VERSION,
+            )
+        )
+        if extraction is not None and extraction.status in {"NEEDS_REVIEW", "COMPLETED"}:
+            version.processing_status = extraction.status
+            session.commit()
+            return
+
+        latest_attempt = session.scalar(
+            select(ResumeProcessingAttempt)
+            .where(
+                ResumeProcessingAttempt.resume_version_id == version.id,
+                ResumeProcessingAttempt.parser_version == PARSER_VERSION,
+            )
+            .order_by(ResumeProcessingAttempt.attempt_number.desc())
+            .limit(1)
+        )
+        if latest_attempt is not None and latest_attempt.status == "PROCESSING":
+            lease_until = latest_attempt.started_at + timedelta(
+                seconds=settings.sqs_visibility_timeout_seconds * 2
+            )
+            if lease_until > datetime.now(timezone.utc):
+                # Another delivery is actively processing this version. The durable
+                # extraction/attempt rows make it safe to acknowledge this duplicate.
+                return
+            latest_attempt.status = "ABANDONED"
+            latest_attempt.completed_at = datetime.now(timezone.utc)
+
+        next_attempt = (
+            session.scalar(
+                select(func.coalesce(func.max(ResumeProcessingAttempt.attempt_number), 0)).where(
+                    ResumeProcessingAttempt.resume_version_id == version.id,
+                    ResumeProcessingAttempt.parser_version == PARSER_VERSION,
+                )
+            )
+            or 0
+        ) + 1
+        attempt = ResumeProcessingAttempt(
             resume_version_id=version.id,
-            parser_version="deterministic-v1",
+            parser_version=PARSER_VERSION,
+            attempt_number=next_attempt,
             status="PROCESSING",
         )
-        session.add(extraction)
+        session.add(attempt)
+
+        if extraction is None:
+            extraction = ResumeExtraction(
+                resume_version_id=version.id,
+                parser_version=PARSER_VERSION,
+                status="PROCESSING",
+            )
+            session.add(extraction)
+        else:
+            extraction.status = "PROCESSING"
+            extraction.error_code = None
+        version.processing_status = "PROCESSING"
         session.commit()
-        session.refresh(extraction)
 
         try:
             content = storage.get(key=version.storage_key)
             text = extract_document_text(content, version.content_type).strip()
+            extraction.extracted_text = text or None
             if len(text) < 120 or len(text.split()) < 20:
-                extraction.extracted_text = text or None
+                extraction.structured_data = None
                 extraction.status = "NEEDS_REVIEW"
                 extraction.error_code = "INSUFFICIENT_TEXT"
-                version.processing_status = "NEEDS_REVIEW"
             else:
-                extraction.extracted_text = text
                 extraction.structured_data = structure_resume(text)
                 extraction.status = "NEEDS_REVIEW"
-                version.processing_status = "NEEDS_REVIEW"
+                extraction.error_code = None
+            version.processing_status = "NEEDS_REVIEW"
+            attempt.status = "COMPLETED"
+            attempt.completed_at = datetime.now(timezone.utc)
             session.commit()
         except Exception as exc:
-            extraction.status = "FAILED"
-            extraction.error_code = (
+            error_code = (
                 str(exc) if str(exc) in {"UNSUPPORTED_DOCUMENT_TYPE"} else "EXTRACTION_FAILED"
             )
+            extraction.status = "FAILED"
+            extraction.error_code = error_code
             version.processing_status = "FAILED"
+            attempt.status = "FAILED"
+            attempt.error_code = error_code
+            attempt.completed_at = datetime.now(timezone.utc)
             session.commit()

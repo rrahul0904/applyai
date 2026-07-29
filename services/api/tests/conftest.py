@@ -51,9 +51,32 @@ class MemoryStorage(ObjectStorageProvider):
         )
 
 
-@pytest.fixture(scope="session")
-def database_url() -> str:
-    return os.environ["DATABASE_URL"]
+def truncate_database(database_url: str) -> None:
+    engine = create_engine(database_url)
+    try:
+        with engine.begin() as connection:
+            table_names = [
+                row[0]
+                for row in connection.execute(
+                    text(
+                        "SELECT tablename FROM pg_tables "
+                        "WHERE schemaname='public' AND tablename <> 'alembic_version'"
+                    )
+                )
+            ]
+            if table_names:
+                quoted = ", ".join(f'"{name}"' for name in table_names)
+                connection.execute(text(f"TRUNCATE TABLE {quoted} RESTART IDENTITY CASCADE"))
+    finally:
+        engine.dispose()
+
+
+@pytest.fixture()
+def database_url() -> Generator[str, None, None]:
+    url = os.environ["DATABASE_URL"]
+    truncate_database(url)
+    yield url
+    truncate_database(url)
 
 
 @pytest.fixture()
@@ -89,24 +112,6 @@ def client(database_url: str) -> Generator[TestClient, None, None]:
         yield test_client
 
     app.dependency_overrides.clear()
-    table_names = [
-        row[0]
-        for row in engine.execute(text("SELECT tablename FROM pg_tables WHERE schemaname='public'"))
-    ] if hasattr(engine, "execute") else []
-    with engine.begin() as connection:
-        if not table_names:
-            table_names = [
-                row[0]
-                for row in connection.execute(
-                    text(
-                        "SELECT tablename FROM pg_tables "
-                        "WHERE schemaname='public' AND tablename <> 'alembic_version'"
-                    )
-                )
-            ]
-        if table_names:
-            quoted = ", ".join(f'"{name}"' for name in table_names)
-            connection.execute(text(f"TRUNCATE TABLE {quoted} RESTART IDENTITY CASCADE"))
     engine.dispose()
 
 

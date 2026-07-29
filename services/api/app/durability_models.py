@@ -3,11 +3,28 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
+from app.models import Resume, ResumeExtraction
+
+
+# Keep Alembic metadata aligned with the explicit integrity indexes introduced in
+# the Milestone 2.6 migration.
+Index(
+    "uq_resumes_one_master_per_user",
+    Resume.__table__.c.user_id,
+    unique=True,
+    postgresql_where=Resume.__table__.c.is_master.is_(True),
+)
+Index(
+    "uq_resume_extractions_version_parser",
+    ResumeExtraction.__table__.c.resume_version_id,
+    ResumeExtraction.__table__.c.parser_version,
+    unique=True,
+)
 
 
 def uuid_pk() -> Mapped[uuid.UUID]:

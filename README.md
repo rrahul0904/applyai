@@ -5,7 +5,7 @@ jobs, prepare applications, and preserve their job-search history.
 
 The repository is currently focused on the Candidate MVP and legitimate real-job
 ingestion. Advanced AI, employer, mobile, and public-launch work is intentionally
-paused until the candidate workflow and job-data foundation are verified.
+paused until the candidate workflow and staging foundation are verified.
 
 ## Repository
 
@@ -15,6 +15,8 @@ apps/
 services/
   api/                 FastAPI modular monolith
   api/app/workers/     Durable background workers
+infra/
+  staging/             AWS staging Terraform; Vercel and Clerk remain external
 docs/                  Product and architecture decisions
 compose.yaml           Local PostgreSQL
 ```
@@ -26,6 +28,7 @@ compose.yaml           Local PostgreSQL
 - Python 3.12+
 - uv
 - PostgreSQL 17, or Docker
+- Terraform 1.9+ for staging infrastructure work
 
 ## Local setup
 
@@ -158,6 +161,48 @@ deterministic source identity, canonical deduplication, versioning, and miss-bas
 freshness transitions are handled before jobs are exposed through ACTIVE search.
 It does not submit applications or scrape authenticated/private career systems.
 
+## Candidate E2E
+
+The deterministic Playwright journey exercises the real Next.js and FastAPI
+processes against PostgreSQL. CI is allowed to substitute controlled dev auth,
+local object storage, and an in-memory task queue; the staging journey must use
+real Clerk, S3, SQS/DLQ, and ECS workers.
+
+With local PostgreSQL and migrations ready:
+
+```bash
+uv run --project services/api python services/api/scripts/create_e2e_resume.py /tmp/applyai-e2e-resume.docx
+E2E_RESUME_PATH=/tmp/applyai-e2e-resume.docx pnpm test:e2e
+```
+
+The CI job owns database migration, deterministic job seeding, the generated DOCX
+fixture, Chromium installation, and the Candidate A/Candidate B isolation flow.
+
+## Production API image
+
+The API, resume worker, outbox publisher, migration task, and Greenhouse ingestion
+task use one immutable container image with different commands:
+
+```bash
+docker build -t applyai-api:local services/api
+```
+
+The image runs as a non-root user. CI builds it on every verification run before
+staging activation.
+
+## Staging infrastructure
+
+AWS staging Terraform lives in [`infra/staging`](infra/staging/README.md). It
+covers VPC/subnets/security groups, HTTPS ALB, ECS/Fargate, ECR, Aurora
+PostgreSQL, private S3 resume storage, SQS/DLQ, IAM, CloudWatch, and EventBridge.
+Vercel remains the web host and Clerk remains the identity provider.
+
+The first Terraform apply deliberately leaves API/worker/outbox desired counts at
+zero and scheduled ingestion disabled. Push the exact image, run the migration
+task, then activate services. Infrastructure source is not equivalent to a
+verified staging deployment; real AWS + Clerk + Vercel execution is required for
+that status.
+
 ## Validation
 
 ```bash
@@ -166,6 +211,13 @@ pnpm --dir apps/web typecheck
 pnpm test:web
 pnpm build
 pnpm openapi:check
+pnpm test:e2e
+
+docker build -t applyai-api:ci services/api
+
+terraform -chdir=infra/staging fmt -check -recursive
+terraform -chdir=infra/staging init -backend=false
+terraform -chdir=infra/staging validate
 
 cd services/api
 uv run alembic upgrade head
@@ -173,10 +225,11 @@ uv run alembic check
 uv run pytest
 ```
 
-GitHub CI runs lint, typecheck, Vitest, production build, OpenAPI contract-drift,
-Alembic validation, and backend tests independently. The workflow can also be
-started manually through `workflow_dispatch` when a fresh verification run is
-needed without creating a source-only commit.
+GitHub CI runs lint, typecheck, Vitest, production build, OpenAPI contract drift,
+Alembic validation, backend tests, Candidate MVP Playwright, the production API
+container build, and staging Terraform validation independently. The workflow can
+also be started manually through `workflow_dispatch` when a fresh verification run
+is needed without creating a source-only commit.
 
 Do not reuse historical test counts as verification for a newer PR head. The
 implementation status and evidence are in

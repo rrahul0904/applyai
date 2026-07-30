@@ -57,6 +57,9 @@ test("candidate MVP persists resume, profile, saved job, application, status, an
 
   await page.goto("/jobs");
   await page.getByLabel("Search jobs").fill("Data Analyst");
+  await page.waitForURL(
+    (url) => url.pathname === "/jobs" && url.searchParams.get("keyword") === "Data Analyst",
+  );
   const dataAnalystCard = page
     .locator(".job-card")
     .filter({ has: page.getByRole("heading", { name: "Data Analyst", exact: true }) })

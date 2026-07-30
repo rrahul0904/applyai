@@ -19,12 +19,12 @@ resource "aws_ecr_lifecycle_policy" "api" {
       {
         rulePriority = 1
         description  = "Keep the 20 most recent staging images"
-        selection    = {
+        selection = {
           tagStatus   = "any"
           countType   = "imageCountMoreThan"
           countNumber = 20
         }
-        action       = {
+        action = {
           type = "expire"
         }
       }
@@ -131,9 +131,9 @@ resource "aws_rds_cluster" "database" {
   vpc_security_group_ids = [aws_security_group.database.id]
 
   backup_retention_period = 7
-  copy_tags_to_snapshot    = true
-  deletion_protection      = false
-  skip_final_snapshot      = true
+  copy_tags_to_snapshot   = true
+  deletion_protection     = false
+  skip_final_snapshot     = true
 
   serverlessv2_scaling_configuration {
     min_capacity = var.aurora_min_acu

@@ -189,7 +189,13 @@ export const api = {
       request<JobDetail>(`/jobs/${id}`, { signal }),
   },
   savedJobs: {
-    list: (signal?: AbortSignal) => request<Job[]>("/jobs/saved", { signal }),
+    list: (signal?: AbortSignal, cursor?: string) => {
+      const params = new URLSearchParams();
+      if (cursor) params.set("cursor", cursor);
+      const query = params.toString();
+      const suffix = query ? `?${query}` : "";
+      return request<JobPage>(`/jobs/saved${suffix}`, { signal });
+    },
     save: (id: string) =>
       request<void>(`/jobs/${id}/save`, { method: "POST" }),
     unsave: (id: string) =>

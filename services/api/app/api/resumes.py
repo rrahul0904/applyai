@@ -463,10 +463,9 @@ def confirm_resume_profile(
         )
 
     profile = save_profile(
-        payload,
+        payload=payload,
         user=user,
         session=session,
-        source="resume_confirmation",
         commit=False,
     )
     extraction.status = "COMPLETED"

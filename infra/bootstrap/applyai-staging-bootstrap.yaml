@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >-
   One-time ApplyAI staging bootstrap. Creates the Terraform state bucket,
-  GitHub Actions OIDC provider, and a staging deployment role. Run this in a
+  GitHub Actions OIDC trust path, and a staging deployment role. Run this in a
   dedicated non-production AWS account before using the staging workflows.
 
 Parameters:
@@ -17,6 +17,17 @@ Parameters:
     Type: String
     Default: ''
     Description: Optional explicit Terraform state bucket name. Leave blank for an account/region-derived name.
+  CreateGitHubOidcProvider:
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Set false when this AWS account already has token.actions.githubusercontent.com registered as an IAM OIDC provider.
+  ExistingGitHubOidcProviderArn:
+    Type: String
+    Default: ''
+    Description: Required when CreateGitHubOidcProvider=false.
   GitHubOwner:
     Type: String
     Default: rrahul0904
@@ -34,6 +45,7 @@ Parameters:
 
 Conditions:
   HasExplicitStateBucketName: !Not [!Equals [!Ref StateBucketName, '']]
+  ShouldCreateGitHubOidcProvider: !Equals [!Ref CreateGitHubOidcProvider, 'true']
 
 Resources:
   TerraformStateBucket:
@@ -84,6 +96,7 @@ Resources:
 
   GitHubActionsOidcProvider:
     Type: AWS::IAM::OIDCProvider
+    Condition: ShouldCreateGitHubOidcProvider
     Properties:
       Url: https://token.actions.githubusercontent.com
       ClientIdList:
@@ -104,7 +117,10 @@ Resources:
         Statement:
           - Effect: Allow
             Principal:
-              Federated: !Ref GitHubActionsOidcProvider
+              Federated: !If
+                - ShouldCreateGitHubOidcProvider
+                - !Ref GitHubActionsOidcProvider
+                - !Ref ExistingGitHubOidcProviderArn
             Action: sts:AssumeRoleWithWebIdentity
             Condition:
               StringEquals:
@@ -144,6 +160,8 @@ Resources:
                   - logs:*
                   - cloudwatch:*
                   - events:*
+                  - route53:*
+                  - acm:DescribeCertificate
                   - secretsmanager:DescribeSecret
                   - secretsmanager:GetSecretValue
                   - iam:CreateRole
@@ -176,4 +194,7 @@ Outputs:
     Description: Set this as the GitHub staging environment variable AWS_DEPLOY_ROLE_ARN.
     Value: !GetAtt GitHubDeployRole.Arn
   GitHubOidcProviderArn:
-    Value: !Ref GitHubActionsOidcProvider
+    Value: !If
+      - ShouldCreateGitHubOidcProvider
+      - !Ref GitHubActionsOidcProvider
+      - !Ref ExistingGitHubOidcProviderArn

@@ -1,36 +1,54 @@
 # ApplyAI
 
-ApplyAI is a structured career platform that helps candidates discover relevant
-jobs, prepare applications, and preserve their job-search history.
+ApplyAI is a structured candidate career platform for job discovery, application preparation, and durable job-search history.
 
-The repository is currently focused on the Candidate MVP and legitimate real-job
-ingestion. Advanced AI, employer, mobile, and public-launch work is intentionally
-paused until the candidate workflow and staging foundation are verified.
+The repository is intentionally focused on the Candidate MVP, reliable public-job ingestion, and deployment readiness. AI matching, embeddings, mobile, employer workflows, billing, and auto-apply stay gated until the real staging Candidate MVP is verified.
 
-## Repository
+## Architecture
 
 ```text
-apps/
-  web/                 Official Next.js App Router client
-services/
-  api/                 FastAPI modular monolith
-  api/app/workers/     Durable background workers
-infra/
-  staging/             AWS staging Terraform; Vercel and Clerk remain external
-docs/                  Product and architecture decisions
-compose.yaml           Local PostgreSQL
+Vercel
+  Next.js App Router + Clerk
+             |
+             | HTTPS
+             v
+AWS ALB -> ECS/Fargate FastAPI
+                |
+                +-> Aurora PostgreSQL
+                +-> private S3 resume storage
+                +-> PostgreSQL transactional outbox
+                              |
+                              v
+                            SQS -> resume worker
+                              |
+                              +-> DLQ
+
+EventBridge -> Greenhouse ingestion Fargate task
+CloudWatch  -> logs + alarms
 ```
 
-## Prerequisites
+Repository layout:
+
+```text
+apps/web/               Next.js candidate web
+services/api/           FastAPI modular monolith + workers
+infra/bootstrap/        one-time AWS/GitHub OIDC bootstrap
+infra/staging/          validated staging Terraform
+docs/                   architecture, status, deployment and recovery runbooks
+compose.yaml             local PostgreSQL
+```
+
+## Local development
+
+Prerequisites:
 
 - Node.js 22+
 - pnpm 10+
 - Python 3.12+
 - uv
-- PostgreSQL 17, or Docker
-- Terraform 1.9+ for staging infrastructure work
+- PostgreSQL 17 or Docker
 
-## Local setup
+Setup:
 
 ```bash
 docker compose up -d postgres
@@ -38,7 +56,7 @@ pnpm install
 uv sync --system-certs --project services/api
 ```
 
-Create `applyai_test` once for the API tests:
+Create the API test database once:
 
 ```bash
 docker compose exec -T postgres createdb -U applyai applyai_test
@@ -52,158 +70,126 @@ DATABASE_URL=postgresql+psycopg://applyai:applyai@localhost:55432/applyai \
   uv run alembic upgrade head
 ```
 
-Run the applications:
+Run web/API:
 
 ```bash
 pnpm dev
 pnpm dev:api
 ```
 
-Authentication requires the Clerk values documented in
-`apps/web/.env.example` and `services/api/.env.example`.
+See `apps/web/.env.example` and `services/api/.env.example` for development configuration.
 
-## Resume upload and processing
+## Durable resume lifecycle
 
-Development may use the local object store, in-memory queue, and API background
-processor for a deterministic developer experience.
-
-Staging/production use the durable path:
+Development may use controlled local storage and an in-memory queue. Staging/production are fail-closed around the durable path:
 
 ```text
 Browser
-  ↓ create upload intent
-FastAPI
-  ↓ presigned PUT
-private S3
-  ↓ upload-complete verification
-PostgreSQL transaction
-  ├─ ResumeVersion → QUEUED
-  └─ task_outbox RESUME_PARSE
-          ↓
-outbox publisher
-          ↓
-SQS + configured DLQ
-          ↓
-resume worker
-          ↓
-ResumeExtraction → NEEDS_REVIEW
-          ↓ candidate confirmation
-COMPLETED + USER_VERIFIED profile
+  -> FastAPI upload intent
+  -> presigned private-S3 PUT
+  -> FastAPI upload-complete / S3 HEAD verification
+  -> PostgreSQL transaction
+       ResumeVersion -> QUEUED
+       task_outbox    -> RESUME_PARSE
+  -> outbox publisher
+  -> SQS
+  -> resume worker
+  -> ResumeExtraction NEEDS_REVIEW
+  -> candidate confirmation
+  -> COMPLETED + USER_VERIFIED profile
 ```
 
-Configure the durable providers:
+Durable environments require real S3, SQS + DLQ, Clerk, HTTPS `WEB_ORIGIN`, and PostgreSQL. Resume bytes bypass the Vercel BFF.
 
-```text
-TASK_QUEUE_PROVIDER=sqs
-SQS_QUEUE_URL=...
-SQS_DLQ_URL=...
-SQS_REGION=us-east-1
-SQS_MAX_RECEIVE_COUNT=5
-SQS_VISIBILITY_TIMEOUT_SECONDS=300
-SQS_VISIBILITY_HEARTBEAT_SECONDS=120
-RESUME_PROCESSING_TIMEOUT_SECONDS=900
-OBJECT_STORAGE_PROVIDER=s3
-S3_BUCKET=...
-```
-
-The S3 bucket must be private. Its CORS policy must allow browser `PUT` from the
-configured `WEB_ORIGIN`, including `Content-Type` and
-`x-amz-server-side-encryption` request headers. No AWS credentials are exposed to
-the browser; the API returns short-lived object-specific presigned URLs.
-
-Run the outbox publisher and worker independently from the API container:
+Useful worker/operator commands:
 
 ```bash
 cd services/api
 uv run python -m app.core.outbox
 uv run python -m app.workers.resume
-```
-
-Configure the SQS redrive policy so `resume-processing` moves exhausted messages
-to `resume-processing-dlq`; the AWS `maxReceiveCount` should match
-`SQS_MAX_RECEIVE_COUNT`. `SQS_VISIBILITY_TIMEOUT_SECONDS` defines the broker
-visibility lease, `SQS_VISIBILITY_HEARTBEAT_SECONDS` renews it while work is
-active, and `RESUME_PROCESSING_TIMEOUT_SECONDS` determines when a persisted
-PROCESSING attempt is stale enough to recover.
-
-Operators can inspect failed task identifiers without printing raw queue payloads
-or candidate resume content:
-
-```bash
-cd services/api
 uv run python -m app.ops.dlq --limit 10
 ```
 
-The API intentionally does not make RDS Proxy a hard dependency. Enable RDS Proxy
-when connection pressure from horizontally scaled API/worker tasks, failover
-requirements, or database connection churn justify it; SQLAlchemy pool settings
-are configurable through the API environment first.
+The DLQ inspection path intentionally reports task identifiers rather than raw resume content.
 
 ## Greenhouse ingestion
 
-ApplyAI includes a connector for Greenhouse's public Job Board GET API. Configure
-explicit board tokens as a JSON array:
+ApplyAI ingests explicit public Greenhouse Job Board tokens only:
 
 ```text
 GREENHOUSE_BOARD_TOKENS=["example-company","another-company"]
 ```
 
-Run ingestion:
+Run manually:
 
 ```bash
 cd services/api
 uv run python -m app.jobs.ingest
 ```
 
-The connector preserves board-scoped source identity, raw source payloads, source
-provenance, Greenhouse update metadata, and fetch times. Company source mapping,
-deterministic source identity, canonical deduplication, versioning, and miss-based
-freshness transitions are handled before jobs are exposed through ACTIVE search.
-It does not submit applications or scrape authenticated/private career systems.
+The pipeline preserves board-scoped source identity, raw provenance and source timestamps; repeat fetches refresh `last_seen_at`; material source changes update the canonical job/search document and create job versions; successful complete board runs drive ACTIVE -> UNKNOWN -> STALE freshness while failed/partial runs do not create negative freshness evidence.
 
 ## Candidate E2E
 
-The deterministic Playwright journey exercises the real Next.js and FastAPI
-processes against PostgreSQL. CI is allowed to substitute controlled dev auth,
-local object storage, and an in-memory task queue; the staging journey must use
-real Clerk, S3, SQS/DLQ, and ECS workers.
-
-With local PostgreSQL and migrations ready:
+The deterministic Playwright journey runs real Next.js + FastAPI + PostgreSQL while CI is allowed controlled substitutes for auth/storage/queue. It covers Candidate A onboarding/resume/search/save/application/status/note/relogin persistence and Candidate B isolation.
 
 ```bash
 uv run --project services/api python services/api/scripts/create_e2e_resume.py /tmp/applyai-e2e-resume.docx
 E2E_RESUME_PATH=/tmp/applyai-e2e-resume.docx pnpm test:e2e
 ```
 
-The CI job owns database migration, deterministic job seeding, the generated DOCX
-fixture, Chromium installation, and the Candidate A/Candidate B isolation flow.
+Real staging must replace those controlled substitutes with Clerk, S3, SQS/DLQ and ECS workers.
 
 ## Production API image
 
-The API, resume worker, outbox publisher, migration task, and Greenhouse ingestion
-task use one immutable container image with different commands:
+API, resume worker, outbox publisher, migration task and Greenhouse ingestion use the same immutable image with role-specific commands:
 
 ```bash
 docker build -t applyai-api:local services/api
 ```
 
-The image runs as a non-root user. CI builds it on every verification run before
-staging activation.
+The image runs as a non-root user. Staging releases tag ECR images with the full Git commit SHA.
 
-## Staging infrastructure
+## AWS staging deployment package
 
-AWS staging Terraform lives in [`infra/staging`](infra/staging/README.md). It
-covers VPC/subnets/security groups, HTTPS ALB, ECS/Fargate, ECR, Aurora
-PostgreSQL, private S3 resume storage, SQS/DLQ, IAM, CloudWatch, and EventBridge.
-Vercel remains the web host and Clerk remains the identity provider.
+Start here:
 
-The first Terraform apply deliberately leaves API/worker/outbox desired counts at
-zero and scheduled ingestion disabled. Push the exact image, run the migration
-task, then activate services. Infrastructure source is not equivalent to a
-verified staging deployment; real AWS + Clerk + Vercel execution is required for
-that status.
+- [`infra/bootstrap/README.md`](infra/bootstrap/README.md) — one-time AWS state/OIDC bootstrap
+- [`infra/staging/README.md`](infra/staging/README.md) — Terraform stack
+- [`docs/AWS_STAGING_DEPLOYMENT.md`](docs/AWS_STAGING_DEPLOYMENT.md) — complete operator runbook
+- [`docs/PRODUCTION_PROMOTION_CHECKLIST.md`](docs/PRODUCTION_PROMOTION_CHECKLIST.md) — production gate after staging
+- [`infra/staging/github.environment.example`](infra/staging/github.environment.example) — GitHub `staging` environment manifest
+- [`apps/web/.env.staging.example`](apps/web/.env.staging.example) — Vercel/Clerk staging template
+
+Deployment sequence:
+
+```text
+1. CloudFormation bootstrap
+      state S3 + GitHub OIDC + staging deploy role
+2. GitHub staging environment
+      AWS/ACM/Clerk/domain variables
+3. ApplyAI Staging Preflight
+      OIDC + state + ACM + Clerk prerequisite checks
+4. ApplyAI Staging Infrastructure
+      plan -> dormant AWS foundation apply
+5. API DNS -> ALB
+6. ApplyAI Staging Release
+      immutable image -> migration -> service activation -> health/readiness
+7. ApplyAI Staging Infrastructure Verification
+      ECS/ALB/Aurora/S3/SQS/DLQ/CloudWatch checks
+8. real Candidate A/B acceptance + failure injection
+9. rollback/recovery drills
+```
+
+Normal deployment workflows use GitHub OIDC and require no long-lived `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` credentials.
+
+The first infrastructure apply deliberately leaves API/worker/outbox desired counts at zero and scheduled ingestion disabled. The release workflow runs Alembic from the exact image before changing application services and aborts service activation on migration failure.
+
+`ApplyAI Staging Rollback` can restore a previous immutable application image. Database schema remains roll-forward; rollback images must remain compatible with the current schema.
 
 ## Validation
+
+Application/runtime gates:
 
 ```bash
 pnpm lint
@@ -215,22 +201,23 @@ pnpm test:e2e
 
 docker build -t applyai-api:ci services/api
 
-terraform -chdir=infra/staging fmt -check -recursive
-terraform -chdir=infra/staging init -backend=false
-terraform -chdir=infra/staging validate
-
 cd services/api
 uv run alembic upgrade head
 uv run alembic check
 uv run pytest
 ```
 
-GitHub CI runs lint, typecheck, Vitest, production build, OpenAPI contract drift,
-Alembic validation, backend tests, Candidate MVP Playwright, the production API
-container build, and staging Terraform validation independently. The workflow can
-also be started manually through `workflow_dispatch` when a fresh verification run
-is needed without creating a source-only commit.
+Infrastructure source gates:
 
-Do not reuse historical test counts as verification for a newer PR head. The
-implementation status and evidence are in
-[`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md).
+```bash
+terraform -chdir=infra/staging fmt -check -recursive
+terraform -chdir=infra/staging init -backend=false
+terraform -chdir=infra/staging validate
+
+cfn-lint infra/bootstrap/applyai-staging-bootstrap.yaml
+actionlint
+```
+
+GitHub CI independently exercises application tests/builds/migrations, OpenAPI drift, Docker build, Terraform validation, Candidate MVP Playwright, CloudFormation bootstrap lint and workflow static analysis.
+
+Do not reuse historical PASS results for a newer source-changing head. Current evidence and external deployment boundaries are recorded in [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md).

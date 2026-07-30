@@ -93,7 +93,12 @@ Configure the durable providers:
 ```text
 TASK_QUEUE_PROVIDER=sqs
 SQS_QUEUE_URL=...
+SQS_DLQ_URL=...
 SQS_REGION=us-east-1
+SQS_MAX_RECEIVE_COUNT=5
+SQS_VISIBILITY_TIMEOUT_SECONDS=300
+SQS_VISIBILITY_HEARTBEAT_SECONDS=120
+RESUME_PROCESSING_TIMEOUT_SECONDS=900
 OBJECT_STORAGE_PROVIDER=s3
 S3_BUCKET=...
 ```
@@ -111,11 +116,20 @@ uv run python -m app.core.outbox
 uv run python -m app.workers.resume
 ```
 
-Configure an SQS dead-letter queue/redrive policy so repeated parser failures are
-bounded and observable. `SQS_VISIBILITY_TIMEOUT_SECONDS` defines the worker lease;
-`SQS_VISIBILITY_HEARTBEAT_SECONDS` must be shorter and extends that lease while a
-parser is active. The AWS redrive `maxReceiveCount` remains deployment
-configuration rather than application code.
+Configure the SQS redrive policy so `resume-processing` moves exhausted messages
+to `resume-processing-dlq`; the AWS `maxReceiveCount` should match
+`SQS_MAX_RECEIVE_COUNT`. `SQS_VISIBILITY_TIMEOUT_SECONDS` defines the broker
+visibility lease, `SQS_VISIBILITY_HEARTBEAT_SECONDS` renews it while work is
+active, and `RESUME_PROCESSING_TIMEOUT_SECONDS` determines when a persisted
+PROCESSING attempt is stale enough to recover.
+
+Operators can inspect failed task identifiers without printing raw queue payloads
+or candidate resume content:
+
+```bash
+cd services/api
+uv run python -m app.ops.dlq --limit 10
+```
 
 The API intentionally does not make RDS Proxy a hard dependency. Enable RDS Proxy
 when connection pressure from horizontally scaled API/worker tasks, failover
@@ -151,12 +165,18 @@ pnpm lint
 pnpm --dir apps/web typecheck
 pnpm test:web
 pnpm build
+pnpm openapi:check
 
 cd services/api
 uv run alembic upgrade head
 uv run alembic check
 uv run pytest
 ```
+
+GitHub CI runs lint, typecheck, Vitest, production build, OpenAPI contract-drift,
+Alembic validation, and backend tests independently. The workflow can also be
+started manually through `workflow_dispatch` when a fresh verification run is
+needed without creating a source-only commit.
 
 Do not reuse historical test counts as verification for a newer PR head. The
 implementation status and evidence are in

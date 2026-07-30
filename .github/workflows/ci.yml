@@ -222,6 +222,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
+      DATABASE_URL: postgresql+psycopg://applyai:applyai@127.0.0.1:5432/applyai_test
       E2E_DATABASE_URL: postgresql+psycopg://applyai:applyai@127.0.0.1:5432/applyai_test
       E2E_RESUME_PATH: /tmp/applyai-e2e-resume.docx
     steps:
@@ -246,13 +247,11 @@ jobs:
       - name: Install API dependencies
         run: uv sync --project services/api --group dev --locked
       - name: Apply migrations
-        run: uv run --project services/api alembic upgrade head
+        run: cd services/api && uv run alembic upgrade head
       - name: Seed deterministic jobs
-        run: uv run --project services/api python -m app.jobs.seed
-        env:
-          DATABASE_URL: ${{ env.E2E_DATABASE_URL }}
+        run: cd services/api && uv run python -m app.jobs.seed
       - name: Create deterministic resume fixture
-        run: uv run --project services/api python services/api/scripts/create_e2e_resume.py "$E2E_RESUME_PATH"
+        run: cd services/api && uv run python scripts/create_e2e_resume.py "$E2E_RESUME_PATH"
       - name: Install Chromium
         run: pnpm --dir apps/web exec playwright install --with-deps chromium
       - name: Run Candidate MVP journey

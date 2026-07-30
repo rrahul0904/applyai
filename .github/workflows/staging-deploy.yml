@@ -83,12 +83,14 @@ jobs:
           cluster="$(terraform -chdir=infra/staging output -raw ecs_cluster_name)"
           subnets="$(terraform -chdir=infra/staging output -json app_subnet_ids | jq -r 'join(",")')"
           security_group="$(terraform -chdir=infra/staging output -raw ecs_security_group_id)"
-          echo "image_tag=${image_tag}" >> "$GITHUB_OUTPUT"
-          echo "repository_url=${repository_url}" >> "$GITHUB_OUTPUT"
-          echo "repository_name=${repository_name}" >> "$GITHUB_OUTPUT"
-          echo "cluster=${cluster}" >> "$GITHUB_OUTPUT"
-          echo "subnets=${subnets}" >> "$GITHUB_OUTPUT"
-          echo "security_group=${security_group}" >> "$GITHUB_OUTPUT"
+          {
+            echo "image_tag=${image_tag}"
+            echo "repository_url=${repository_url}"
+            echo "repository_name=${repository_name}"
+            echo "cluster=${cluster}"
+            echo "subnets=${subnets}"
+            echo "security_group=${security_group}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Login to Amazon ECR
         id: ecr
@@ -225,7 +227,7 @@ jobs:
             echo "- Image: \`${IMAGE_URI}\`"
             echo '- Alembic migration gate: passed'
             echo '- ECS services: stable'
-            echo '- `/health`: passed'
-            echo '- `/ready`: passed'
-            echo "- Greenhouse schedule enabled: \`${{ inputs.enable_ingestion }}\`"
+            echo '- /health: passed'
+            echo '- /ready: passed'
+            echo "- Greenhouse schedule enabled: ${{ inputs.enable_ingestion }}"
           } >> "$GITHUB_STEP_SUMMARY"

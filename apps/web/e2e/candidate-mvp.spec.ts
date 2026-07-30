@@ -59,7 +59,10 @@ test("candidate MVP persists resume, profile, saved job, application, status, an
   await page.getByLabel("Search jobs").fill("Data Analyst");
   const dataAnalystLink = page.getByRole("link", { name: "Data Analyst", exact: true }).first();
   await expect(dataAnalystLink).toBeVisible({ timeout: 15_000 });
+  const jobPath = await dataAnalystLink.getAttribute("href");
+  expect(jobPath).toMatch(/^\/jobs\/[0-9a-f-]+$/i);
   await dataAnalystLink.click();
+  await page.waitForURL((url) => url.pathname === jobPath);
   await expect(page.getByRole("heading", { name: "Data Analyst" })).toBeVisible();
 
   await page.getByRole("button", { name: "Save job" }).click();

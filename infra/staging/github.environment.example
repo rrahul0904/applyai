@@ -1,0 +1,18 @@
+# GitHub Environment: staging
+# Store these as GitHub environment variables, not repository source secrets.
+# Values below are placeholders only.
+
+AWS_REGION=us-east-1
+AWS_DEPLOY_ROLE_ARN=arn:aws:iam::123456789012:role/applyai-staging-github-deploy
+TF_STATE_BUCKET=applyai-terraform-state-123456789012-us-east-1
+
+WEB_ORIGIN=https://staging.example.com
+API_BASE_URL=https://api.staging.example.com
+API_CERTIFICATE_ARN=arn:aws:acm:us-east-1:123456789012:certificate/REPLACE_ME
+
+CLERK_ISSUER=https://REPLACE_ME.clerk.accounts.dev
+CLERK_JWKS_URL=https://REPLACE_ME.clerk.accounts.dev/.well-known/jwks.json
+CLERK_AUDIENCE=
+
+# JSON array. Start with a deliberately small public board set for staging verification.
+GREENHOUSE_BOARD_TOKENS=["example-board"]

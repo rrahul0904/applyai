@@ -57,11 +57,15 @@ test("candidate MVP persists resume, profile, saved job, application, status, an
 
   await page.goto("/jobs");
   await page.getByLabel("Search jobs").fill("Data Analyst");
-  const dataAnalystLink = page.getByRole("link", { name: "Data Analyst", exact: true }).first();
-  await expect(dataAnalystLink).toBeVisible({ timeout: 15_000 });
-  const jobPath = await dataAnalystLink.getAttribute("href");
+  const dataAnalystCard = page
+    .locator(".job-card")
+    .filter({ has: page.getByRole("heading", { name: "Data Analyst", exact: true }) })
+    .first();
+  await expect(dataAnalystCard).toBeVisible({ timeout: 15_000 });
+  const detailLink = dataAnalystCard.getByRole("link", { name: "View job" });
+  const jobPath = await detailLink.getAttribute("href");
   expect(jobPath).toMatch(/^\/jobs\/[0-9a-f-]+$/i);
-  await dataAnalystLink.click();
+  await detailLink.click();
   await page.waitForURL((url) => url.pathname === jobPath);
   await expect(page.getByRole("heading", { name: "Data Analyst" })).toBeVisible();
 
@@ -99,5 +103,10 @@ test("candidate MVP persists resume, profile, saved job, application, status, an
   await expect(page.getByText(persistenceNote)).toBeVisible();
 
   await page.goto("/saved");
-  await expect(page.getByRole("link", { name: "Data Analyst", exact: true }).first()).toBeVisible();
+  await expect(
+    page
+      .locator(".job-card")
+      .filter({ has: page.getByRole("heading", { name: "Data Analyst", exact: true }) })
+      .first(),
+  ).toBeVisible();
 });

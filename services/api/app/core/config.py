@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import quote
 
 from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -18,6 +19,11 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("ENVIRONMENT", "APP_ENV"),
     )
     database_url: str = "postgresql+psycopg://applyai:applyai@localhost:55432/applyai"
+    database_host: str | None = None
+    database_port: int = Field(default=5432, ge=1, le=65_535)
+    database_name: str | None = None
+    database_user: str | None = None
+    database_password: str | None = None
     database_pool_size: int = Field(default=10, ge=1, le=100)
     database_max_overflow: int = Field(default=20, ge=0, le=200)
     database_pool_timeout_seconds: int = Field(default=30, ge=1, le=300)
@@ -59,6 +65,34 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def guard_runtime_configuration(self) -> "Settings":
+        database_components = {
+            "DATABASE_HOST": self.database_host,
+            "DATABASE_NAME": self.database_name,
+            "DATABASE_USER": self.database_user,
+            "DATABASE_PASSWORD": self.database_password,
+        }
+        supplied_database_components = [
+            name for name, value in database_components.items() if value is not None
+        ]
+        if supplied_database_components and len(supplied_database_components) != len(
+            database_components
+        ):
+            missing = [
+                name for name, value in database_components.items() if value is None
+            ]
+            raise ValueError(
+                "Database component configuration is incomplete; missing "
+                + ", ".join(missing)
+            )
+        if supplied_database_components:
+            user = quote(self.database_user or "", safe="")
+            password = quote(self.database_password or "", safe="")
+            database_name = quote(self.database_name or "", safe="")
+            self.database_url = (
+                f"postgresql+psycopg://{user}:{password}@{self.database_host}:"
+                f"{self.database_port}/{database_name}"
+            )
+
         environment = self.app_env.lower()
         durable_environment = environment in {"staging", "production"}
 
@@ -97,9 +131,13 @@ class Settings(BaseSettings):
         if self.sqs_visibility_heartbeat_seconds >= self.sqs_visibility_timeout_seconds:
             raise ValueError("SQS visibility heartbeat must be shorter than visibility timeout")
         if self.resume_processing_timeout_seconds < self.sqs_visibility_timeout_seconds:
-            raise ValueError("RESUME_PROCESSING_TIMEOUT_SECONDS must be at least SQS visibility timeout")
+            raise ValueError(
+                "RESUME_PROCESSING_TIMEOUT_SECONDS must be at least SQS visibility timeout"
+            )
         if self.job_stale_after_misses <= self.job_unknown_after_misses:
-            raise ValueError("JOB_STALE_AFTER_MISSES must be greater than JOB_UNKNOWN_AFTER_MISSES")
+            raise ValueError(
+                "JOB_STALE_AFTER_MISSES must be greater than JOB_UNKNOWN_AFTER_MISSES"
+            )
 
         if durable_environment:
             if not self.clerk_issuer or not self.clerk_jwks_url:

@@ -242,3 +242,21 @@ variable "alarm_sns_topic_arn" {
   type        = string
   default     = null
 }
+
+variable "aurora_connection_alarm_threshold" {
+  description = "Initial staging Aurora connection-count alert threshold; tune after measured staging load."
+  type        = number
+  default     = 100
+}
+
+variable "resume_queue_depth_alarm_threshold" {
+  description = "Visible resume messages that may remain for ten minutes before alerting."
+  type        = number
+  default     = 25
+}
+
+variable "resume_queue_age_alarm_seconds" {
+  description = "Age of the oldest visible resume message that triggers an alert."
+  type        = number
+  default     = 300
+}

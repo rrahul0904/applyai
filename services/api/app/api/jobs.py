@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
@@ -101,14 +101,18 @@ def decode_cursor(value: str | None) -> tuple[datetime | None, uuid.UUID | None]
     except (ValueError, KeyError, json.JSONDecodeError):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"code": "INVALID_CURSOR", "message": "Search cursor is invalid"},
+            detail={"code": "INVALID_CURSOR", "message": "Cursor is invalid"},
         )
+
+
+def encode_cursor_values(sort_at: datetime, item_id: uuid.UUID) -> str:
+    payload = json.dumps({"at": sort_at.isoformat(), "id": str(item_id)}).encode()
+    return base64.urlsafe_b64encode(payload).decode()
 
 
 def encode_cursor(job: Job) -> str:
     sort_at = job.posted_at or job.first_seen_at
-    payload = json.dumps({"at": sort_at.isoformat(), "id": str(job.id)}).encode()
-    return base64.urlsafe_b64encode(payload).decode()
+    return encode_cursor_values(sort_at, job.id)
 
 
 @router.get("", response_model=JobSearchPage)
@@ -185,21 +189,31 @@ def list_jobs(
     )
 
 
-@router.get("/saved", response_model=list[JobSummary])
+@router.get("/saved", response_model=JobSearchPage)
 def list_saved_jobs(
-    limit: int = Query(default=50, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=500),
+    limit: int = Query(default=20, ge=1, le=50),
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
-) -> list[JobSummary]:
-    saved_rows = list(
-        session.execute(
-            select(SavedJob, Job)
-            .join(Job, Job.id == SavedJob.job_id)
-            .where(SavedJob.user_id == user.id)
-            .order_by(SavedJob.created_at.desc())
-            .limit(limit)
-        )
+) -> JobSearchPage:
+    cursor_at, cursor_id = decode_cursor(cursor)
+    statement = (
+        select(SavedJob, Job)
+        .join(Job, Job.id == SavedJob.job_id)
+        .where(SavedJob.user_id == user.id)
     )
+    if cursor_at and cursor_id:
+        statement = statement.where(
+            or_(
+                SavedJob.created_at < cursor_at,
+                and_(SavedJob.created_at == cursor_at, SavedJob.job_id < cursor_id),
+            )
+        )
+    statement = statement.order_by(SavedJob.created_at.desc(), SavedJob.job_id.desc())
+    saved_rows = list(session.execute(statement.limit(limit + 1)))
+    has_more = len(saved_rows) > limit
+    saved_rows = saved_rows[:limit]
+
     jobs = [job for _, job in saved_rows]
     companies, locations, compensations = related_rows_for_jobs(session, jobs)
     results: list[JobSummary] = []
@@ -216,7 +230,12 @@ def list_saved_jobs(
                 True,
             )
         )
-    return results
+
+    next_cursor = None
+    if has_more and saved_rows:
+        last_saved, _ = saved_rows[-1]
+        next_cursor = encode_cursor_values(last_saved.created_at, last_saved.job_id)
+    return JobSearchPage(items=results, next_cursor=next_cursor, returned=len(results))
 
 
 @router.get("/{job_id}", response_model=JobDetail)

@@ -21,6 +21,25 @@ DURABLE_SETTINGS = {
 }
 
 
+def test_database_components_build_psycopg_url_and_escape_credentials():
+    settings = Settings(
+        database_host="db.example.test",
+        database_port=5432,
+        database_name="applyai",
+        database_user="applyai@app",
+        database_password="p@ss/word?yes",
+    )
+    assert settings.database_url == (
+        "postgresql+psycopg://applyai%40app:p%40ss%2Fword%3Fyes@"
+        "db.example.test:5432/applyai"
+    )
+
+
+def test_database_component_configuration_must_be_complete():
+    with pytest.raises(ValueError, match="Database component configuration is incomplete"):
+        Settings(database_host="db.example.test", database_name="applyai")
+
+
 def test_production_requires_durable_sqs_queue():
     with pytest.raises(ValueError, match="Production requires TASK_QUEUE_PROVIDER=sqs"):
         Settings(

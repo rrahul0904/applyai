@@ -26,13 +26,14 @@ export function DashboardView() {
     queryFn: ({ signal }) => api.jobs.search(new URLSearchParams({ limit: "4" }), signal),
   });
   const saved = useQuery({
-    queryKey: ["saved-jobs"],
+    queryKey: ["saved-jobs", "dashboard"],
     queryFn: ({ signal }) => api.savedJobs.list(signal),
   });
   const applications = useQuery({
     queryKey: ["applications", "dashboard"],
     queryFn: ({ signal }) => api.applications.list(signal),
   });
+  const savedItems = saved.data?.items ?? [];
   const applicationItems = applications.data?.items ?? [];
 
   useEffect(() => {
@@ -111,9 +112,9 @@ export function DashboardView() {
               title="Saved jobs"
               action={<Link href="/saved" className="text-button">See all</Link>}
             />
-            {saved.isLoading ? <Skeleton className="skeleton-tall" /> : saved.data?.length ? (
+            {saved.isLoading ? <Skeleton className="skeleton-tall" /> : savedItems.length ? (
               <div className="list-stack">
-                {saved.data.slice(0, 3).map((job) => (
+                {savedItems.slice(0, 3).map((job) => (
                   <Link className="nav-link" href={`/jobs/${job.id}`} key={job.id}>
                     <Bookmark size={17} />
                     <span>{job.title}<small className="muted"> · {job.company_name}</small></span>

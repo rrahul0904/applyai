@@ -53,5 +53,14 @@ next-env.d.ts
 *.py[cod]
 .coverage
 
+# terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!**/*.tfvars.example
+crash.log
+crash.*.log
+
 # local application data
 **/.data/

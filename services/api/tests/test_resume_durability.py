@@ -11,7 +11,7 @@ from app.core.config import Settings, get_settings
 from app.core.outbox import publish_outbox_once
 from app.core.queue import Task, TaskQueue
 from app.core.storage import StorageObjectMetadata, get_object_storage
-from app.durability_models import ResumeProcessingAttempt, TaskOutbox
+from app.durability_models import ResumeProcessingAttempt, ResumeUploadIntent, TaskOutbox
 from app.main import app
 from app.models import CandidateExperience, Resume, ResumeExtraction, ResumeVersion, User
 from app.resumes.processor import PARSER_VERSION, process_resume_version
@@ -144,7 +144,7 @@ def test_direct_upload_intent_is_owned_and_completion_creates_outbox(
     app.dependency_overrides[get_settings] = lambda: durable_test_settings
     content = docx_bytes()
 
-    intent = client.post(
+    intent_response = client.post(
         "/api/v1/resumes/upload-intents",
         json={
             "filename": "resume.docx",
@@ -152,8 +152,8 @@ def test_direct_upload_intent_is_owned_and_completion_creates_outbox(
             "file_size": len(content),
         },
     )
-    assert intent.status_code == 200
-    payload = intent.json()
+    assert intent_response.status_code == 200
+    payload = intent_response.json()
     assert payload["upload_mode"] == "DIRECT_S3"
     assert payload["upload_url"].startswith("https://s3.example.test/")
     assert payload["upload_headers"]["x-amz-server-side-encryption"] == "AES256"
@@ -161,12 +161,18 @@ def test_direct_upload_intent_is_owned_and_completion_creates_outbox(
     version_id = uuid.UUID(payload["resume_version_id"])
     engine = create_engine(database_url)
     with Session(engine) as session:
-        version = session.get(ResumeVersion, version_id)
-        assert version is not None
-        assert version.upload_status == "PENDING_UPLOAD"
-        assert version.processing_status == "PENDING_UPLOAD"
-        storage.objects[version.storage_key] = content
-        storage.content_types[version.storage_key] = version.content_type
+        # A presign request is not a completed resume upload. Canonical versioning
+        # begins only after S3 object verification succeeds.
+        assert session.get(ResumeVersion, version_id) is None
+        intent = session.scalar(
+            select(ResumeUploadIntent).where(
+                ResumeUploadIntent.resume_version_id == version_id
+            )
+        )
+        assert intent is not None
+        assert intent.status == "PENDING"
+        storage.objects[intent.storage_key] = content
+        storage.content_types[intent.storage_key] = intent.content_type
     engine.dispose()
 
     switch_user("clerk_user_b", "b@example.com")
@@ -178,17 +184,35 @@ def test_direct_upload_intent_is_owned_and_completion_creates_outbox(
     assert completed.json()["upload_status"] == "UPLOADED"
     assert completed.json()["processing_status"] == "QUEUED"
 
+    # Completion is idempotent: retrying the callback returns the same version
+    # without another version or outbox event.
+    repeated = client.post(f"/api/v1/resumes/versions/{version_id}/upload-complete")
+    assert repeated.status_code == 200
+    assert repeated.json()["id"] == completed.json()["id"]
+
     engine = create_engine(database_url)
     with Session(engine) as session:
         version = session.get(ResumeVersion, version_id)
         assert version is not None
         assert version.upload_status == "UPLOADED"
+        intent = session.scalar(
+            select(ResumeUploadIntent).where(
+                ResumeUploadIntent.resume_version_id == version_id
+            )
+        )
+        assert intent is not None and intent.status == "COMPLETED"
         event = session.scalar(
             select(TaskOutbox).where(TaskOutbox.aggregate_id == version_id)
         )
         assert event is not None
         assert event.status == "PENDING"
         assert event.idempotency_key == f"resume-parse:{version_id}"
+        assert session.scalar(
+            select(func.count(ResumeVersion.id)).where(ResumeVersion.id == version_id)
+        ) == 1
+        assert session.scalar(
+            select(func.count(TaskOutbox.id)).where(TaskOutbox.aggregate_id == version_id)
+        ) == 1
     engine.dispose()
 
 
@@ -201,7 +225,7 @@ def test_upload_completion_rejects_object_size_mismatch(client, database_url):
     app.dependency_overrides[get_object_storage] = lambda: storage
     app.dependency_overrides[get_settings] = lambda: durable_test_settings
 
-    intent = client.post(
+    intent_response = client.post(
         "/api/v1/resumes/upload-intents",
         json={
             "filename": "resume.docx",
@@ -209,18 +233,34 @@ def test_upload_completion_rejects_object_size_mismatch(client, database_url):
             "file_size": 500,
         },
     )
-    version_id = uuid.UUID(intent.json()["resume_version_id"])
+    version_id = uuid.UUID(intent_response.json()["resume_version_id"])
     engine = create_engine(database_url)
     with Session(engine) as session:
-        version = session.get(ResumeVersion, version_id)
-        assert version is not None
-        storage.objects[version.storage_key] = b"short"
-        storage.content_types[version.storage_key] = version.content_type
+        assert session.get(ResumeVersion, version_id) is None
+        intent = session.scalar(
+            select(ResumeUploadIntent).where(
+                ResumeUploadIntent.resume_version_id == version_id
+            )
+        )
+        assert intent is not None
+        storage.objects[intent.storage_key] = b"short"
+        storage.content_types[intent.storage_key] = intent.content_type
     engine.dispose()
 
     completed = client.post(f"/api/v1/resumes/versions/{version_id}/upload-complete")
     assert completed.status_code == 409
     assert completed.json()["error"]["code"] == "UPLOAD_SIZE_MISMATCH"
+
+    engine = create_engine(database_url)
+    with Session(engine) as session:
+        assert session.get(ResumeVersion, version_id) is None
+        intent = session.scalar(
+            select(ResumeUploadIntent).where(
+                ResumeUploadIntent.resume_version_id == version_id
+            )
+        )
+        assert intent is not None and intent.status == "PENDING"
+    engine.dispose()
 
 
 def test_queue_failure_preserves_resume_and_retries_outbox(client, database_url):

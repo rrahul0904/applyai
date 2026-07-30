@@ -19,7 +19,7 @@ resource "aws_ecr_lifecycle_policy" "api" {
       {
         rulePriority = 1
         description  = "Keep the 20 most recent staging images"
-        selection = {
+        selection    = {
           tagStatus   = "any"
           countType   = "imageCountMoreThan"
           countNumber = 20

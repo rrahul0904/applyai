@@ -1,6 +1,6 @@
 # Current Repository State
 
-Updated: 2026-07-29
+Updated: 2026-07-30
 
 ## Source control
 
@@ -8,214 +8,229 @@ Updated: 2026-07-29
 - Default branch: `main`
 - Active implementation branch: `agent/applyai-milestone-one`
 - Pull request: #1, open, draft, mergeable
-- Audited source snapshot immediately before this documentation update: `c17c105c906ad6a8e527bfba4351ced414821da2`
-- PR metadata at that snapshot: 59 commits, 127 changed files
-- Frozen architecture remains Next.js + FastAPI + PostgreSQL/Alembic + Clerk + S3/SQS + Vercel/AWS target
-- No destructive reset/clean operation was used
+- Frozen architecture: Next.js App Router + Clerk; FastAPI modular monolith; PostgreSQL/Alembic; private S3; SQS/DLQ; Vercel web + AWS backend
+- No destructive repository cleanup/reset was used
+- No AI matching, embeddings, mobile, employer platform, billing, auto-apply, Redis, OpenSearch, Kafka or Kubernetes was introduced
 
-This document records source-controlled GitHub state. Local-only files, workstation credentials, and external cloud configuration are not observable from the remote repository and are not claimed.
+This document describes source-controlled and observed CI state. It does not claim that external AWS, Vercel, Clerk or DNS resources exist until they are actually provisioned.
 
-## Architecture observed
+## Candidate MVP source
 
-```text
-apps/web        Next.js App Router candidate web application
-services/api    FastAPI modular monolith
-PostgreSQL      SQLAlchemy 2 + Alembic
-S3 provider     production object storage
-SQS provider    production task queue
-resume worker   dedicated SQS consumer
-job connectors  development seed + public Greenhouse Job Board API
-docs            product, security, data, UX, deployment architecture
-```
+Implemented:
 
-## Candidate experience observed
+- Clerk authentication boundary plus internal user UUID mapping
+- owner-scoped candidate APIs
+- persisted onboarding
+- profile, experience, education, skills and preferences
+- direct durable resume upload design
+- deterministic PDF/DOCX extraction/review/confirmation
+- one master resume + version history
+- transactional task outbox
+- SQS resume worker with visibility heartbeat and processing timeout
+- DLQ/redrive configuration and sanitized inspection path
+- PostgreSQL job search/filter/relevance/cursor pagination
+- job detail
+- saved jobs with keyset pagination
+- applications with keyset pagination, status history and notes
+- public Greenhouse connector
+- ingestion-run health and failure isolation
+- deterministic source/canonical deduplication
+- repeat-fetch `last_seen_at` refresh
+- changed-job propagation + `JobVersion`
+- ACTIVE -> UNKNOWN -> STALE lifecycle and recovery
+- multi-source freshness protection
 
-Implemented in source control:
+## Verification source
 
-- authenticated candidate shell
-- dashboard
-- persisted onboarding workflow
-- PDF/DOCX resume upload and deterministic extraction
-- manual onboarding fallback
-- candidate profile editor
-- experience, education, skills, roles, location, work mode, compensation
-- URL-backed job search and filters
-- job detail workspace
-- saved jobs workspace
-- applications list
-- application detail, immutable status history, and private notes
-- settings workspace backed by real account/profile data
-
-## Backend domains observed
-
-Implemented in source control:
-
-- Clerk/dev identity abstraction and internal UUID mapping
-- owner-scoped candidate profile/resume/saved-job/application/note APIs
-- resume object-storage provider and queue provider
-- dedicated SQS resume worker
-- production/staging durable-provider guardrails
-- canonical job/company/source models
-- PostgreSQL search provider and cursor pagination
-- saved-job uniqueness
-- application uniqueness
-- immutable application events
-- application notes
-- public Greenhouse connector with deterministic normalization and raw provenance
-- configured Greenhouse ingestion runner
-- normalized API errors
-- `/health` liveness
-- `/ready` database readiness
-
-## Milestone 2.5 changes now present
-
-### CI structure
-
-`.github/workflows/ci.yml` now defines independent jobs:
-
-- Web lint
-- Web typecheck
-- Web tests
-- Web production build
-- API migration validation
-- API tests
-
-Pinned/runtime choices:
-
-- Node 22.13.0
-- pnpm 10.13.1
-- Python 3.12.11
-- PostgreSQL 17
-
-### Frontend behavior testing
-
-Vitest is configured and source-controlled tests now cover:
-
-- job detail rendering
-- save-job mutation
-- application creation from job detail
-- application list rendering
-- regression check against list-level job-detail API fan-out
-- application timeline
-- application status changes
-- private-note creation/deletion
-- saved-job empty and persisted states
-
-These tests are not yet claimed passing because no available runner has executed them observably.
-
-### Performance hardening
-
-Completed in source:
-
-- `/applications` list now returns a lightweight application + job summary projection
-- list responses no longer load events/notes per application
-- applications web list no longer requests job detail once per row
-- job list company/location/compensation assembly is batch-loaded
-- saved-job related rows are batch-loaded
-- saved-job list is explicitly bounded
-
-Still required:
-
-- measured SQL query counts
-- query-plan review
-- measured browser request counts
-- dashboard/profile/application-detail audit
-- complete saved-list pagination strategy
-
-### Runtime/staging safety
-
-Completed in source:
-
-- credentialed CORS uses exact `WEB_ORIGIN`
-- wildcard credentialed CORS is rejected
-- staging/production require Clerk auth configuration
-- staging/production require HTTPS `WEB_ORIGIN`
-- staging/production require S3 object storage
-- staging/production require SQS task queue
-- production development auth remains prohibited
-- `.env.example` documents durable staging requirements
-
-## Migration state
-
-Alembic revisions currently in the branch:
-
-- `8f21ae7d52d5_initial_canonical_schema.py`
-- `0db19a1adb4d_candidate_milestone_one_fields.py`
-
-The Milestone 2.5 changes in this pass use existing schema fields and do not add a migration.
-
-## Current verification blocker
-
-Clean local verification was attempted from the execution sandbox and failed before checkout:
+The CI surface now includes:
 
 ```text
-fatal: unable to access 'https://github.com/rrahul0904/applyai.git/':
-Could not resolve host: github.com
+Web lint
+Web typecheck
+Web Vitest
+Web production build
+OpenAPI contract drift
+API migration validation
+API tests
+API production Docker build
+Staging Terraform validation
+Candidate MVP Playwright
+AWS bootstrap CloudFormation lint
 ```
 
-The latest observed GitHub Actions run for implementation head `a0bffc923301226d870341c57c8ffa28792c856f` was `30420175430`.
+GitHub-hosted runners are operational.
 
-All six jobs were created but completed failure with no connector-visible steps and no logs:
+Observed executable evidence includes:
 
-- Web lint
-- Web typecheck
-- Web tests
-- Web production build
-- API migration validation
-- API tests
+- web lint/typecheck/tests/build success on recent implementation heads;
+- OpenAPI generation/drift success;
+- backend tests success against PostgreSQL 17;
+- Alembic zero-to-head + drift validation success;
+- production API Docker build success;
+- Candidate MVP Playwright success on a verified application head;
+- Terraform 1.15.5 formatting success;
+- AWS provider initialization with `-backend=false` success;
+- `terraform validate` success for the staging HCL.
 
-Therefore the current source is **implemented but not current-head verified**. No old test counts are reused.
+A later Playwright job was cancelled while installing Chromium because `cancel-in-progress` replaced an older run after another commit. That cancellation is not an application test failure.
 
-## Environment state
+The bootstrap CloudFormation template has its own pinned `cfn-lint` validation workflow. Treat the template as PARTIAL until that final lint execution is observed green.
 
-Repository examples exist for web/API environment variables. Real staging/production values are intentionally absent from source control.
+## Performance guardrails
 
-Staging/production API startup now requires durable values for at least:
+Implemented and tested in source:
+
+- application list is a lightweight projection;
+- saved jobs and applications use bounded keyset pagination;
+- job list related data is batch-loaded;
+- SQL statement-count regression tests compare one-row and multi-row list responses for jobs, saved jobs and applications and require statement counts not to grow with row count.
+
+Production query plans and real corpus performance still belong to staging/load verification rather than source completion.
+
+## Staging AWS package
+
+`infra/staging` contains Terraform for:
 
 ```text
-DATABASE_URL
-AUTH_PROVIDER=clerk
-CLERK_ISSUER
-CLERK_JWKS_URL
-OBJECT_STORAGE_PROVIDER=s3
-S3_BUCKET
-TASK_QUEUE_PROVIDER=sqs
-SQS_QUEUE_URL
-WEB_ORIGIN=https://...
+VPC / two AZs
+public ALB subnets
+private ECS/Fargate subnets
+isolated Aurora subnets
+single staging NAT gateway
+HTTPS ALB
+ECS cluster
+FastAPI service
+resume worker service
+outbox publisher service
+migration task
+scheduled Greenhouse ingestion task
+immutable ECR repository
+Aurora PostgreSQL Serverless v2
+RDS-managed database secret
+private encrypted/versioned resume S3 bucket
+SQS processing queue + DLQ/redrive
+IAM task/execution/EventBridge roles
+CloudWatch log groups
+ALB/Aurora/SQS/DLQ alarms
 ```
 
-External staging configuration still required:
+The same production API image is reused with role-specific commands for API, worker, outbox, migration and ingestion tasks.
 
-- real Clerk environment
-- real PostgreSQL/Aurora endpoint
-- private S3 bucket + IAM
-- SQS queue + DLQ/redrive policy
-- ECS/Fargate API
-- ECS/Fargate resume worker
-- Vercel web deployment
-- secrets/monitoring configuration
+Aurora credentials are injected from the RDS-managed Secrets Manager secret as separate username/password fields. The application can compose the Psycopg connection URL at runtime, so a password-bearing database URL does not need to live in Terraform variables.
 
-## Known technical debt
+## One-time AWS bootstrap
 
-1. Playwright Candidate MVP journey is not implemented.
-2. Onboarding/resume/profile/settings frontend behavior coverage is incomplete.
-3. Greenhouse company resolution, multi-signal deduplication, repeated-ingestion idempotency/freshness, and scheduling remain incomplete.
-4. Resume worker idempotency and DLQ behavior are not staging-tested.
-5. S3/SQS/Clerk integrations are not staging-tested.
-6. Accessibility/security acceptance execution remains pending.
-7. Search/query performance is improved structurally but not measured yet.
+`infra/bootstrap/applyai-staging-bootstrap.yaml` provides:
 
-## Immediate implementation sequence
+- encrypted/versioned/private Terraform-state S3 bucket;
+- GitHub Actions OIDC provider creation or existing-provider reuse;
+- GitHub `staging` environment-scoped deployment IAM role;
+- no static AWS access-key requirement for normal staging workflows.
 
-1. Restore an executable clean verification environment and obtain observable current-head results.
-2. Fix any real lint/typecheck/test/build/migration failures revealed there.
-3. Finish onboarding/resume/profile/settings Vitest coverage.
-4. Implement deterministic Playwright Candidate MVP logout/login persistence journey.
-5. Complete measured query/request-count audit and remaining pagination work.
-6. Harden Greenhouse company resolution, deduplication, idempotency, freshness, and ingestion health.
-7. Validate S3/SQS/worker retry + DLQ + idempotency in staging.
-8. Validate real Clerk authentication and two-user isolation in staging.
-9. Deploy Vercel/AWS staging and run the full Candidate MVP smoke test.
-10. Run security/accessibility/mobile-web acceptance and update the final report.
+The bootstrap role is deliberately intended for a dedicated non-production account. Production gets a separate trust/state/account decision after staging acceptance.
 
-Do not begin matching/AI work until Candidate MVP + real ingestion + staging are verified.
+## Deployment workflows
+
+Manual workflows now exist for:
+
+### `ApplyAI Staging Infrastructure`
+
+- GitHub OIDC -> AWS
+- validate required staging environment values
+- initialize remote state
+- Terraform validate/plan
+- optionally apply the dormant foundation with API/worker/outbox = 0 and ingestion disabled
+
+### `ApplyAI Staging Release`
+
+- exact Git commit -> immutable ECR tag
+- idempotent image reuse on workflow rerun
+- one-shot Alembic Fargate migration task
+- abort before service activation when migration fails
+- Terraform service activation
+- wait API/worker/outbox stability
+- public HTTPS `/health` + `/ready`
+
+### `ApplyAI Staging Rollback`
+
+- verify requested immutable image exists
+- reapply service task definitions through Terraform
+- wait ECS stability
+- verify health/readiness
+- no Alembic downgrade; schema remains roll-forward
+
+### `ApplyAI Staging Infrastructure Verification`
+
+Checks real deployed AWS state for:
+
+- ECS service availability
+- ALB target health
+- private/encrypted Aurora
+- private/versioned/encrypted resume S3
+- SQS/DLQ/redrive
+- HTTPS health/readiness
+- CloudWatch runtime log groups
+
+## External staging values still required
+
+Real staging is **BLOCKED** until these external pieces exist:
+
+```text
+AWS staging account
+GitHub staging environment
+AWS OIDC bootstrap outputs
+ACM certificate
+API DNS hostname
+Clerk staging application
+Vercel staging project/domain
+small explicit Greenhouse board set
+```
+
+Templates:
+
+- `infra/staging/github.environment.example`
+- `apps/web/.env.staging.example`
+- `infra/staging/terraform.tfvars.example`
+
+Primary runbook:
+
+- `docs/AWS_STAGING_DEPLOYMENT.md`
+
+## Required real-service acceptance
+
+After deployment, staging must prove:
+
+```text
+Clerk candidate login
+ -> Vercel
+ -> FastAPI/ECS
+ -> Aurora
+
+resume upload intent
+ -> browser direct S3 PUT
+ -> upload verification
+ -> ResumeVersion + outbox transaction
+ -> outbox publisher
+ -> SQS
+ -> resume worker
+ -> extraction review
+ -> confirmation
+ -> USER_VERIFIED profile
+```
+
+Also required:
+
+- deliberate outbox/SQS/worker failure and recovery;
+- DLQ behavior/inspection;
+- repeat/changed Greenhouse ingestion and freshness recovery;
+- Candidate A/B resource isolation;
+- CloudWatch logs/alarms without resume text/tokens/passwords;
+- backup/recovery drills before production promotion.
+
+## Production boundary
+
+Production infrastructure remains **PARTIAL** by design. The production promotion checklist is in `docs/PRODUCTION_PROMOTION_CHECKLIST.md`.
+
+Do not create production Terraform by mechanically copying staging. Production must intentionally choose deletion protection, final snapshots/PITR, capacity/HA, approval controls, alert routing and recovery requirements based on verified staging behavior.
+
+Do not begin Milestone 3 / AI matching until Candidate MVP + ingestion + real staging verification pass.

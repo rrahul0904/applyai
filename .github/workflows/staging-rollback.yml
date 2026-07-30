@@ -1,0 +1,113 @@
+name: ApplyAI Staging Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Existing immutable ECR image tag (normally a full Git commit SHA)
+        required: true
+        type: string
+      enable_ingestion:
+        description: Keep scheduled Greenhouse ingestion enabled after rollback
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: applyai-staging-release
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    name: Roll back application image
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+      API_BASE_URL: ${{ vars.API_BASE_URL }}
+      TF_VAR_web_origin: ${{ vars.WEB_ORIGIN }}
+      TF_VAR_api_certificate_arn: ${{ vars.API_CERTIFICATE_ARN }}
+      TF_VAR_clerk_issuer: ${{ vars.CLERK_ISSUER }}
+      TF_VAR_clerk_jwks_url: ${{ vars.CLERK_JWKS_URL }}
+      TF_VAR_clerk_audience: ${{ vars.CLERK_AUDIENCE }}
+      TF_VAR_greenhouse_board_tokens: ${{ vars.GREENHOUSE_BOARD_TOKENS || '[]' }}
+      TF_VAR_image_tag: ${{ inputs.image_tag }}
+      TF_VAR_api_desired_count: '1'
+      TF_VAR_worker_desired_count: '1'
+      TF_VAR_outbox_desired_count: '1'
+      TF_VAR_ingestion_schedule_enabled: ${{ inputs.enable_ingestion }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Configure AWS credentials through GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@0e613a0980cbf65ed5b322eb7a1e075d28913a83
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: applyai-staging-rollback-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: '1.15.5'
+
+      - name: Initialize staging state
+        run: >-
+          terraform -chdir=infra/staging init
+          -backend-config="bucket=${TF_STATE_BUCKET}"
+          -backend-config="region=${AWS_REGION}"
+
+      - name: Verify rollback image exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          repository_url="$(terraform -chdir=infra/staging output -raw ecr_repository_url)"
+          repository_name="${repository_url##*/}"
+          aws ecr describe-images \
+            --repository-name "$repository_name" \
+            --image-ids "imageTag=${TF_VAR_image_tag}" >/dev/null
+
+      - name: Plan rollback
+        run: terraform -chdir=infra/staging plan -input=false -out=rollback.tfplan
+
+      - name: Apply rollback
+        run: terraform -chdir=infra/staging apply -input=false -auto-approve rollback.tfplan
+
+      - name: Wait for ECS services to stabilize
+        shell: bash
+        run: |
+          set -euo pipefail
+          cluster="$(terraform -chdir=infra/staging output -raw ecs_cluster_name)"
+          aws ecs wait services-stable \
+            --cluster "$cluster" \
+            --services \
+              applyai-staging-api \
+              applyai-staging-worker \
+              applyai-staging-outbox
+
+      - name: Verify API after rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 8 --retry-delay 5 "${API_BASE_URL%/}/health"
+          echo
+          curl --fail --silent --show-error --retry 8 --retry-delay 5 "${API_BASE_URL%/}/ready"
+          echo
+
+      - name: Write rollback summary
+        run: |
+          {
+            echo '## ApplyAI staging rollback'
+            echo
+            echo "- Restored image tag: \`${TF_VAR_image_tag}\`"
+            echo '- ECS services: stable'
+            echo '- Health/readiness checks: passed'
+            echo
+            echo '> Database migrations are roll-forward only. This workflow does not downgrade Aurora schema; use only an application image that is compatible with the current schema.'
+          } >> "$GITHUB_STEP_SUMMARY"

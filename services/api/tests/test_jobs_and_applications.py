@@ -30,9 +30,22 @@ def test_job_list_detail_and_saved_flow(client, database_url):
     assert client.post(f"/api/v1/jobs/{job_id}/save").status_code == 204
     saved = client.get("/api/v1/jobs/saved")
     assert saved.status_code == 200
-    assert [item["id"] for item in saved.json()] == [str(job_id)]
+    assert saved.json()["returned"] == 1
+    assert saved.json()["next_cursor"] is None
+    assert [item["id"] for item in saved.json()["items"]] == [str(job_id)]
     assert client.delete(f"/api/v1/jobs/{job_id}/save").status_code == 204
-    assert client.get("/api/v1/jobs/saved").json() == []
+    empty_saved = client.get("/api/v1/jobs/saved").json()
+    assert empty_saved["items"] == []
+    assert empty_saved["returned"] == 0
+    assert empty_saved["next_cursor"] is None
+
+
+def test_saved_job_list_rejects_invalid_cursor_and_unbounded_limit(client):
+    invalid_cursor = client.get("/api/v1/jobs/saved", params={"cursor": "not-a-valid-cursor"})
+    assert invalid_cursor.status_code == 422
+    assert invalid_cursor.json()["error"]["code"] == "INVALID_CURSOR"
+    assert client.get("/api/v1/jobs/saved", params={"limit": 51}).status_code == 422
+    assert client.get("/api/v1/jobs/saved", params={"limit": 0}).status_code == 422
 
 
 def test_application_event_history_and_owner_isolation(

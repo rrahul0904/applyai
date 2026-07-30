@@ -18,7 +18,7 @@ No Redis, OpenSearch, Kafka, Kubernetes, RDS Proxy, microservice split, AI match
 ```text
 0. One-time AWS bootstrap
    -> Terraform state bucket
-   -> GitHub OIDC provider
+   -> GitHub OIDC provider/reuse
    -> GitHub staging deployment role
 
 1. External staging identities
@@ -26,16 +26,23 @@ No Redis, OpenSearch, Kafka, Kubernetes, RDS Proxy, microservice split, AI match
    -> Vercel staging project
    -> API hostname + ACM certificate
 
-2. Dormant AWS foundation
+2. Preflight
+   -> GitHub OIDC assumption
+   -> state bucket privacy/encryption/versioning
+   -> ACM ISSUED
+   -> Clerk JWKS reachable
+   -> environment value shape validation
+
+3. Dormant AWS foundation
    -> VPC / ALB / ECS / ECR / Aurora / S3 / SQS / DLQ / IAM / CloudWatch
    -> API, worker, outbox desired count = 0
    -> ingestion schedule disabled
 
-3. DNS
+4. DNS
    -> API hostname alias/CNAME to ALB
    -> certificate coverage verified
 
-4. Release
+5. Release
    -> build exact Git commit
    -> push immutable ECR tag
    -> run Alembic one-shot task
@@ -44,7 +51,10 @@ No Redis, OpenSearch, Kafka, Kubernetes, RDS Proxy, microservice split, AI match
    -> wait ECS stability
    -> /health + /ready
 
-5. Real-service acceptance
+6. Infrastructure verification
+   -> ECS/ALB/Aurora/S3/SQS/DLQ/CloudWatch
+
+7. Real-service acceptance
    -> Clerk
    -> Vercel
    -> S3 direct upload
@@ -87,6 +97,8 @@ aws cloudformation deploy \
   --capabilities CAPABILITY_NAMED_IAM
 ```
 
+When the AWS account already has `token.actions.githubusercontent.com` registered as an IAM OIDC provider, use the existing-provider path documented in `infra/bootstrap/README.md` instead of attempting to create a duplicate provider.
+
 Read outputs:
 
 ```bash
@@ -116,7 +128,7 @@ Recommended protection:
 
 - restrict deployment to `main` once staging bring-up is complete;
 - during initial bring-up, temporarily allow the milestone branch when required;
-- optionally require a reviewer for apply/release/rollback;
+- optionally require a reviewer for plan/apply/release/rollback;
 - never store static AWS access keys.
 
 Set these **environment variables**:
@@ -136,6 +148,8 @@ CLERK_AUDIENCE=
 
 GREENHOUSE_BOARD_TOKENS=["board-token-one","board-token-two"]
 ```
+
+The checked-in placeholder manifest is `infra/staging/github.environment.example`.
 
 `GREENHOUSE_BOARD_TOKENS` is JSON, not a comma-separated string.
 
@@ -190,21 +204,28 @@ api.staging.example.com
 
 Request/validate an ACM certificate in `AWS_REGION`. Store its ARN in the GitHub staging environment as `API_CERTIFICATE_ARN`.
 
-DNS cannot be pointed to the ALB until the dormant foundation exists. After phase 6, create an alias/CNAME from the API hostname to Terraform output:
+DNS cannot be pointed to the ALB until the dormant foundation exists.
 
-```bash
-terraform -chdir=infra/staging output -raw api_alb_dns_name
+## 6. Run the staging preflight
+
+Open GitHub Actions:
+
+```text
+ApplyAI Staging Preflight
 ```
 
-Then verify:
+This is the required external-prerequisite gate before Terraform plan/apply. It verifies:
 
-```bash
-curl -I https://api.staging.example.com/health
-```
+- GitHub can assume the staging AWS deployment role through OIDC;
+- the Terraform state bucket exists, is private, encrypted and versioned;
+- the ACM certificate exists and is `ISSUED`;
+- Clerk JWKS is reachable and contains signing keys;
+- all URL variables use HTTPS;
+- Greenhouse board tokens are valid JSON strings in an array.
 
-A 503 before application activation is acceptable; TLS and DNS must resolve correctly.
+Do not continue to foundation provisioning while preflight is red.
 
-## 6. Provision the dormant AWS foundation
+## 7. Provision the dormant AWS foundation
 
 Open GitHub Actions:
 
@@ -251,7 +272,7 @@ Expected resources include:
 - EventBridge ingestion schedule (disabled)
 - CloudWatch log groups/alarms
 
-## 7. Point DNS at the ALB
+## 8. Point DNS at the ALB
 
 Create the staging API DNS record using the ALB DNS name and zone information exposed by Terraform:
 
@@ -262,9 +283,17 @@ terraform -chdir=infra/staging output -raw api_alb_zone_id
 
 For Route 53, use an Alias A/AAAA record when possible.
 
-Do not release the web client until the HTTPS API hostname resolves successfully and the certificate is valid.
+Then verify TLS/DNS resolution:
 
-## 8. Run the first staging release
+```bash
+curl -I https://api.staging.example.com/health
+```
+
+A 503 before application activation is acceptable; TLS and DNS must resolve correctly.
+
+Do not release the Vercel client against the new API hostname until TLS/DNS are correct.
+
+## 9. Run the first staging release
 
 Open GitHub Actions:
 
@@ -290,7 +319,27 @@ The release workflow:
 
 Do not manually update ECS task definitions after this workflow becomes the deployment path. Terraform remains the control plane for service revisions.
 
-## 9. Staging acceptance gate
+## 10. Run infrastructure verification
+
+Open:
+
+```text
+ApplyAI Staging Infrastructure Verification
+```
+
+It verifies the deployed AWS control-plane/data-plane facts that can be automated without candidate credentials:
+
+- ECS API/worker/outbox are ACTIVE and running;
+- ALB targets are healthy;
+- Aurora is available, encrypted and private;
+- resume S3 Block Public Access, encryption and versioning are enabled;
+- SQS and DLQ exist with redrive configured;
+- `/health` and `/ready` pass over HTTPS;
+- CloudWatch log groups exist for API, worker, outbox, ingestion and migration.
+
+This is infrastructure verification, not Candidate MVP acceptance.
+
+## 11. Staging Candidate MVP acceptance gate
 
 Infrastructure up is not acceptance. Prove the real Candidate MVP path.
 
@@ -367,7 +416,7 @@ persistence
 Candidate B isolation
 ```
 
-## 10. Observability checks
+## 12. Observability checks
 
 Before calling staging verified, confirm:
 
@@ -380,9 +429,9 @@ Before calling staging verified, confirm:
 - DLQ non-empty alarm exists;
 - no resume body, Clerk token, password, or authorization header appears in routine logs.
 
-Attach `alarm_sns_topic_arn` later when notification routing is ready; alarms exist without requiring a notification channel.
+Attach `alarm_sns_topic_arn` when notification routing is ready; alarms exist without requiring a notification channel.
 
-## 11. Rollback
+## 13. Rollback
 
 Use:
 
@@ -390,7 +439,7 @@ Use:
 ApplyAI Staging Rollback
 ```
 
-Input an existing immutable ECR image tag (normally the full commit SHA from a prior release).
+Input an existing immutable ECR image tag, normally the full commit SHA from a prior release.
 
 The workflow:
 
@@ -402,7 +451,7 @@ The workflow:
 
 Database migrations are **roll-forward only**. The rollback workflow never runs Alembic downgrade. Only roll back to an application image compatible with the current schema. Schema-changing releases should use backward-compatible expand/migrate/contract sequencing.
 
-## 12. Backups and recovery before production
+## 14. Backups and recovery before production
 
 Staging currently has Aurora automated backup retention configured. Before production promotion, prove:
 
@@ -414,7 +463,7 @@ Staging currently has Aurora automated backup retention configured. Before produ
 
 Do not test destructive recovery against production first.
 
-## 13. Production promotion gate
+## 15. Production promotion gate
 
 Do not create a production stack merely because staging infrastructure deploys.
 
@@ -428,5 +477,7 @@ Production Terraform should be derived only after the real staging gate passes a
 - production Clerk/Vercel domains;
 - backup/PITR policy;
 - optional RDS Proxy only if measured connection pressure justifies it.
+
+See `docs/PRODUCTION_PROMOTION_CHECKLIST.md` for the full production gate.
 
 AI matching, embeddings, mobile, employer tooling and billing stay outside this deployment milestone.

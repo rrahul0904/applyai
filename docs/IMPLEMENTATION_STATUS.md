@@ -28,9 +28,10 @@ Statuses are restricted to COMPLETE, PARTIAL, NOT STARTED, and BLOCKED.
 | Database migrations | COMPLETE | Alembic zero-to-head migration, current-head reporting and migration-drift checks execute in CI against PostgreSQL 17. |
 | Candidate MVP Playwright | COMPLETE | Deterministic browser -> Next.js -> FastAPI -> real PostgreSQL journey covers onboarding, resume review/confirm, search, save, application/status/note persistence, relogin and Candidate B isolation. This is CI proof, not real Clerk/AWS proof. |
 | CI definition | COMPLETE | Independent lint, typecheck, Vitest, production build, OpenAPI, Alembic, API tests, Docker build, Terraform validation and Playwright gates. |
-| Terraform staging source | COMPLETE | `infra/staging` defines networking, ALB, ECS/Fargate, ECR, Aurora Serverless v2, private S3, SQS/DLQ, IAM, EventBridge and CloudWatch. Terraform 1.15.5 `fmt`, provider `init -backend=false`, and `validate` have executed successfully on the current staging HCL. |
-| AWS bootstrap source | PARTIAL | CloudFormation template creates/reuses GitHub OIDC trust, Terraform state bucket and staging deploy role. `cfn-lint` CI gate is source-controlled; final execution must remain green. |
-| GitHub -> AWS deployment automation | COMPLETE | OIDC-only manual foundation plan/apply, immutable release/migration/activation, rollback and deployed-infrastructure verification workflows are source-controlled. No static AWS keys are required. |
+| Terraform staging source | COMPLETE | `infra/staging` defines networking, ALB, ECS/Fargate, ECR, Aurora Serverless v2, private S3, SQS/DLQ, IAM, EventBridge and CloudWatch. Terraform 1.15.5 `fmt`, provider `init -backend=false`, and `validate` have executed successfully. AWS provider is pinned to validated release 6.55.0. |
+| AWS bootstrap source | COMPLETE | CloudFormation bootstrap creates/reuses GitHub OIDC trust, private/versioned Terraform state and the staging deploy role; the pinned `cfn-lint` gate has executed successfully. |
+| GitHub workflow static validation | PARTIAL | `actionlint` is source-controlled and identified shell-quality issues in the new deployment workflows; those findings were corrected and the latest gate must finish green before this row becomes COMPLETE. |
+| GitHub -> AWS deployment automation | COMPLETE | OIDC-only preflight, foundation plan/apply, immutable release/migration/activation, rollback and deployed-infrastructure verification workflows are source-controlled. No static AWS keys are required. |
 | Vercel/Clerk staging templates | COMPLETE | Vercel staging env example, GitHub environment manifest and staging runbook define exact external values without committing secrets. |
 | Staging deployment | BLOCKED | Requires real AWS staging account, GitHub `staging` environment values, ACM/DNS, Clerk staging application and Vercel staging project. No real AWS resources are claimed deployed. |
 | Real-service Candidate MVP acceptance | BLOCKED | Must prove real Clerk -> Vercel -> ECS -> Aurora plus browser -> S3 -> outbox -> SQS -> worker, failure recovery and two-user isolation in staging. |
@@ -43,7 +44,7 @@ Statuses are restricted to COMPLETE, PARTIAL, NOT STARTED, and BLOCKED.
 
 ## Verified source gates
 
-GitHub-hosted runners are operational. Recent executable runs have demonstrated the application gates rather than merely creating jobs. A post-format staging-infrastructure run executed and passed:
+GitHub-hosted runners are operational. Executable runs have demonstrated the application/infrastructure source gates rather than merely creating jobs. Verified evidence includes:
 
 ```text
 Web lint
@@ -57,6 +58,7 @@ API production Docker build
 Terraform fmt
 Terraform provider initialization
 Terraform validate
+CloudFormation cfn-lint
 ```
 
 The Candidate MVP Playwright journey has also completed successfully on a verified application head. One later Playwright execution was cancelled during Chromium installation only because `cancel-in-progress` superseded that older run with a newer commit; it was not a test assertion failure.
@@ -88,6 +90,8 @@ infra/staging/
 .github/workflows/
   ci.yml
   bootstrap-validation.yml
+  workflow-validation.yml
+  staging-preflight.yml
   staging-infra.yml
   staging-deploy.yml
   staging-rollback.yml

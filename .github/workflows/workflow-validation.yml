@@ -25,4 +25,6 @@ jobs:
         run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
       - name: Validate all GitHub workflows
         shell: bash
-        run: "$(go env GOPATH)/bin/actionlint -color"
+        run: |
+          actionlint_bin="$(go env GOPATH)/bin/actionlint"
+          "$actionlint_bin" -color

@@ -62,42 +62,14 @@ export type Profile = components["schemas"]["ProfileResponse"];
 export type ProfileWrite = components["schemas"]["ProfileReviewWrite"];
 export type ResumeVersion = components["schemas"]["ResumeVersionResponse"];
 export type ResumeExtraction = components["schemas"]["ResumeExtractionResponse"];
+export type ResumeUploadIntent = components["schemas"]["ResumeUploadIntentResponse"];
 export type Job = components["schemas"]["JobSummary"];
 export type JobDetail = components["schemas"]["JobDetail"];
 export type JobPage = components["schemas"]["JobSearchPage"];
 export type Application = components["schemas"]["ApplicationResponse"];
 export type ApplicationNote = components["schemas"]["ApplicationNoteResponse"];
-
-// These are generated-server shapes introduced in Milestone 2.6. They remain
-// local until the OpenAPI generator can execute again; CI will own the drift check.
-export type ResumeUploadIntent = {
-  upload_mode: "DIRECT_S3" | "PROXY";
-  resume_id: string | null;
-  resume_version_id: string | null;
-  upload_url: string | null;
-  upload_headers: Record<string, string>;
-  expires_in_seconds: number | null;
-};
-
-export type ApplicationListItem = {
-  id: string;
-  job_id: string;
-  current_status: string;
-  created_at: string;
-  updated_at: string;
-  job: {
-    id: string;
-    title: string;
-    company_name: string;
-    location: string | null;
-  };
-};
-
-export type ApplicationListPage = {
-  items: ApplicationListItem[];
-  next_cursor: string | null;
-  returned: number;
-};
+export type ApplicationListItem = components["schemas"]["ApplicationListItem"];
+export type ApplicationListPage = components["schemas"]["ApplicationListPage"];
 
 async function uploadResume(file: File): Promise<ResumeVersion> {
   const intent = await request<ResumeUploadIntent>("/resumes/upload-intents", {

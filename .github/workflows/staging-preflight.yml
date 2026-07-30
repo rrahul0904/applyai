@@ -1,0 +1,99 @@
+name: ApplyAI Staging Preflight
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: applyai-staging-preflight
+  cancel-in-progress: true
+
+jobs:
+  preflight:
+    name: Validate external staging prerequisites
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+      WEB_ORIGIN: ${{ vars.WEB_ORIGIN }}
+      API_BASE_URL: ${{ vars.API_BASE_URL }}
+      API_CERTIFICATE_ARN: ${{ vars.API_CERTIFICATE_ARN }}
+      CLERK_ISSUER: ${{ vars.CLERK_ISSUER }}
+      CLERK_JWKS_URL: ${{ vars.CLERK_JWKS_URL }}
+      GREENHOUSE_BOARD_TOKENS: ${{ vars.GREENHOUSE_BOARD_TOKENS || '[]' }}
+    steps:
+      - name: Validate environment variable shapes
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${AWS_DEPLOY_ROLE_ARN:?Set AWS_DEPLOY_ROLE_ARN}"
+          : "${TF_STATE_BUCKET:?Set TF_STATE_BUCKET}"
+          : "${WEB_ORIGIN:?Set WEB_ORIGIN}"
+          : "${API_BASE_URL:?Set API_BASE_URL}"
+          : "${API_CERTIFICATE_ARN:?Set API_CERTIFICATE_ARN}"
+          : "${CLERK_ISSUER:?Set CLERK_ISSUER}"
+          : "${CLERK_JWKS_URL:?Set CLERK_JWKS_URL}"
+          case "$WEB_ORIGIN" in https://*) ;; *) echo 'WEB_ORIGIN must use HTTPS' >&2; exit 1 ;; esac
+          case "$API_BASE_URL" in https://*) ;; *) echo 'API_BASE_URL must use HTTPS' >&2; exit 1 ;; esac
+          case "$CLERK_ISSUER" in https://*) ;; *) echo 'CLERK_ISSUER must use HTTPS' >&2; exit 1 ;; esac
+          case "$CLERK_JWKS_URL" in https://*) ;; *) echo 'CLERK_JWKS_URL must use HTTPS' >&2; exit 1 ;; esac
+          printf '%s' "$GREENHOUSE_BOARD_TOKENS" | jq -e 'type == "array" and all(.[]; type == "string")' >/dev/null
+
+      - name: Configure AWS credentials through GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@0e613a0980cbf65ed5b322eb7a1e075d28913a83
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: applyai-staging-preflight-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify AWS identity and Terraform state bucket
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws sts get-caller-identity >/tmp/aws-identity.json
+          aws s3api head-bucket --bucket "$TF_STATE_BUCKET"
+          aws s3api get-public-access-block --bucket "$TF_STATE_BUCKET" >/tmp/state-public-access.json
+          jq -e '
+            .PublicAccessBlockConfiguration.BlockPublicAcls == true and
+            .PublicAccessBlockConfiguration.IgnorePublicAcls == true and
+            .PublicAccessBlockConfiguration.BlockPublicPolicy == true and
+            .PublicAccessBlockConfiguration.RestrictPublicBuckets == true
+          ' /tmp/state-public-access.json >/dev/null
+          test "$(aws s3api get-bucket-versioning --bucket "$TF_STATE_BUCKET" --query Status --output text)" = "Enabled"
+          aws s3api get-bucket-encryption --bucket "$TF_STATE_BUCKET" >/dev/null
+
+      - name: Verify ACM certificate is issued
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws acm describe-certificate --certificate-arn "$API_CERTIFICATE_ARN" >/tmp/certificate.json
+          jq -e '.Certificate.Status == "ISSUED"' /tmp/certificate.json >/dev/null
+
+      - name: Verify Clerk JWKS endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --retry 3 "$CLERK_JWKS_URL" >/tmp/jwks.json
+          jq -e '.keys | type == "array" and length > 0' /tmp/jwks.json >/dev/null
+
+      - name: Write preflight summary
+        shell: bash
+        run: |
+          account="$(jq -r '.Account' /tmp/aws-identity.json)"
+          cert_domain="$(jq -r '.Certificate.DomainName' /tmp/certificate.json)"
+          {
+            echo '## ApplyAI staging preflight'
+            echo
+            echo "- AWS account reachable through OIDC: \`${account}\`"
+            echo '- Terraform state bucket: private, encrypted and versioned'
+            echo "- ACM certificate status: \`ISSUED\` (\`${cert_domain}\`)"
+            echo '- Clerk JWKS: reachable and contains signing keys'
+            echo '- Staging variable shapes: valid'
+            echo
+            echo 'Next gate: **ApplyAI Staging Infrastructure** in `plan` mode.'
+          } >> "$GITHUB_STEP_SUMMARY"

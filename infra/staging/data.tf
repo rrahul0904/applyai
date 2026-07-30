@@ -24,7 +24,7 @@ resource "aws_ecr_lifecycle_policy" "api" {
           countType   = "imageCountMoreThan"
           countNumber = 20
         }
-        action = {
+        action       = {
           type = "expire"
         }
       }

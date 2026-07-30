@@ -203,11 +203,11 @@ def process_resume_version(
         )
         if latest_attempt is not None and latest_attempt.status == "PROCESSING":
             lease_until = latest_attempt.started_at + timedelta(
-                seconds=settings.sqs_visibility_timeout_seconds * 2
+                seconds=settings.resume_processing_timeout_seconds
             )
             if lease_until > datetime.now(timezone.utc):
                 # Another delivery is actively processing this version. The durable
-                # extraction/attempt rows make it safe to acknowledge this duplicate.
+                # extraction/attempt rows make it safe to leave this delivery retryable.
                 return
             latest_attempt.status = "ABANDONED"
             latest_attempt.completed_at = datetime.now(timezone.utc)

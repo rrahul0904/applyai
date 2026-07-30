@@ -115,8 +115,16 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Install API dependencies
         run: uv sync --project services/api --group dev --locked
-      - name: Verify generated OpenAPI types
-        run: pnpm openapi:check
+      - name: Generate OpenAPI types
+        run: pnpm openapi:generate
+      - name: Upload generated OpenAPI types
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: generated-openapi-types
+          path: apps/web/lib/api/schema.d.ts
+          retention-days: 1
+      - name: Verify generated OpenAPI types are committed
+        run: git diff --exit-code -- apps/web/lib/api/schema.d.ts
 
   api-migrations:
     name: API migration validation

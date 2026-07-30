@@ -39,10 +39,13 @@ class Settings(BaseSettings):
 
     task_queue_provider: str = "memory"
     sqs_queue_url: str | None = None
+    sqs_dlq_url: str | None = None
     sqs_region: str = "us-east-1"
     sqs_visibility_timeout_seconds: int = Field(default=300, ge=30, le=43_200)
     sqs_visibility_heartbeat_seconds: int = Field(default=120, ge=10, le=3600)
     sqs_wait_time_seconds: int = Field(default=20, ge=1, le=20)
+    sqs_max_receive_count: int = Field(default=5, ge=1, le=100)
+    resume_processing_timeout_seconds: int = Field(default=900, ge=60, le=86_400)
     outbox_batch_size: int = Field(default=25, ge=1, le=100)
     outbox_retry_base_seconds: int = Field(default=5, ge=1, le=300)
     outbox_lock_timeout_seconds: int = Field(default=300, ge=30, le=3600)
@@ -89,8 +92,12 @@ class Settings(BaseSettings):
             raise ValueError("SQS_QUEUE_URL is required when TASK_QUEUE_PROVIDER=sqs")
         if durable_environment and self.task_queue_provider != "sqs":
             raise ValueError(f"{environment.title()} requires TASK_QUEUE_PROVIDER=sqs")
+        if durable_environment and not self.sqs_dlq_url:
+            raise ValueError(f"{environment.title()} requires SQS_DLQ_URL")
         if self.sqs_visibility_heartbeat_seconds >= self.sqs_visibility_timeout_seconds:
             raise ValueError("SQS visibility heartbeat must be shorter than visibility timeout")
+        if self.resume_processing_timeout_seconds < self.sqs_visibility_timeout_seconds:
+            raise ValueError("RESUME_PROCESSING_TIMEOUT_SECONDS must be at least SQS visibility timeout")
         if self.job_stale_after_misses <= self.job_unknown_after_misses:
             raise ValueError("JOB_STALE_AFTER_MISSES must be greater than JOB_UNKNOWN_AFTER_MISSES")
 

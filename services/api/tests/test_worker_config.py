@@ -16,6 +16,7 @@ DURABLE_SETTINGS = {
     "s3_bucket": "applyai-staging-resumes",
     "task_queue_provider": "sqs",
     "sqs_queue_url": "https://sqs.us-east-1.amazonaws.com/123456789012/applyai-resume",
+    "sqs_dlq_url": "https://sqs.us-east-1.amazonaws.com/123456789012/applyai-resume-dlq",
     "web_origin": "https://staging.applyai.example",
 }
 
@@ -46,10 +47,18 @@ def test_staging_requires_s3_storage():
             object_storage_provider="local",
             task_queue_provider="sqs",
             sqs_queue_url=DURABLE_SETTINGS["sqs_queue_url"],
+            sqs_dlq_url=DURABLE_SETTINGS["sqs_dlq_url"],
             clerk_issuer=DURABLE_SETTINGS["clerk_issuer"],
             clerk_jwks_url=DURABLE_SETTINGS["clerk_jwks_url"],
             web_origin=DURABLE_SETTINGS["web_origin"],
         )
+
+
+def test_staging_requires_dlq():
+    settings = dict(DURABLE_SETTINGS)
+    settings.pop("sqs_dlq_url")
+    with pytest.raises(ValueError, match="Staging requires SQS_DLQ_URL"):
+        Settings(app_env="staging", **settings)
 
 
 def test_credentialed_cors_rejects_wildcard_origin():
@@ -65,11 +74,21 @@ def test_visibility_heartbeat_must_be_shorter_than_visibility_timeout():
         )
 
 
+def test_resume_processing_timeout_cannot_be_shorter_than_visibility_timeout():
+    with pytest.raises(ValueError, match="RESUME_PROCESSING_TIMEOUT_SECONDS"):
+        Settings(
+            sqs_visibility_timeout_seconds=300,
+            resume_processing_timeout_seconds=299,
+        )
+
+
 def test_sqs_production_configuration_is_accepted():
     settings = Settings(app_env="production", **DURABLE_SETTINGS)
     assert settings.task_queue_provider == "sqs"
     assert settings.object_storage_provider == "s3"
     assert settings.auth_provider == "clerk"
+    assert settings.sqs_max_receive_count == 5
+    assert settings.resume_processing_timeout_seconds == 900
 
 
 def test_resume_worker_acknowledges_unsupported_task_without_processing():

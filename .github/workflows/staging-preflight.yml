@@ -95,5 +95,5 @@ jobs:
             echo '- Clerk JWKS: reachable and contains signing keys'
             echo '- Staging variable shapes: valid'
             echo
-            echo 'Next gate: **ApplyAI Staging Infrastructure** in `plan` mode.'
+            echo 'Next gate: ApplyAI Staging Infrastructure in plan mode.'
           } >> "$GITHUB_STEP_SUMMARY"

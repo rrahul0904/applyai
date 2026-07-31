@@ -7,6 +7,7 @@ import uuid
 from app.core.config import Settings, get_settings
 from app.core.database import SessionLocal
 from app.job_source_models import JobSourceDiscovery
+from app.jobs.company_discovery import process_company_discovery_record
 from app.jobs.discovery import process_discovery_record
 
 
@@ -40,7 +41,11 @@ def process_message(body: str, settings: Settings | None = None) -> bool:
         if record.status in TERMINAL_ACK_STATUSES:
             return True
 
-    process_discovery_record(discovery_id, settings=settings)
+    if task_type == "SOURCE_DISCOVERY":
+        process_company_discovery_record(discovery_id, settings=settings)
+    else:
+        process_discovery_record(discovery_id, settings=settings)
+
     with SessionLocal() as session:
         record = session.get(JobSourceDiscovery, discovery_id)
         if record is None:
@@ -48,7 +53,11 @@ def process_message(body: str, settings: Settings | None = None) -> bool:
         if record.status in TERMINAL_ACK_STATUSES:
             logger.info(
                 "discovery_worker_completed",
-                extra={"discovery_id": str(discovery_id), "status": record.status},
+                extra={
+                    "discovery_id": str(discovery_id),
+                    "status": record.status,
+                    "task_type": task_type,
+                },
             )
             return True
         # FAILED remains retryable and eventually reaches the configured SQS DLQ.

@@ -75,6 +75,21 @@ class Settings(BaseSettings):
     job_source_request_timeout_seconds: float = Field(default=20.0, ge=1.0, le=120.0)
     job_source_max_pages: int = Field(default=20, ge=1, le=100)
 
+    career_discovery_max_pages: int = Field(default=8, ge=2, le=40)
+    career_discovery_max_bytes: int = Field(
+        default=2 * 1024 * 1024,
+        ge=64 * 1024,
+        le=10 * 1024 * 1024,
+    )
+    career_discovery_max_redirects: int = Field(default=4, ge=0, le=10)
+    career_discovery_timeout_seconds: float = Field(default=12.0, ge=1.0, le=60.0)
+    career_discovery_min_source_confidence: float = Field(default=0.80, ge=0.0, le=1.0)
+    career_discovery_refresh_interval_seconds: int = Field(
+        default=604_800,
+        ge=3_600,
+        le=7_776_000,
+    )
+
     @model_validator(mode="after")
     def guard_runtime_configuration(self) -> "Settings":
         database_components = {
@@ -150,6 +165,8 @@ class Settings(BaseSettings):
             raise ValueError(
                 "JOB_STALE_AFTER_MISSES must be greater than JOB_UNKNOWN_AFTER_MISSES"
             )
+        if self.career_discovery_max_pages < 2:
+            raise ValueError("CAREER_DISCOVERY_MAX_PAGES must allow robots and one target page")
 
         if durable_environment:
             if not self.clerk_issuer or not self.clerk_jwks_url:

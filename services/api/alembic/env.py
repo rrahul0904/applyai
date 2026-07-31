@@ -5,7 +5,7 @@ from sqlalchemy import engine_from_config, pool
 
 from app.core.config import get_settings
 from app.core.database import Base
-from app import durability_models, models  # noqa: F401
+from app import durability_models, job_source_models, models  # noqa: F401
 
 
 config = context.config

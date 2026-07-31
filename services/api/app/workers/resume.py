@@ -16,22 +16,24 @@ logger = logging.getLogger("applyai.resume_worker")
 
 
 def process_message(body: str, settings: Settings) -> bool:
-    """Process one queue body.
-
-    Returns True only when the durable state proves the message can be acknowledged.
-    Parser failures and active processing states return False so SQS can retry and,
-    after the configured receive threshold, use the queue's DLQ/redrive policy.
-    """
+    """Process one queue body and acknowledge only durable terminal outcomes."""
     try:
         message = json.loads(body)
     except json.JSONDecodeError:
         logger.warning("resume_worker_invalid_json")
         return False
 
-    if message.get("task_type") != "RESUME_PARSE":
+    task_type = message.get("task_type")
+    if task_type in {"JOB_URL_IMPORT", "SOURCE_DISCOVERY"}:
+        # Import lazily to keep resume-only tests isolated and avoid making the
+        # worker silently acknowledge discovery tasks as unsupported.
+        from app.workers.discovery import process_message as process_discovery_message
+
+        return process_discovery_message(body, settings)
+    if task_type != "RESUME_PARSE":
         logger.warning(
             "resume_worker_unsupported_task",
-            extra={"task_type": message.get("task_type")},
+            extra={"task_type": task_type},
         )
         return True
 
@@ -67,9 +69,6 @@ def process_message(body: str, settings: Settings) -> bool:
             )
             return True
         if version.processing_status == "PROCESSING":
-            # Do not acknowledge merely because another attempt appears active. The
-            # original delivery may have died after persisting PROCESSING. Leaving
-            # this message retryable allows the DB lease to age out and recover it.
             logger.info(
                 "resume_worker_processing_in_progress",
                 extra={"resume_version_id": str(resume_version_id)},
@@ -102,7 +101,7 @@ def _visibility_heartbeat(
 def run_worker(settings: Settings | None = None) -> None:
     settings = settings or get_settings()
     if settings.task_queue_provider != "sqs" or not settings.sqs_queue_url:
-        raise RuntimeError("Resume worker requires TASK_QUEUE_PROVIDER=sqs and SQS_QUEUE_URL")
+        raise RuntimeError("Worker requires TASK_QUEUE_PROVIDER=sqs and SQS_QUEUE_URL")
 
     client = boto3.client("sqs", region_name=settings.sqs_region)
     logger.info(

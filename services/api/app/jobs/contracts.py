@@ -151,8 +151,8 @@ def normalize_text(value: str) -> str:
 
 def normalize_title(value: str) -> str:
     title = normalize_text(value)
-    title = re.sub(r"\bsr\.?\b", "senior", title)
-    title = re.sub(r"\bjr\.?\b", "junior", title)
+    title = re.sub(r"\bsr(?:\.|\b)", "senior", title)
+    title = re.sub(r"\bjr(?:\.|\b)", "junior", title)
     title = re.sub(r"\s*,\s*senior$", " senior", title)
     return " ".join(title.split())
 

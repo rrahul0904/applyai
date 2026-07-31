@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     clerk_issuer: str | None = None
     clerk_jwks_url: str | None = None
     clerk_audience: str | None = None
+    internal_api_token: str | None = None
 
     object_storage_provider: str = "local"
     local_storage_path: Path = Field(default=Path(".data/resumes"))
@@ -59,9 +60,20 @@ class Settings(BaseSettings):
     web_origin: str = "http://localhost:3000"
     max_resume_bytes: int = 5 * 1024 * 1024
     seed_development_jobs: bool = False
+
     greenhouse_board_tokens: list[str] = Field(default_factory=list)
+    lever_site_names: list[str] = Field(default_factory=list)
+    ashby_board_names: list[str] = Field(default_factory=list)
     job_unknown_after_misses: int = Field(default=1, ge=1, le=20)
     job_stale_after_misses: int = Field(default=3, ge=2, le=50)
+    job_source_claim_batch_size: int = Field(default=10, ge=1, le=100)
+    job_source_lease_seconds: int = Field(default=900, ge=60, le=43_200)
+    job_source_default_interval_seconds: int = Field(default=21_600, ge=300, le=2_592_000)
+    job_source_failure_max_backoff_seconds: int = Field(
+        default=604_800, ge=3_600, le=2_592_000
+    )
+    job_source_request_timeout_seconds: float = Field(default=20.0, ge=1.0, le=120.0)
+    job_source_max_pages: int = Field(default=20, ge=1, le=100)
 
     @model_validator(mode="after")
     def guard_runtime_configuration(self) -> "Settings":
@@ -77,9 +89,7 @@ class Settings(BaseSettings):
         if supplied_database_components and len(supplied_database_components) != len(
             database_components
         ):
-            missing = [
-                name for name, value in database_components.items() if value is None
-            ]
+            missing = [name for name, value in database_components.items() if value is None]
             raise ValueError(
                 "Database component configuration is incomplete; missing "
                 + ", ".join(missing)
@@ -112,6 +122,8 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "Development authentication requires DEV_AUTH_SECRET with at least 16 characters"
                 )
+        if self.internal_api_token is not None and len(self.internal_api_token) < 24:
+            raise ValueError("INTERNAL_API_TOKEN must contain at least 24 characters")
 
         if self.object_storage_provider not in {"local", "s3"}:
             raise ValueError("OBJECT_STORAGE_PROVIDER must be local or s3")

@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.api import applications, jobs, me, onboarding, profiles, resumes
+from app.api import applications, internal_job_sources, jobs, me, onboarding, profiles, resumes
 from app.core.config import get_settings
 from app.core.database import engine
 
@@ -22,7 +22,7 @@ app.add_middleware(
     allow_origins=[settings.web_origin],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "X-ApplyAI-Internal-Token"],
 )
 
 
@@ -111,5 +111,6 @@ for router in (
     resumes.router,
     jobs.router,
     applications.router,
+    internal_job_sources.router,
 ):
     app.include_router(router, prefix="/api/v1")

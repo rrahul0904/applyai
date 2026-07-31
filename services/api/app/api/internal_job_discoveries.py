@@ -3,10 +3,12 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, ConfigDict
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, ConfigDict, HttpUrl
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_session
@@ -14,6 +16,8 @@ from app.core.internal_auth import require_internal_api
 from app.core.outbox import add_task_outbox_event
 from app.core.queue import Task
 from app.job_source_models import JobSourceDiscovery
+from app.jobs.discovery import request_key_for
+from app.jobs.web_security import PublicUrlRejected, validate_public_http_url
 
 
 router = APIRouter(
@@ -21,6 +25,11 @@ router = APIRouter(
     tags=["internal-job-source-discoveries"],
     dependencies=[Depends(require_internal_api)],
 )
+
+
+class CompanyDiscoveryCreate(BaseModel):
+    url: HttpUrl
+    company_id: uuid.UUID | None = None
 
 
 class DiscoveryResponse(BaseModel):
@@ -60,6 +69,57 @@ def _get(session: Session, discovery_id: uuid.UUID) -> JobSourceDiscovery:
     record = session.get(JobSourceDiscovery, discovery_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Job source discovery not found")
+    return record
+
+
+@router.post("", response_model=DiscoveryResponse, status_code=status.HTTP_202_ACCEPTED)
+def create_company_discovery(
+    payload: CompanyDiscoveryCreate,
+    session: Session = Depends(get_session),
+):
+    try:
+        canonical_input = validate_public_http_url(str(payload.url))
+    except PublicUrlRejected as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    request_key = request_key_for(None, canonical_input)
+    existing = session.scalar(
+        select(JobSourceDiscovery).where(JobSourceDiscovery.request_key == request_key)
+    )
+    if existing is not None:
+        return existing
+
+    record = JobSourceDiscovery(
+        company_id=payload.company_id,
+        request_key=request_key,
+        input_url=canonical_input,
+        input_domain=(urlsplit(canonical_input).hostname or "").casefold(),
+        status="QUEUED",
+        access_policy="UNKNOWN",
+        evidence=["operator-company-domain-discovery"],
+    )
+    session.add(record)
+    session.flush()
+    add_task_outbox_event(
+        session,
+        task=Task(
+            task_type="SOURCE_DISCOVERY",
+            payload={"discovery_id": str(record.id)},
+            idempotency_key=f"source-discovery:{record.id}",
+        ),
+        aggregate_type="JOB_SOURCE_DISCOVERY",
+        aggregate_id=record.id,
+    )
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        existing = session.scalar(
+            select(JobSourceDiscovery).where(JobSourceDiscovery.request_key == request_key)
+        )
+        if existing is None:
+            raise
+        return existing
+    session.refresh(record)
     return record
 
 

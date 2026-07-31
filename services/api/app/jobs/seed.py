@@ -1,3 +1,4 @@
+from app import job_source_models  # noqa: F401
 from app.core.database import SessionLocal
 from app.jobs.connectors import DevelopmentSeedConnector
 from app.jobs.dataset import build_seed_records

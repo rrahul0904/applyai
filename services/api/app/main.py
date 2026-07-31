@@ -7,6 +7,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.api import (
     applications,
+    internal_job_discoveries,
     internal_job_sources,
     job_imports,
     jobs,
@@ -126,8 +127,12 @@ for router in (
 
 # Operator routes use a separate internal token and are deliberately excluded from
 # the candidate-facing OpenAPI/TypeScript SDK contract.
-app.include_router(
+for internal_router in (
     internal_job_sources.router,
-    prefix="/api/v1",
-    include_in_schema=False,
-)
+    internal_job_discoveries.router,
+):
+    app.include_router(
+        internal_router,
+        prefix="/api/v1",
+        include_in_schema=False,
+    )

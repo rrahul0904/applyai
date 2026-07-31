@@ -111,6 +111,13 @@ for router in (
     resumes.router,
     jobs.router,
     applications.router,
-    internal_job_sources.router,
 ):
     app.include_router(router, prefix="/api/v1")
+
+# Operator routes use a separate internal token and are deliberately excluded from
+# the candidate-facing OpenAPI/TypeScript SDK contract.
+app.include_router(
+    internal_job_sources.router,
+    prefix="/api/v1",
+    include_in_schema=False,
+)

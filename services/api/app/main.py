@@ -5,7 +5,16 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.api import applications, internal_job_sources, jobs, me, onboarding, profiles, resumes
+from app.api import (
+    applications,
+    internal_job_sources,
+    job_imports,
+    jobs,
+    me,
+    onboarding,
+    profiles,
+    resumes,
+)
 from app.core.config import get_settings
 from app.core.database import engine
 
@@ -109,6 +118,7 @@ for router in (
     onboarding.router,
     profiles.router,
     resumes.router,
+    job_imports.router,
     jobs.router,
     applications.router,
 ):

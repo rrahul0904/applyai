@@ -27,6 +27,8 @@ jobs:
       TF_VAR_clerk_jwks_url: ${{ vars.CLERK_JWKS_URL }}
       TF_VAR_clerk_audience: ${{ vars.CLERK_AUDIENCE }}
       TF_VAR_greenhouse_board_tokens: ${{ vars.GREENHOUSE_BOARD_TOKENS || '[]' }}
+      TF_VAR_lever_site_names: ${{ vars.LEVER_SITE_NAMES || '[]' }}
+      TF_VAR_ashby_board_names: ${{ vars.ASHBY_BOARD_NAMES || '[]' }}
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -62,13 +64,15 @@ jobs:
         run: |
           set -euo pipefail
           cluster="$(terraform -chdir=infra/staging output -raw ecs_cluster_name)"
+          services=(
+            "$(terraform -chdir=infra/staging output -raw api_service_name)"
+            "$(terraform -chdir=infra/staging output -raw worker_service_name)"
+            "$(terraform -chdir=infra/staging output -raw source_worker_service_name)"
+            "$(terraform -chdir=infra/staging output -raw source_outbox_service_name)"
+          )
           aws ecs describe-services \
             --cluster "$cluster" \
-            --services \
-              applyai-staging-api \
-              applyai-staging-worker \
-              applyai-staging-source-worker \
-              applyai-staging-outbox \
+            --services "${services[@]}" \
             --output json >/tmp/services.json
           jq -e '.failures | length == 0' /tmp/services.json >/dev/null
           jq -e '
@@ -95,13 +99,16 @@ jobs:
             --attribute-names RedrivePolicy \
             --query 'Attributes.RedrivePolicy' \
             --output text)"
-          source_policy="$(aws sqs get-queue-attributes \
+          source_attributes="$(aws sqs get-queue-attributes \
             --queue-url "$source_queue" \
-            --attribute-names RedrivePolicy \
-            --query 'Attributes.RedrivePolicy' \
-            --output text)"
+            --attribute-names RedrivePolicy VisibilityTimeout \
+            --output json)"
+          source_policy="$(printf '%s' "$source_attributes" | jq -r '.Attributes.RedrivePolicy')"
+          source_visibility="$(printf '%s' "$source_attributes" | jq -r '.Attributes.VisibilityTimeout')"
+          expected_source_visibility="$(terraform -chdir=infra/staging console <<< 'var.source_sqs_visibility_timeout_seconds' | tr -d '[:space:]')"
           test "$resume_policy" != "None"
-          test "$source_policy" != "None"
+          test "$source_policy" != "null"
+          test "$source_visibility" = "$expected_source_visibility"
 
       - name: Verify private resume bucket controls
         shell: bash
@@ -126,7 +133,8 @@ jobs:
           test -n "$endpoint"
           dispatcher_family="$(terraform -chdir=infra/staging output -raw source_dispatch_task_family)"
           aws ecs describe-task-definition --task-definition "$dispatcher_family" >/dev/null
-          aws events describe-rule --name applyai-staging-source-dispatch >/tmp/source-rule.json
+          rule_name="$(terraform -chdir=infra/staging output -raw source_dispatch_rule_name)"
+          aws events describe-rule --name "$rule_name" >/tmp/source-rule.json
           jq -e '.State == "ENABLED" or .State == "DISABLED"' /tmp/source-rule.json >/dev/null
 
       - name: Verify CloudWatch source alarms exist
@@ -151,14 +159,15 @@ jobs:
         shell: bash
         run: |
           {
-            echo '## ApplyAI staging infrastructure verification V2'
+            echo "## ApplyAI staging infrastructure verification V2"
             echo
-            echo '- API health/readiness: passed'
-            echo '- API/resume/source/outbox ECS state: passed'
-            echo '- Resume and source SQS/DLQ redrive: passed'
-            echo '- Private/versioned/encrypted resume S3: passed'
-            echo '- Aurora endpoint and source dispatcher task: present'
-            echo '- Source queue/DLQ/failure alarms: present'
+            echo "- API health/readiness: passed"
+            echo "- API, resume worker, source worker and source-aware outbox ECS state: passed"
+            echo "- Resume and source SQS/DLQ redrive: passed"
+            echo "- Source queue visibility configuration: passed"
+            echo "- Private/versioned/encrypted resume S3: passed"
+            echo "- Aurora endpoint and source dispatcher task: present"
+            echo "- Source queue, DLQ and failure alarms: present"
             echo
-            echo 'This verifies infrastructure state only. Real provider ingestion, Candidate A/B acceptance, failure injection, restore drills and cost measurement remain separate staging evidence.'
+            echo "This verifies infrastructure state only. Real provider ingestion, Candidate A/B acceptance, failure injection, restore drills and cost measurement remain separate staging evidence."
           } >> "$GITHUB_STEP_SUMMARY"

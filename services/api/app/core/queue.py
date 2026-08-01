@@ -10,6 +10,9 @@ from fastapi import Depends
 from app.core.config import Settings, get_settings
 
 
+SOURCE_TASK_TYPES = {"SOURCE_DISCOVERY", "SOURCE_INGEST", "SOURCE_VERIFY"}
+
+
 @dataclass(frozen=True)
 class Task:
     task_type: str
@@ -57,8 +60,6 @@ class SqsTaskQueue(TaskQueue):
                 "idempotency_key": {"DataType": "String", "StringValue": task.idempotency_key},
             },
         }
-        # FIFO queues support broker-level deduplication. Standard queues still rely on
-        # consumer/domain idempotency and therefore must not receive FIFO-only fields.
         if self.queue_url.endswith(".fifo"):
             kwargs["MessageDeduplicationId"] = task.idempotency_key
             kwargs["MessageGroupId"] = task.task_type
@@ -66,11 +67,22 @@ class SqsTaskQueue(TaskQueue):
 
 
 _development_queue = InMemoryTaskQueue()
+_source_development_queue = InMemoryTaskQueue()
 
 
-def get_task_queue(settings: Settings = Depends(get_settings)) -> TaskQueue:
+def get_task_queue(
+    settings: Settings = Depends(get_settings),
+    *,
+    task_type: str | None = None,
+) -> TaskQueue:
+    is_source_task = task_type in SOURCE_TASK_TYPES
     if settings.task_queue_provider == "sqs":
-        if not settings.sqs_queue_url:
-            raise RuntimeError("SQS_QUEUE_URL is required for the SQS queue provider")
-        return SqsTaskQueue(settings.sqs_queue_url, settings.sqs_region)
-    return _development_queue
+        queue_url = (
+            settings.source_sqs_queue_url
+            if is_source_task and settings.source_sqs_queue_url
+            else settings.sqs_queue_url
+        )
+        if not queue_url:
+            raise RuntimeError("A queue URL is required for the SQS task provider")
+        return SqsTaskQueue(queue_url, settings.sqs_region)
+    return _source_development_queue if is_source_task else _development_queue

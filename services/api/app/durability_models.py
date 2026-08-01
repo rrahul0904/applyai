@@ -122,19 +122,34 @@ class ResumeProcessingAttempt(Base):
 
 class JobIngestionRun(Base):
     __tablename__ = "job_ingestion_runs"
+    __table_args__ = (
+        Index("ix_job_ingestion_runs_source_started", "source_id", "started_at"),
+    )
 
     id: Mapped[uuid.UUID] = uuid_pk()
+    source_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("job_source_registry.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    source_type: Mapped[str | None] = mapped_column(String(48), index=True)
     connector: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     source_company: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="RUNNING")
+
     fetched: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    valid: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    invalid: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     updated: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     unchanged: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    deduplicated: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     failed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     stale: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     closed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    error_category: Mapped[str | None] = mapped_column(String(48))
+    error_summary: Mapped[str | None] = mapped_column(Text)

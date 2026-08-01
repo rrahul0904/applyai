@@ -5,12 +5,14 @@ from app.core.config import Settings, get_settings
 from app.core.database import SessionLocal
 from app.jobs.connectors import GreenhouseJobBoardConnector
 from app.jobs.pipeline import JobIngestionPipeline
+from app.jobs.registry import run_due_sources, sync_configured_sources
 
 
 logger = logging.getLogger("applyai.job_ingestion")
 
 
 def ingest_greenhouse_boards(settings: Settings | None = None) -> dict[str, dict[str, int]]:
+    """Compatibility entry point retained for existing Greenhouse regression tests/tools."""
     settings = settings or get_settings()
     if not settings.greenhouse_board_tokens:
         raise RuntimeError("GREENHOUSE_BOARD_TOKENS must contain at least one configured board token")
@@ -30,9 +32,20 @@ def ingest_greenhouse_boards(settings: Settings | None = None) -> dict[str, dict
     return results
 
 
+def ensure_configured_sources(settings: Settings | None = None) -> int:
+    settings = settings or get_settings()
+    with SessionLocal() as session:
+        return len(sync_configured_sources(session, settings))
+
+
 def main() -> None:
-    results = ingest_greenhouse_boards()
-    logger.info("greenhouse_ingestion_completed", extra={"results": results})
+    settings = get_settings()
+    configured = ensure_configured_sources(settings)
+    results = run_due_sources(settings)
+    logger.info(
+        "job_source_scheduler_completed",
+        extra={"configured_sources": configured, "claimed_sources": len(results)},
+    )
     print(json.dumps(results, sort_keys=True))
 
 

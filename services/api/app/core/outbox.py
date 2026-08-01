@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.core.database import SessionLocal
-from app.core.queue import Task, TaskQueue, get_task_queue
+from app.core.queue import Task, TaskQueue, get_task_queue_for_type
 from app.durability_models import TaskOutbox
 
 
@@ -90,7 +90,7 @@ def publish_claimed_event(
         if event is None:
             return True
 
-        target_queue = queue or get_task_queue(settings, task_type=event.event_type)
+        target_queue = queue or get_task_queue_for_type(settings, task_type=event.event_type)
         try:
             target_queue.enqueue(
                 Task(

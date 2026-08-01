@@ -26,6 +26,8 @@ jobs:
       TF_VAR_clerk_jwks_url: ${{ vars.CLERK_JWKS_URL }}
       TF_VAR_clerk_audience: ${{ vars.CLERK_AUDIENCE }}
       TF_VAR_greenhouse_board_tokens: ${{ vars.GREENHOUSE_BOARD_TOKENS || '[]' }}
+      TF_VAR_lever_site_names: ${{ vars.LEVER_SITE_NAMES || '[]' }}
+      TF_VAR_ashby_board_names: ${{ vars.ASHBY_BOARD_NAMES || '[]' }}
       GREENHOUSE_BOARD_TOKENS: ${{ vars.GREENHOUSE_BOARD_TOKENS || '[]' }}
       LEVER_SITE_NAMES: ${{ vars.LEVER_SITE_NAMES || '[]' }}
       ASHBY_BOARD_NAMES: ${{ vars.ASHBY_BOARD_NAMES || '[]' }}
@@ -117,12 +119,15 @@ jobs:
       - name: Write bootstrap summary
         shell: bash
         run: |
+          greenhouse_count="$(printf '%s' "$GREENHOUSE_BOARD_TOKENS" | jq 'length')"
+          lever_count="$(printf '%s' "$LEVER_SITE_NAMES" | jq 'length')"
+          ashby_count="$(printf '%s' "$ASHBY_BOARD_NAMES" | jq 'length')"
           {
-            echo '## ApplyAI reviewed staging source bootstrap'
+            echo "## ApplyAI reviewed staging source bootstrap"
             echo
-            echo "- Greenhouse boards: \`$(printf '%s' "$GREENHOUSE_BOARD_TOKENS" | jq 'length')\`"
-            echo "- Lever sites: \`$(printf '%s' "$LEVER_SITE_NAMES" | jq 'length')\`"
-            echo "- Ashby boards: \`$(printf '%s' "$ASHBY_BOARD_NAMES" | jq 'length')\`"
-            echo '- Registration path: private one-shot ECS task using Aurora-managed credentials'
-            echo '- No operator API token or provider identifier was stored in Terraform state'
+            echo "- Greenhouse boards: ${greenhouse_count}"
+            echo "- Lever sites: ${lever_count}"
+            echo "- Ashby boards: ${ashby_count}"
+            echo "- Registration path: private one-shot ECS task using Aurora-managed credentials"
+            echo "- No operator API token or provider identifier was stored in Terraform state"
           } >> "$GITHUB_STEP_SUMMARY"

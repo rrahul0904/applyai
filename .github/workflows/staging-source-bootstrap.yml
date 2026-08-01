@@ -1,0 +1,128 @@
+name: ApplyAI Staging Source Bootstrap
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: applyai-staging-source-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  register:
+    name: Register reviewed public ATS sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: staging
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+      TF_VAR_web_origin: ${{ vars.WEB_ORIGIN }}
+      TF_VAR_api_certificate_arn: ${{ vars.API_CERTIFICATE_ARN }}
+      TF_VAR_clerk_issuer: ${{ vars.CLERK_ISSUER }}
+      TF_VAR_clerk_jwks_url: ${{ vars.CLERK_JWKS_URL }}
+      TF_VAR_clerk_audience: ${{ vars.CLERK_AUDIENCE }}
+      TF_VAR_greenhouse_board_tokens: ${{ vars.GREENHOUSE_BOARD_TOKENS || '[]' }}
+      GREENHOUSE_BOARD_TOKENS: ${{ vars.GREENHOUSE_BOARD_TOKENS || '[]' }}
+      LEVER_SITE_NAMES: ${{ vars.LEVER_SITE_NAMES || '[]' }}
+      ASHBY_BOARD_NAMES: ${{ vars.ASHBY_BOARD_NAMES || '[]' }}
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Validate reviewed source lists
+        shell: bash
+        run: |
+          set -euo pipefail
+          for value in GREENHOUSE_BOARD_TOKENS LEVER_SITE_NAMES ASHBY_BOARD_NAMES; do
+            printf '%s' "${!value}" | jq -e '
+              type == "array" and
+              length <= 5 and
+              all(.[]; type == "string" and length > 0)
+            ' >/dev/null
+          done
+          total="$((
+            $(printf '%s' "$GREENHOUSE_BOARD_TOKENS" | jq 'length') +
+            $(printf '%s' "$LEVER_SITE_NAMES" | jq 'length') +
+            $(printf '%s' "$ASHBY_BOARD_NAMES" | jq 'length')
+          ))"
+          test "$total" -gt 0 || {
+            echo 'Configure at least one reviewed public ATS source.' >&2
+            exit 1
+          }
+
+      - name: Configure AWS credentials through GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@0e613a0980cbf65ed5b322eb7a1e075d28913a83
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: applyai-source-bootstrap-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: '1.15.5'
+
+      - name: Initialize staging state
+        run: >-
+          terraform -chdir=infra/staging init
+          -backend-config="bucket=${TF_STATE_BUCKET}"
+          -backend-config="region=${AWS_REGION}"
+
+      - name: Run private source-registry bootstrap task
+        shell: bash
+        run: |
+          set -euo pipefail
+          cluster="$(terraform -chdir=infra/staging output -raw ecs_cluster_name)"
+          task_family="$(terraform -chdir=infra/staging output -raw migration_task_family)"
+          subnets="$(terraform -chdir=infra/staging output -json app_subnet_ids | jq -r 'join(",")')"
+          security_group="$(terraform -chdir=infra/staging output -raw ecs_security_group_id)"
+          jq -n \
+            --arg greenhouse "$GREENHOUSE_BOARD_TOKENS" \
+            --arg lever "$LEVER_SITE_NAMES" \
+            --arg ashby "$ASHBY_BOARD_NAMES" \
+            '{
+              containerOverrides: [
+                {
+                  name: "migration",
+                  command: ["uv", "run", "python", "scripts/register_sources_db.py"],
+                  environment: [
+                    {name: "GREENHOUSE_BOARD_TOKENS", value: $greenhouse},
+                    {name: "LEVER_SITE_NAMES", value: $lever},
+                    {name: "ASHBY_BOARD_NAMES", value: $ashby}
+                  ]
+                }
+              ]
+            }' >/tmp/source-bootstrap-overrides.json
+          task_arn="$(aws ecs run-task \
+            --cluster "$cluster" \
+            --task-definition "$task_family" \
+            --launch-type FARGATE \
+            --network-configuration \
+              "awsvpcConfiguration={subnets=[${subnets}],securityGroups=[${security_group}],assignPublicIp=DISABLED}" \
+            --overrides file:///tmp/source-bootstrap-overrides.json \
+            --query 'tasks[0].taskArn' \
+            --output text)"
+          test -n "$task_arn" && test "$task_arn" != "None"
+          aws ecs wait tasks-stopped --cluster "$cluster" --tasks "$task_arn"
+          aws ecs describe-tasks --cluster "$cluster" --tasks "$task_arn" --output json >/tmp/source-bootstrap-task.json
+          exit_code="$(jq -r '.tasks[0].containers[0].exitCode' /tmp/source-bootstrap-task.json)"
+          if [ "$exit_code" != "0" ]; then
+            cat /tmp/source-bootstrap-task.json
+            exit 1
+          fi
+
+      - name: Write bootstrap summary
+        shell: bash
+        run: |
+          {
+            echo '## ApplyAI reviewed staging source bootstrap'
+            echo
+            echo "- Greenhouse boards: \`$(printf '%s' "$GREENHOUSE_BOARD_TOKENS" | jq 'length')\`"
+            echo "- Lever sites: \`$(printf '%s' "$LEVER_SITE_NAMES" | jq 'length')\`"
+            echo "- Ashby boards: \`$(printf '%s' "$ASHBY_BOARD_NAMES" | jq 'length')\`"
+            echo '- Registration path: private one-shot ECS task using Aurora-managed credentials'
+            echo '- No operator API token or provider identifier was stored in Terraform state'
+          } >> "$GITHUB_STEP_SUMMARY"

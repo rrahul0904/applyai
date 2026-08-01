@@ -26,10 +26,13 @@ jobs:
       fail-fast: true
       max-parallel: 1
       matrix:
-        rows:
-          - 10000
-          - 50000
-          - 250000
+        include:
+          - rows: 10000
+            port: 55432
+          - rows: 50000
+            port: 55433
+          - rows: 250000
+            port: 55434
     services:
       postgres:
         image: postgres:17
@@ -38,7 +41,7 @@ jobs:
           POSTGRES_PASSWORD: applyai
           POSTGRES_DB: applyai_benchmark
         ports:
-          - 55432:5432
+          - "${{ matrix.port }}:5432"
         options: >-
           --health-cmd "pg_isready -U applyai -d applyai_benchmark"
           --health-interval 10s
@@ -47,7 +50,7 @@ jobs:
 
     env:
       ENVIRONMENT: test
-      DATABASE_URL: postgresql+psycopg://applyai:applyai@127.0.0.1:55432/applyai_benchmark
+      DATABASE_URL: postgresql+psycopg://applyai:applyai@127.0.0.1:${{ matrix.port }}/applyai_benchmark
       ROW_COUNT: ${{ matrix.rows }}
 
     steps:

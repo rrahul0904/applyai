@@ -9,29 +9,27 @@ on:
       - "services/api/alembic/**"
       - ".github/workflows/job-search-benchmark.yml"
   workflow_dispatch:
-    inputs:
-      rows:
-        description: Synthetic non-production canonical jobs
-        required: true
-        default: "10000"
-        type: choice
-        options:
-          - "10000"
-          - "50000"
-          - "250000"
 
 permissions:
   contents: read
 
 concurrency:
-  group: applyai-job-search-benchmark-${{ github.ref }}-${{ inputs.rows || '10000' }}
+  group: applyai-job-search-benchmark-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   benchmark:
-    name: PostgreSQL search benchmark (${{ inputs.rows || '10000' }} jobs)
+    name: PostgreSQL search benchmark (${{ matrix.rows }} jobs)
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 70
+    strategy:
+      fail-fast: true
+      max-parallel: 1
+      matrix:
+        rows:
+          - 10000
+          - 50000
+          - 250000
     services:
       postgres:
         image: postgres:17
@@ -50,7 +48,7 @@ jobs:
     env:
       ENVIRONMENT: test
       DATABASE_URL: postgresql+psycopg://applyai:applyai@127.0.0.1:55432/applyai_benchmark
-      ROW_COUNT: ${{ inputs.rows || '10000' }}
+      ROW_COUNT: ${{ matrix.rows }}
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

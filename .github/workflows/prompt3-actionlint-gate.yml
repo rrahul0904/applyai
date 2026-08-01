@@ -1,0 +1,47 @@
+name: Prompt 3 Workflow Gate
+
+on:
+  push:
+    branches:
+      - agent/applyai-job-data-scale-quality
+    paths:
+      - ".github/workflows/**"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: applyai-prompt3-workflow-gate
+  cancel-in-progress: true
+
+jobs:
+  actionlint:
+    if: ${{ !contains(github.event.head_commit.message, '[prompt3-workflows]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: agent/applyai-job-data-scale-quality
+          fetch-depth: 0
+      - name: Install actionlint
+        shell: bash
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+      - name: Validate every workflow
+        shell: bash
+        run: '"$(go env GOPATH)/bin/actionlint" -color'
+      - name: Record validated workflow source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p docs/benchmarks
+          jq -n \
+            --arg tested_sha "$GITHUB_SHA" \
+            --arg recorded_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{status: "PASS", tested_sha: $tested_sha, recorded_at: $recorded_at, validator: "actionlint-v1.7.12"}' \
+            > docs/benchmarks/prompt3-workflow-gate.json
+          git config user.name 'applyai-ci'
+          git config user.email 'applyai-ci@users.noreply.github.com'
+          git add docs/benchmarks/prompt3-workflow-gate.json
+          git commit -m 'Record Prompt 3 workflow gate [prompt3-workflows]'
+          git pull --rebase origin agent/applyai-job-data-scale-quality
+          git push origin HEAD:agent/applyai-job-data-scale-quality

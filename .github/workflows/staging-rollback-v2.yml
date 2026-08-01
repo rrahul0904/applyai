@@ -143,10 +143,10 @@ jobs:
           IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
           {
-            echo '## ApplyAI staging rollback V2'
+            echo "## ApplyAI staging rollback V2"
             echo
             echo "- Restored immutable image: \`${IMAGE_TAG}\`"
-            echo '- API/resume/source/outbox service stabilization: passed'
-            echo '- Database schema: unchanged (roll-forward only)'
-            echo '- `/health` and `/ready`: passed'
+            echo "- API/resume/source/outbox service stabilization: passed"
+            echo "- Database schema: unchanged (roll-forward only)"
+            echo "- \`/health\` and \`/ready\`: passed"
           } >> "$GITHUB_STEP_SUMMARY"

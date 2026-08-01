@@ -253,14 +253,14 @@ jobs:
           SOURCE_DISPATCH: ${{ inputs.enable_source_dispatch }}
         run: |
           {
-            echo '## ApplyAI staging release V2'
+            echo "## ApplyAI staging release V2"
             echo
             echo "- Source commit: \`${GITHUB_SHA}\`"
             echo "- Image: \`${IMAGE_URI}\`"
-            echo '- Alembic migration gate: passed'
-            echo '- API/resume/outbox services: stable'
+            echo "- Alembic migration gate: passed"
+            echo "- API/resume/outbox services: stable"
             echo "- Source worker count: \`${SOURCE_WORKER_COUNT}\`"
             echo "- Source dispatcher enabled: \`${SOURCE_DISPATCH}\`"
-            echo '- Source queue and DLQ: reachable'
-            echo '- `/health` and `/ready`: passed'
+            echo "- Source queue and DLQ: reachable"
+            echo "- \`/health\` and \`/ready\`: passed"
           } >> "$GITHUB_STEP_SUMMARY"

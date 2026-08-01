@@ -43,6 +43,8 @@ jobs:
       TF_VAR_clerk_jwks_url: ${{ vars.CLERK_JWKS_URL }}
       TF_VAR_clerk_audience: ${{ vars.CLERK_AUDIENCE }}
       TF_VAR_greenhouse_board_tokens: ${{ vars.GREENHOUSE_BOARD_TOKENS || '[]' }}
+      TF_VAR_lever_site_names: ${{ vars.LEVER_SITE_NAMES || '[]' }}
+      TF_VAR_ashby_board_names: ${{ vars.ASHBY_BOARD_NAMES || '[]' }}
 
     steps:
       - name: Checkout exact release source
@@ -188,36 +190,37 @@ jobs:
           TF_VAR_image_tag: ${{ steps.release.outputs.image_tag }}
           TF_VAR_api_desired_count: '1'
           TF_VAR_worker_desired_count: '1'
+          TF_VAR_outbox_desired_count: '0'
           TF_VAR_source_worker_desired_count: ${{ inputs.source_worker_count }}
-          TF_VAR_outbox_desired_count: '1'
-          TF_VAR_ingestion_schedule_enabled: ${{ inputs.enable_source_dispatch }}
+          TF_VAR_source_outbox_desired_count: '1'
+          TF_VAR_ingestion_schedule_enabled: 'false'
+          TF_VAR_source_dispatch_schedule_enabled: ${{ inputs.enable_source_dispatch }}
         run: terraform -chdir=infra/staging plan -input=false -out=release-v2.tfplan
 
-      - name: Activate API, resume worker, source worker and outbox
+      - name: Activate API, resume worker, source worker and source-aware outbox
         env:
           TF_VAR_image_tag: ${{ steps.release.outputs.image_tag }}
           TF_VAR_api_desired_count: '1'
           TF_VAR_worker_desired_count: '1'
+          TF_VAR_outbox_desired_count: '0'
           TF_VAR_source_worker_desired_count: ${{ inputs.source_worker_count }}
-          TF_VAR_outbox_desired_count: '1'
-          TF_VAR_ingestion_schedule_enabled: ${{ inputs.enable_source_dispatch }}
+          TF_VAR_source_outbox_desired_count: '1'
+          TF_VAR_ingestion_schedule_enabled: 'false'
+          TF_VAR_source_dispatch_schedule_enabled: ${{ inputs.enable_source_dispatch }}
         run: terraform -chdir=infra/staging apply -input=false -auto-approve release-v2.tfplan
 
       - name: Wait for all long-lived ECS services
         shell: bash
         env:
           CLUSTER: ${{ steps.release.outputs.cluster }}
-          SOURCE_WORKER_COUNT: ${{ inputs.source_worker_count }}
         run: |
           set -euo pipefail
           services=(
-            applyai-staging-api
-            applyai-staging-worker
-            applyai-staging-outbox
+            "$(terraform -chdir=infra/staging output -raw api_service_name)"
+            "$(terraform -chdir=infra/staging output -raw worker_service_name)"
+            "$(terraform -chdir=infra/staging output -raw source_worker_service_name)"
+            "$(terraform -chdir=infra/staging output -raw source_outbox_service_name)"
           )
-          if [ "$SOURCE_WORKER_COUNT" != "0" ]; then
-            services+=(applyai-staging-source-worker)
-          fi
           aws ecs wait services-stable --cluster "$CLUSTER" --services "${services[@]}"
 
       - name: Verify HTTP health and readiness
@@ -239,11 +242,18 @@ jobs:
           source_dlq="$(terraform -chdir=infra/staging output -raw source_dlq_url)"
           aws sqs get-queue-attributes --queue-url "$source_queue" --attribute-names All >/tmp/source-queue.json
           aws sqs get-queue-attributes --queue-url "$source_dlq" --attribute-names All >/tmp/source-dlq.json
+          services=(
+            "$(terraform -chdir=infra/staging output -raw api_service_name)"
+            "$(terraform -chdir=infra/staging output -raw worker_service_name)"
+            "$(terraform -chdir=infra/staging output -raw source_worker_service_name)"
+            "$(terraform -chdir=infra/staging output -raw source_outbox_service_name)"
+          )
           aws ecs describe-services \
             --cluster "$CLUSTER" \
-            --services applyai-staging-api applyai-staging-worker applyai-staging-source-worker applyai-staging-outbox \
+            --services "${services[@]}" \
             --output json >/tmp/services.json
           jq -e '.failures | length == 0' /tmp/services.json >/dev/null
+          jq -e 'all(.services[]; .runningCount == .desiredCount and .pendingCount == 0)' /tmp/services.json >/dev/null
 
       - name: Write release summary
         shell: bash
@@ -258,9 +268,10 @@ jobs:
             echo "- Source commit: \`${GITHUB_SHA}\`"
             echo "- Image: \`${IMAGE_URI}\`"
             echo "- Alembic migration gate: passed"
-            echo "- API/resume/outbox services: stable"
+            echo "- API, resume worker, source worker and source-aware outbox: stable"
             echo "- Source worker count: \`${SOURCE_WORKER_COUNT}\`"
             echo "- Source dispatcher enabled: \`${SOURCE_DISPATCH}\`"
+            echo "- Legacy direct-ingestion schedule and resume-only outbox: disabled"
             echo "- Source queue and DLQ: reachable"
             echo "- \`/health\` and \`/ready\`: passed"
           } >> "$GITHUB_STEP_SUMMARY"

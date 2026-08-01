@@ -39,6 +39,7 @@ jobs:
     env:
       ENVIRONMENT: test
       DATABASE_URL: postgresql+psycopg://applyai:applyai@127.0.0.1:55432/applyai_scale
+      PYTHONPATH: .
       TESTED_SHA: ${{ github.sha }}
 
     steps:
@@ -88,7 +89,7 @@ jobs:
               status: "PASS",
               tested_sha: $tested_sha,
               recorded_at: $recorded_at,
-              environment: "synthetic_non_production_postgresql",
+              environment: "synthetic_github_hosted_postgresql",
               benchmarks: {
                 "50000": $fifty[0],
                 "250000": $two_fifty[0]

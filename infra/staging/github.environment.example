@@ -14,5 +14,8 @@ CLERK_ISSUER=https://REPLACE_ME.clerk.accounts.dev
 CLERK_JWKS_URL=https://REPLACE_ME.clerk.accounts.dev/.well-known/jwks.json
 CLERK_AUDIENCE=
 
-# JSON array. Start with a deliberately small public board set for staging verification.
+# JSON arrays of reviewed public ATS board/site identifiers. These are not secrets.
+# Keep the first real staging set small: no more than five entries per provider.
 GREENHOUSE_BOARD_TOKENS=["example-board"]
+LEVER_SITE_NAMES=["example-site"]
+ASHBY_BOARD_NAMES=["example-board"]

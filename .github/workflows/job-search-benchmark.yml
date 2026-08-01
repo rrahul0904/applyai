@@ -64,17 +64,22 @@ jobs:
       - name: Apply all migrations
         working-directory: services/api
         run: uv run alembic upgrade head
+      - name: Prepare benchmark artifact directory
+        run: mkdir -p artifacts
       - name: Run measured EXPLAIN ANALYZE benchmark
         working-directory: services/api
-        run: >-
-          uv run python scripts/benchmark_job_search.py
-          --rows "$ROW_COUNT"
-          --output "../../artifacts/job-search-${ROW_COUNT}.json"
-          --cleanup
+        env:
+          PYTHONPATH: .
+        run: |
+          uv run python scripts/benchmark_job_search.py \
+            --rows "$ROW_COUNT" \
+            --output "../../artifacts/job-search-${ROW_COUNT}.json" \
+            --cleanup
       - name: Upload measured benchmark report
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: applyai-job-search-${{ env.ROW_COUNT }}
           path: artifacts/job-search-${{ env.ROW_COUNT }}.json
           retention-days: 30
-          if-no-files-found: error
+          if-no-files-found: warn

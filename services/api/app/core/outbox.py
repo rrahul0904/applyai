@@ -74,7 +74,7 @@ def claim_outbox_batch(
 def publish_claimed_event(
     event_id: uuid.UUID,
     *,
-    queue: TaskQueue,
+    queue: TaskQueue | None,
     settings: Settings,
     lock_owner: str,
 ) -> bool:
@@ -90,8 +90,9 @@ def publish_claimed_event(
         if event is None:
             return True
 
+        target_queue = queue or get_task_queue(settings, task_type=event.event_type)
         try:
-            queue.enqueue(
+            target_queue.enqueue(
                 Task(
                     task_type=event.event_type,
                     payload=event.payload,
@@ -136,7 +137,6 @@ def publish_outbox_once(
     lock_owner: str | None = None,
 ) -> int:
     settings = settings or get_settings()
-    queue = queue or get_task_queue(settings)
     lock_owner = lock_owner or f"{socket.gethostname()}:{uuid.uuid4()}"
     with SessionLocal() as session:
         event_ids = claim_outbox_batch(session, settings=settings, lock_owner=lock_owner)

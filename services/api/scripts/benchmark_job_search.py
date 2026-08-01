@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from sqlalchemy import create_engine, text
@@ -11,6 +13,7 @@ from app.core.config import get_settings
 
 
 COMPANY_ID = "00000000-0000-4000-8000-000000000001"
+BENCHMARK_ORIGIN = "SYNTHETIC_BENCHMARK"
 
 
 def uuid_sql(prefix: str, value: str) -> str:
@@ -22,28 +25,52 @@ def uuid_sql(prefix: str, value: str) -> str:
     )
 
 
+def benchmark_job_filter(alias: str = "jobs") -> str:
+    return f"{alias}.data_origin = '{BENCHMARK_ORIGIN}'"
+
+
 def seed_sql(rows: int) -> list[str]:
     job_id = uuid_sql("applyai-benchmark-job-", "i")
     location_id = uuid_sql("applyai-benchmark-location-", "i")
     compensation_id = uuid_sql("applyai-benchmark-comp-", "i")
+    benchmark_jobs = f"SELECT id FROM jobs WHERE {benchmark_job_filter()}"
     return [
-        "DELETE FROM job_compensations WHERE job_id IN (SELECT id FROM jobs WHERE source_metadata->>'benchmark' = 'true')",
-        "DELETE FROM job_locations WHERE job_id IN (SELECT id FROM jobs WHERE source_metadata->>'benchmark' = 'true')",
-        "DELETE FROM jobs WHERE source_metadata->>'benchmark' = 'true'",
+        f"DELETE FROM job_compensation WHERE job_id IN ({benchmark_jobs})",
+        f"DELETE FROM job_locations WHERE job_id IN ({benchmark_jobs})",
+        f"DELETE FROM jobs WHERE {benchmark_job_filter()}",
         f"""
         INSERT INTO companies (
-            id, legal_name, display_name, normalized_name, industry,
-            website_url, logo_url, locations, created_at
+            id, canonical_name, normalized_name, website_url, description
         ) VALUES (
-            '{COMPANY_ID}'::uuid, 'ApplyAI Benchmark Company', 'ApplyAI Benchmark Company',
-            'applyai benchmark company', 'Technology', 'https://benchmark.example.test',
-            NULL, '[]'::jsonb, now()
-        ) ON CONFLICT (id) DO NOTHING
+            '{COMPANY_ID}'::uuid,
+            'ApplyAI Benchmark Company',
+            'applyai benchmark company',
+            'https://benchmark.example.test',
+            'Synthetic non-production benchmark company.'
+        ) ON CONFLICT (id) DO UPDATE SET
+            canonical_name = EXCLUDED.canonical_name,
+            normalized_name = EXCLUDED.normalized_name,
+            website_url = EXCLUDED.website_url,
+            description = EXCLUDED.description
         """,
         f"""
         INSERT INTO jobs (
-            id, company_id, title, description, employment_type, seniority,
-            status, source_metadata, first_seen_at, last_seen_at, created_at, updated_at
+            id,
+            company_id,
+            title,
+            normalized_title,
+            description,
+            search_document,
+            search_vector,
+            employment_type,
+            seniority,
+            status,
+            posted_at,
+            first_seen_at,
+            last_seen_at,
+            data_origin,
+            created_at,
+            updated_at
         )
         SELECT
             {job_id},
@@ -55,20 +82,47 @@ def seed_sql(rows: int) -> list[str]:
                 WHEN i % 5 = 3 THEN 'Software Engineer'
                 ELSE 'Analytics Engineer'
             END,
+            CASE
+                WHEN i % 5 = 0 THEN 'senior data engineer'
+                WHEN i % 5 = 1 THEN 'platform engineer'
+                WHEN i % 5 = 2 THEN 'data analyst'
+                WHEN i % 5 = 3 THEN 'software engineer'
+                ELSE 'analytics engineer'
+            END,
             'Synthetic non-production benchmark posting ' || i ||
             ' for reliable data systems, SQL, Python, cloud platforms, analytics and distributed services.',
+            CASE
+                WHEN i % 5 = 0 THEN 'Senior Data Engineer synthetic benchmark SQL Python cloud data systems'
+                WHEN i % 5 = 1 THEN 'Platform Engineer synthetic benchmark distributed systems cloud'
+                WHEN i % 5 = 2 THEN 'Data Analyst synthetic benchmark SQL analytics'
+                WHEN i % 5 = 3 THEN 'Software Engineer synthetic benchmark Python services'
+                ELSE 'Analytics Engineer synthetic benchmark SQL data models'
+            END,
+            to_tsvector(
+                'english',
+                CASE
+                    WHEN i % 5 = 0 THEN 'Senior Data Engineer synthetic benchmark SQL Python cloud data systems'
+                    WHEN i % 5 = 1 THEN 'Platform Engineer synthetic benchmark distributed systems cloud'
+                    WHEN i % 5 = 2 THEN 'Data Analyst synthetic benchmark SQL analytics'
+                    WHEN i % 5 = 3 THEN 'Software Engineer synthetic benchmark Python services'
+                    ELSE 'Analytics Engineer synthetic benchmark SQL data models'
+                END
+            ),
             CASE WHEN i % 11 = 0 THEN 'CONTRACT' ELSE 'FULL_TIME' END,
             CASE WHEN i % 7 = 0 THEN 'STAFF' ELSE 'SENIOR' END,
             'ACTIVE',
-            jsonb_build_object('benchmark', 'true', 'ordinal', i),
+            now() - ((i % 30) || ' days')::interval,
             now() - ((i % 30) || ' days')::interval,
             now() - ((i % 24) || ' hours')::interval,
+            '{BENCHMARK_ORIGIN}',
             now(),
             now()
         FROM generate_series(1, {rows}) AS series(i)
         """,
         f"""
-        INSERT INTO job_locations (id, job_id, location_text, work_mode, created_at)
+        INSERT INTO job_locations (
+            id, job_id, location_text, city, region, country_code, work_mode
+        )
         SELECT
             {location_id},
             {job_id},
@@ -77,25 +131,38 @@ def seed_sql(rows: int) -> list[str]:
                 WHEN i % 3 = 1 THEN 'New York, NY'
                 ELSE 'United States'
             END,
-            CASE WHEN i % 3 = 2 THEN 'REMOTE' ELSE 'HYBRID' END,
-            now()
+            CASE
+                WHEN i % 3 = 0 THEN 'Boston'
+                WHEN i % 3 = 1 THEN 'New York'
+                ELSE NULL
+            END,
+            CASE
+                WHEN i % 3 = 0 THEN 'MA'
+                WHEN i % 3 = 1 THEN 'NY'
+                ELSE NULL
+            END,
+            'US',
+            CASE WHEN i % 3 = 2 THEN 'REMOTE' ELSE 'HYBRID' END
         FROM generate_series(1, {rows}) AS series(i)
         """,
         f"""
-        INSERT INTO job_compensations (id, job_id, minimum, maximum, provenance, created_at)
+        INSERT INTO job_compensation (
+            id, job_id, minimum, maximum, currency, interval, provenance
+        )
         SELECT
             {compensation_id},
             {job_id},
             90000 + (i % 20) * 5000,
             130000 + (i % 20) * 5000,
-            'SOURCE_REPORTED',
-            now()
+            'USD',
+            'YEAR',
+            'SOURCE_REPORTED'
         FROM generate_series(1, {rows}) AS series(i)
         """,
         "ANALYZE companies",
         "ANALYZE jobs",
         "ANALYZE job_locations",
-        "ANALYZE job_compensations",
+        "ANALYZE job_compensation",
     ]
 
 
@@ -132,7 +199,7 @@ QUERIES = {
         SELECT j.id FROM jobs j
         WHERE j.status = 'ACTIVE'
           AND EXISTS (
-            SELECT 1 FROM job_compensations c
+            SELECT 1 FROM job_compensation c
             WHERE c.job_id = j.id AND c.maximum >= 180000
           )
         ORDER BY j.last_seen_at DESC, j.id DESC
@@ -152,15 +219,24 @@ QUERIES = {
         ORDER BY j.last_seen_at DESC, j.id DESC
         LIMIT 50
     """,
-    "job_detail": """
-        SELECT j.*, c.display_name
+    "job_detail": f"""
+        SELECT j.*, c.canonical_name
         FROM jobs j
         JOIN companies c ON c.id = j.company_id
-        WHERE j.source_metadata->>'benchmark' = 'true'
+        WHERE {benchmark_job_filter('j')}
         ORDER BY j.id
         LIMIT 1
     """,
 }
+
+
+def cleanup_sql() -> list[str]:
+    benchmark_jobs = f"SELECT id FROM jobs WHERE {benchmark_job_filter()}"
+    return [
+        f"DELETE FROM job_compensation WHERE job_id IN ({benchmark_jobs})",
+        f"DELETE FROM job_locations WHERE job_id IN ({benchmark_jobs})",
+        f"DELETE FROM jobs WHERE {benchmark_job_filter()}",
+    ]
 
 
 def benchmark(rows: int, output: Path, cleanup: bool) -> dict:
@@ -174,9 +250,10 @@ def benchmark(rows: int, output: Path, cleanup: bool) -> dict:
     results: dict[str, dict] = {}
     with engine.connect() as connection:
         actual_rows = connection.scalar(
-            text("SELECT count(*) FROM jobs WHERE source_metadata->>'benchmark' = 'true'")
+            text(f"SELECT count(*) FROM jobs WHERE {benchmark_job_filter()}")
         )
         database_bytes = connection.scalar(text("SELECT pg_database_size(current_database())"))
+        postgres_version = connection.scalar(text("SHOW server_version"))
         for name, query in QUERIES.items():
             plan = connection.execute(
                 text(f"EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) {query}")
@@ -189,6 +266,7 @@ def benchmark(rows: int, output: Path, cleanup: bool) -> dict:
                 "shared_hit_blocks": plan["Plan"].get("Shared Hit Blocks"),
                 "shared_read_blocks": plan["Plan"].get("Shared Read Blocks"),
                 "node_type": plan["Plan"].get("Node Type"),
+                "plan": plan["Plan"],
             }
 
     report = {
@@ -196,17 +274,26 @@ def benchmark(rows: int, output: Path, cleanup: bool) -> dict:
         "inserted_rows": int(actual_rows or 0),
         "seed_seconds": round(seed_seconds, 4),
         "database_bytes_after_seed": int(database_bytes or 0),
+        "postgresql_version": str(postgres_version),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "source_commit": os.getenv("GITHUB_SHA"),
+        "source_ref": os.getenv("GITHUB_HEAD_REF") or os.getenv("GITHUB_REF"),
         "queries": results,
-        "environment": "synthetic_non_production_postgresql",
+        "environment": "synthetic_github_hosted_postgresql",
+        "claims": {
+            "aurora": False,
+            "production": False,
+            "live_provider": False,
+            "aws_cost": False,
+        },
     }
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
 
     if cleanup:
         with engine.begin() as connection:
-            connection.execute(text("DELETE FROM job_compensations WHERE job_id IN (SELECT id FROM jobs WHERE source_metadata->>'benchmark' = 'true')"))
-            connection.execute(text("DELETE FROM job_locations WHERE job_id IN (SELECT id FROM jobs WHERE source_metadata->>'benchmark' = 'true')"))
-            connection.execute(text("DELETE FROM jobs WHERE source_metadata->>'benchmark' = 'true'"))
+            for statement in cleanup_sql():
+                connection.execute(text(statement))
     engine.dispose()
     return report
 

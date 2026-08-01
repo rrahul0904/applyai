@@ -1,17 +1,10 @@
 name: Prompt 3 Benchmark Report
 
 on:
-  push:
-    branches:
-      - agent/applyai-job-data-scale-quality
-    paths:
-      - "docs/benchmarks/prompt3-source-gate.json"
-      - "docs/benchmarks/prompt3-extended-scale-gate.json"
-      - "services/api/scripts/render_prompt3_benchmark_report.py"
-      - ".github/workflows/prompt3-render-benchmark-report.yml"
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: applyai-prompt3-benchmark-report
@@ -19,29 +12,17 @@ concurrency:
 
 jobs:
   render:
-    if: ${{ !contains(github.event.head_commit.message, '[prompt3-report]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          ref: agent/applyai-job-data-scale-quality
-          fetch-depth: 0
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12.11"
       - name: Render human-readable executed benchmark report
         run: python services/api/scripts/render_prompt3_benchmark_report.py
-      - name: Commit generated report
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name 'applyai-ci'
-          git config user.email 'applyai-ci@users.noreply.github.com'
-          git add docs/JOB_DATA_PLATFORM_EXECUTED_BENCHMARKS.md
-          if git diff --cached --quiet; then
-            echo 'Executed benchmark report is already current.'
-            exit 0
-          fi
-          git commit -m 'Render Prompt 3 benchmark report [prompt3-report]'
-          git pull --rebase origin agent/applyai-job-data-scale-quality
-          git push origin HEAD:agent/applyai-job-data-scale-quality
+      - name: Upload rendered report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: prompt3-benchmark-report-${{ github.sha }}
+          path: docs/JOB_DATA_PLATFORM_EXECUTED_BENCHMARKS.md
+          retention-days: 30

@@ -105,7 +105,7 @@ jobs:
             --output json)"
           source_policy="$(printf '%s' "$source_attributes" | jq -r '.Attributes.RedrivePolicy')"
           source_visibility="$(printf '%s' "$source_attributes" | jq -r '.Attributes.VisibilityTimeout')"
-          expected_source_visibility="$(terraform -chdir=infra/staging console <<< 'var.source_sqs_visibility_timeout_seconds' | tr -d '[:space:]')"
+          expected_source_visibility="$(terraform -chdir=infra/staging console <<< 'var.source_sqs_visibility_timeout_seconds' | tr -cd '0-9')"
           test "$resume_policy" != "None"
           test "$source_policy" != "null"
           test "$source_visibility" = "$expected_source_visibility"

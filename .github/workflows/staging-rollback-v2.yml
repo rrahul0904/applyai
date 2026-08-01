@@ -1,0 +1,152 @@
+name: ApplyAI Staging Rollback V2
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Existing immutable 40-character ECR image tag to restore
+        required: true
+        type: string
+      source_worker_count:
+        description: Source worker count after rollback
+        required: true
+        default: "1"
+        type: choice
+        options:
+          - "0"
+          - "1"
+          - "2"
+          - "3"
+      enable_source_dispatch:
+        description: Keep bounded source dispatch enabled after rollback
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: applyai-staging-release-v2
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    name: Restore immutable application image
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: staging
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+      API_BASE_URL: ${{ vars.API_BASE_URL }}
+      TF_VAR_web_origin: ${{ vars.WEB_ORIGIN }}
+      TF_VAR_api_certificate_arn: ${{ vars.API_CERTIFICATE_ARN }}
+      TF_VAR_clerk_issuer: ${{ vars.CLERK_ISSUER }}
+      TF_VAR_clerk_jwks_url: ${{ vars.CLERK_JWKS_URL }}
+      TF_VAR_clerk_audience: ${{ vars.CLERK_AUDIENCE }}
+      TF_VAR_greenhouse_board_tokens: ${{ vars.GREENHOUSE_BOARD_TOKENS || '[]' }}
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Validate immutable tag
+        shell: bash
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          set -euo pipefail
+          [[ "$IMAGE_TAG" =~ ^[0-9a-f]{40}$ ]] || {
+            echo 'image_tag must be a full 40-character Git commit SHA' >&2
+            exit 1
+          }
+
+      - name: Configure AWS credentials through GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@0e613a0980cbf65ed5b322eb7a1e075d28913a83
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: applyai-staging-rollback-v2-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: '1.15.5'
+
+      - name: Initialize staging state
+        run: >-
+          terraform -chdir=infra/staging init
+          -backend-config="bucket=${TF_STATE_BUCKET}"
+          -backend-config="region=${AWS_REGION}"
+
+      - name: Confirm image exists in ECR
+        shell: bash
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          set -euo pipefail
+          repository_url="$(terraform -chdir=infra/staging output -raw ecr_repository_url)"
+          repository_name="${repository_url##*/}"
+          aws ecr describe-images \
+            --repository-name "$repository_name" \
+            --image-ids "imageTag=${IMAGE_TAG}" >/dev/null
+
+      - name: Plan immutable application rollback
+        env:
+          TF_VAR_image_tag: ${{ inputs.image_tag }}
+          TF_VAR_api_desired_count: '1'
+          TF_VAR_worker_desired_count: '1'
+          TF_VAR_source_worker_desired_count: ${{ inputs.source_worker_count }}
+          TF_VAR_outbox_desired_count: '1'
+          TF_VAR_ingestion_schedule_enabled: ${{ inputs.enable_source_dispatch }}
+        run: terraform -chdir=infra/staging plan -input=false -out=rollback-v2.tfplan
+
+      - name: Restore API and worker task definitions
+        env:
+          TF_VAR_image_tag: ${{ inputs.image_tag }}
+          TF_VAR_api_desired_count: '1'
+          TF_VAR_worker_desired_count: '1'
+          TF_VAR_source_worker_desired_count: ${{ inputs.source_worker_count }}
+          TF_VAR_outbox_desired_count: '1'
+          TF_VAR_ingestion_schedule_enabled: ${{ inputs.enable_source_dispatch }}
+        run: terraform -chdir=infra/staging apply -input=false -auto-approve rollback-v2.tfplan
+
+      - name: Wait for restored services
+        shell: bash
+        env:
+          SOURCE_WORKER_COUNT: ${{ inputs.source_worker_count }}
+        run: |
+          set -euo pipefail
+          cluster="$(terraform -chdir=infra/staging output -raw ecs_cluster_name)"
+          services=(
+            applyai-staging-api
+            applyai-staging-worker
+            applyai-staging-outbox
+          )
+          if [ "$SOURCE_WORKER_COUNT" != "0" ]; then
+            services+=(applyai-staging-source-worker)
+          fi
+          aws ecs wait services-stable --cluster "$cluster" --services "${services[@]}"
+
+      - name: Verify restored API
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 12 --retry-delay 5 "${API_BASE_URL%/}/health"
+          echo
+          curl --fail --silent --show-error --retry 12 --retry-delay 5 "${API_BASE_URL%/}/ready"
+          echo
+
+      - name: Rollback summary
+        shell: bash
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          {
+            echo '## ApplyAI staging rollback V2'
+            echo
+            echo "- Restored immutable image: \`${IMAGE_TAG}\`"
+            echo '- API/resume/source/outbox service stabilization: passed'
+            echo '- Database schema: unchanged (roll-forward only)'
+            echo '- `/health` and `/ready`: passed'
+          } >> "$GITHUB_STEP_SUMMARY"

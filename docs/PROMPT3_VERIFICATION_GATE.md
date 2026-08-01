@@ -16,6 +16,14 @@ Prompt 3 adds source-quality controls, durable dispatch, source-worker infrastru
 | AWS cost measurement | BLOCKED | Requires measured staging usage |
 | AI matching | NOT STARTED | Remains blocked until the real-service Prompt 3 gate passes |
 
+Current verification branch:
+
+```text
+agent/applyai-job-data-scale-quality
+```
+
+The exact head SHA must be taken from the final successful GitHub Actions run. Do not retain an older hard-coded SHA after the branch moves.
+
 ## Required exact-head workflows
 
 The following workflows must all succeed against the same PR head:

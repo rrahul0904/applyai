@@ -5,7 +5,17 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.api import applications, internal_job_sources, jobs, me, onboarding, profiles, resumes
+from app.api import (
+    applications,
+    internal_job_discoveries,
+    internal_job_sources,
+    job_imports,
+    jobs,
+    me,
+    onboarding,
+    profiles,
+    resumes,
+)
 from app.core.config import get_settings
 from app.core.database import engine
 
@@ -114,10 +124,22 @@ for router in (
 ):
     app.include_router(router, prefix="/api/v1")
 
-# Operator routes use a separate internal token and are deliberately excluded from
-# the candidate-facing OpenAPI/TypeScript SDK contract.
+# URL imports are a background backend workflow and are not consumed by the current
+# web SDK yet. The HTTP endpoints remain active but do not expand generated client types.
 app.include_router(
-    internal_job_sources.router,
+    job_imports.router,
     prefix="/api/v1",
     include_in_schema=False,
 )
+
+# Operator routes use a separate internal token and are deliberately excluded from
+# the candidate-facing OpenAPI/TypeScript SDK contract.
+for internal_router in (
+    internal_job_sources.router,
+    internal_job_discoveries.router,
+):
+    app.include_router(
+        internal_router,
+        prefix="/api/v1",
+        include_in_schema=False,
+    )

@@ -24,7 +24,13 @@ class JobSourceRegistry(Base):
     __tablename__ = "job_source_registry"
     __table_args__ = (
         UniqueConstraint("source_type", "source_identity", name="uq_job_source_registry_identity"),
-        Index("ix_job_source_registry_due", "enabled", "next_run_at", "health_status"),
+        Index(
+            "ix_job_source_registry_due",
+            "enabled",
+            "next_run_at",
+            "priority",
+            "health_status",
+        ),
         Index("ix_job_source_registry_lease", "lease_expires_at", "locked_at"),
     )
 
@@ -39,6 +45,7 @@ class JobSourceRegistry(Base):
     careers_url: Mapped[str | None] = mapped_column(Text)
     configuration: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     trust_level: Mapped[str] = mapped_column(String(48), nullable=False, default="OFFICIAL_ATS")
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=50)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     crawl_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
@@ -46,7 +53,9 @@ class JobSourceRegistry(Base):
     last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_failure_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_dispatch_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_job_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_change_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     health_status: Mapped[str] = mapped_column(String(32), nullable=False, default="HEALTHY")
     consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -54,6 +63,8 @@ class JobSourceRegistry(Base):
     last_error_summary: Mapped[str | None] = mapped_column(Text)
 
     crawl_interval_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=21_600)
+    min_interval_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=900)
+    max_interval_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=604_800)
     next_run_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

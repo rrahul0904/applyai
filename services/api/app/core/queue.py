@@ -70,11 +70,17 @@ _development_queue = InMemoryTaskQueue()
 _source_development_queue = InMemoryTaskQueue()
 
 
-def get_task_queue(
-    settings: Settings = Depends(get_settings),
+def get_task_queue_for_type(
+    settings: Settings,
     *,
     task_type: str | None = None,
 ) -> TaskQueue:
+    """Resolve a queue for a server-owned task type.
+
+    This function is intentionally not a FastAPI dependency. Keeping task_type out of
+    dependency signatures prevents internal worker-routing details from becoming public
+    request parameters in OpenAPI.
+    """
     is_source_task = task_type in SOURCE_TASK_TYPES
     if settings.task_queue_provider == "sqs":
         queue_url = (
@@ -86,3 +92,8 @@ def get_task_queue(
             raise RuntimeError("A queue URL is required for the SQS task provider")
         return SqsTaskQueue(queue_url, settings.sqs_region)
     return _source_development_queue if is_source_task else _development_queue
+
+
+def get_task_queue(settings: Settings = Depends(get_settings)) -> TaskQueue:
+    """FastAPI dependency for the default candidate task queue."""
+    return get_task_queue_for_type(settings)

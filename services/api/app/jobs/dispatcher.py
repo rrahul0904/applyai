@@ -7,7 +7,6 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.core.database import SessionLocal
@@ -16,6 +15,7 @@ from app.core.queue import Task
 from app.job_source_models import JobSourceRegistry
 from app.jobs.contracts import SourceHealthStatus
 from app.jobs.registry import sync_configured_sources
+from app.jobs.verifier import due_job_source_ids
 
 
 logger = logging.getLogger("applyai.source_dispatcher")
@@ -117,9 +117,40 @@ def dispatch_due_sources(
     return dispatched_ids
 
 
+def dispatch_due_verifications(settings: Settings | None = None) -> list[uuid.UUID]:
+    settings = settings or get_settings()
+    with SessionLocal() as session:
+        source_ids = due_job_source_ids(session, settings=settings)
+        now = utcnow()
+        period = int(now.timestamp() // max(900, settings.apply_url_error_interval_seconds))
+        for source_id in source_ids:
+            add_task_outbox_event(
+                session,
+                task=Task(
+                    task_type="SOURCE_VERIFY",
+                    payload={"job_source_id": str(source_id)},
+                    idempotency_key=f"source-verify:{source_id}:{period}",
+                ),
+                aggregate_type="JOB_SOURCE",
+                aggregate_id=source_id,
+            )
+        session.commit()
+    logger.info("source_verify_dispatch_completed", extra={"dispatched": len(source_ids)})
+    return source_ids
+
+
 def main() -> None:
     source_ids = dispatch_due_sources()
-    print(json.dumps({"dispatched": [str(value) for value in source_ids]}, sort_keys=True))
+    verification_ids = dispatch_due_verifications()
+    print(
+        json.dumps(
+            {
+                "source_ingest_dispatched": [str(value) for value in source_ids],
+                "source_verify_dispatched": [str(value) for value in verification_ids],
+            },
+            sort_keys=True,
+        )
+    )
 
 
 if __name__ == "__main__":

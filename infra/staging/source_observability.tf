@@ -1,6 +1,6 @@
 resource "aws_cloudwatch_log_metric_filter" "source_postings_fetched" {
-  name           = "${local.name_prefix}-source-postings-fetched"
-  log_group_name = aws_cloudwatch_log_group.source_worker.name
+  name           = "${local.name}-source-postings-fetched"
+  log_group_name = aws_cloudwatch_log_group.runtime["ingestion"].name
   pattern        = "{ $.event = \"source_ingest_completed\" && $.counts.fetched = * }"
 
   metric_transformation {
@@ -11,8 +11,8 @@ resource "aws_cloudwatch_log_metric_filter" "source_postings_fetched" {
 }
 
 resource "aws_cloudwatch_log_metric_filter" "source_canonical_changes" {
-  name           = "${local.name_prefix}-source-canonical-changes"
-  log_group_name = aws_cloudwatch_log_group.source_worker.name
+  name           = "${local.name}-source-canonical-changes"
+  log_group_name = aws_cloudwatch_log_group.runtime["ingestion"].name
   pattern        = "{ $.event = \"source_ingest_completed\" && $.counts = * }"
 
   metric_transformation {
@@ -23,8 +23,8 @@ resource "aws_cloudwatch_log_metric_filter" "source_canonical_changes" {
 }
 
 resource "aws_cloudwatch_log_metric_filter" "source_health_failures" {
-  name           = "${local.name_prefix}-source-health-failures"
-  log_group_name = aws_cloudwatch_log_group.source_worker.name
+  name           = "${local.name}-source-health-failures"
+  log_group_name = aws_cloudwatch_log_group.runtime["ingestion"].name
   pattern        = "{ $.event = \"job_ingestion_failed\" || $.event = \"source_ingest_failed\" }"
 
   metric_transformation {
@@ -35,7 +35,7 @@ resource "aws_cloudwatch_log_metric_filter" "source_health_failures" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "source_health_failures" {
-  alarm_name          = "${local.name_prefix}-source-health-failures"
+  alarm_name          = "${local.name}-source-health-failures"
   alarm_description   = "Source health/ingestion failures exceeded the initial staging threshold."
   namespace           = "ApplyAI/${var.environment}"
   metric_name         = "SourceHealthFailures"
@@ -46,6 +46,4 @@ resource "aws_cloudwatch_metric_alarm" "source_health_failures" {
   comparison_operator = "GreaterThanOrEqualToThreshold"
   treat_missing_data  = "notBreaching"
   alarm_actions       = local.alarm_actions
-
-  tags = local.common_tags
 }

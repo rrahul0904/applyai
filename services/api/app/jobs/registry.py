@@ -181,25 +181,32 @@ def claim_due_source_ids(
 
 
 def adaptive_interval_seconds(source: JobSourceRegistry, settings: Settings) -> int:
-    minimum = max(settings.job_source_min_interval_seconds, source.min_interval_seconds)
-    maximum = min(settings.job_source_max_interval_seconds, source.max_interval_seconds)
-    base = max(minimum, min(source.crawl_interval_seconds, maximum))
+    source_minimum = int(source.min_interval_seconds or settings.job_source_min_interval_seconds)
+    source_maximum = int(source.max_interval_seconds or settings.job_source_max_interval_seconds)
+    source_interval = int(source.crawl_interval_seconds or settings.job_source_default_interval_seconds)
+    minimum = max(settings.job_source_min_interval_seconds, source_minimum)
+    maximum = min(settings.job_source_max_interval_seconds, source_maximum)
+    base = max(minimum, min(source_interval, maximum))
 
-    if source.consecutive_failures > 0:
-        failure_interval = base * (2 ** min(source.consecutive_failures, 8))
+    failure_count = int(source.consecutive_failures or 0)
+    change_count = max(0, int(source.last_change_count or 0))
+    job_count = max(0, int(source.last_job_count or 0))
+
+    if failure_count > 0:
+        failure_interval = base * (2 ** min(failure_count, 8))
         return min(
             maximum,
             settings.job_source_failure_max_backoff_seconds,
             failure_interval,
         )
 
-    changes = max(0, source.last_change_count)
-    volume = max(0, source.last_job_count)
-    if changes >= 25 or (volume >= 100 and changes / max(volume, 1) >= 0.10):
+    if change_count >= 25 or (
+        job_count >= 100 and change_count / max(job_count, 1) >= 0.10
+    ):
         return max(minimum, int(base * 0.5))
-    if changes > 0 or volume >= 1_000:
+    if change_count > 0 or job_count >= 1_000:
         return max(minimum, int(base * 0.75))
-    if volume == 0:
+    if job_count == 0:
         return min(maximum, int(base * 2.0))
     return min(maximum, int(base * 1.25))
 

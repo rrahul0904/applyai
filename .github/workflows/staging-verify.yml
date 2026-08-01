@@ -1,0 +1,149 @@
+name: ApplyAI Staging Infrastructure Verification
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: applyai-staging-verification
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify deployed AWS staging services
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+      API_BASE_URL: ${{ vars.API_BASE_URL }}
+      TF_VAR_web_origin: ${{ vars.WEB_ORIGIN }}
+      TF_VAR_api_certificate_arn: ${{ vars.API_CERTIFICATE_ARN }}
+      TF_VAR_clerk_issuer: ${{ vars.CLERK_ISSUER }}
+      TF_VAR_clerk_jwks_url: ${{ vars.CLERK_JWKS_URL }}
+      TF_VAR_clerk_audience: ${{ vars.CLERK_AUDIENCE }}
+      TF_VAR_greenhouse_board_tokens: ${{ vars.GREENHOUSE_BOARD_TOKENS || '[]' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Configure AWS credentials through GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@0e613a0980cbf65ed5b322eb7a1e075d28913a83
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: applyai-staging-verify-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: '1.15.5'
+
+      - name: Initialize staging state
+        run: >-
+          terraform -chdir=infra/staging init
+          -backend-config="bucket=${TF_STATE_BUCKET}"
+          -backend-config="region=${AWS_REGION}"
+
+      - name: Verify Terraform state is readable
+        run: terraform -chdir=infra/staging output >/dev/null
+
+      - name: Verify ECS services are running
+        shell: bash
+        run: |
+          set -euo pipefail
+          cluster="$(terraform -chdir=infra/staging output -raw ecs_cluster_name)"
+          services=(applyai-staging-api applyai-staging-worker applyai-staging-outbox)
+          aws ecs describe-services --cluster "$cluster" --services "${services[@]}" > /tmp/services.json
+          jq -e '
+            (.services | length) == 3 and
+            all(.services[]; .status == "ACTIVE" and .desiredCount >= 1 and .runningCount >= 1)
+          ' /tmp/services.json >/dev/null
+
+      - name: Verify ALB target health
+        shell: bash
+        run: |
+          set -euo pipefail
+          target_group="$(terraform -chdir=infra/staging output -raw api_target_group_arn)"
+          aws elbv2 describe-target-health --target-group-arn "$target_group" > /tmp/targets.json
+          jq -e '
+            (.TargetHealthDescriptions | length) >= 1 and
+            all(.TargetHealthDescriptions[]; .TargetHealth.State == "healthy")
+          ' /tmp/targets.json >/dev/null
+
+      - name: Verify Aurora is available and private
+        shell: bash
+        run: |
+          set -euo pipefail
+          cluster_id="applyai-staging-postgres"
+          aws rds describe-db-clusters --db-cluster-identifier "$cluster_id" > /tmp/cluster.json
+          jq -e '.DBClusters[0].Status == "available" and .DBClusters[0].StorageEncrypted == true' /tmp/cluster.json >/dev/null
+          instance_id="applyai-staging-postgres-1"
+          aws rds describe-db-instances --db-instance-identifier "$instance_id" > /tmp/instance.json
+          jq -e '.DBInstances[0].DBInstanceStatus == "available" and .DBInstances[0].PubliclyAccessible == false' /tmp/instance.json >/dev/null
+
+      - name: Verify resume S3 safety controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          bucket="$(terraform -chdir=infra/staging output -raw resume_bucket_name)"
+          aws s3api get-public-access-block --bucket "$bucket" > /tmp/public-access.json
+          jq -e '
+            .PublicAccessBlockConfiguration.BlockPublicAcls == true and
+            .PublicAccessBlockConfiguration.IgnorePublicAcls == true and
+            .PublicAccessBlockConfiguration.BlockPublicPolicy == true and
+            .PublicAccessBlockConfiguration.RestrictPublicBuckets == true
+          ' /tmp/public-access.json >/dev/null
+          test "$(aws s3api get-bucket-versioning --bucket "$bucket" --query Status --output text)" = "Enabled"
+          aws s3api get-bucket-encryption --bucket "$bucket" >/dev/null
+
+      - name: Verify SQS and DLQ redrive configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          queue="$(terraform -chdir=infra/staging output -raw resume_queue_url)"
+          dlq="$(terraform -chdir=infra/staging output -raw resume_dlq_url)"
+          aws sqs get-queue-attributes --queue-url "$queue" --attribute-names All > /tmp/queue.json
+          aws sqs get-queue-attributes --queue-url "$dlq" --attribute-names All > /tmp/dlq.json
+          jq -e '.Attributes.RedrivePolicy != null and (.Attributes.RedrivePolicy | length) > 0' /tmp/queue.json >/dev/null
+          jq -e '.Attributes.QueueArn != null' /tmp/dlq.json >/dev/null
+
+      - name: Verify HTTPS health and database readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 "${API_BASE_URL%/}/health"
+          echo
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 "${API_BASE_URL%/}/ready"
+          echo
+
+      - name: Verify CloudWatch runtime log groups
+        shell: bash
+        run: |
+          set -euo pipefail
+          for component in api worker outbox ingestion migration; do
+            aws logs describe-log-groups \
+              --log-group-name-prefix "/applyai/staging/${component}" \
+              --query 'logGroups[0].logGroupName' \
+              --output text | grep -F "/applyai/staging/${component}" >/dev/null
+          done
+
+      - name: Write verification summary
+        run: |
+          {
+            echo '## ApplyAI staging infrastructure verification'
+            echo
+            echo '- Terraform remote state: readable'
+            echo '- API / worker / outbox: running'
+            echo '- ALB targets: healthy'
+            echo '- Aurora: encrypted, available, private'
+            echo '- Resume S3: private, versioned, encrypted'
+            echo '- SQS + DLQ: configured with redrive'
+            echo '- API health/readiness: passed'
+            echo '- CloudWatch runtime log groups: present'
+            echo
+            echo 'This verifies infrastructure state only. The Candidate A/B real-service acceptance journey remains a separate staging acceptance gate.'
+          } >> "$GITHUB_STEP_SUMMARY"

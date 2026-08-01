@@ -1,0 +1,200 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  One-time ApplyAI staging bootstrap. Creates the Terraform state bucket,
+  GitHub Actions OIDC trust path, and a staging deployment role. Run this in a
+  dedicated non-production AWS account before using the staging workflows.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: applyai
+  EnvironmentName:
+    Type: String
+    Default: staging
+    AllowedValues:
+      - staging
+  StateBucketName:
+    Type: String
+    Default: ''
+    Description: Optional explicit Terraform state bucket name. Leave blank for an account/region-derived name.
+  CreateGitHubOidcProvider:
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Set false when this AWS account already has token.actions.githubusercontent.com registered as an IAM OIDC provider.
+  ExistingGitHubOidcProviderArn:
+    Type: String
+    Default: ''
+    Description: Required when CreateGitHubOidcProvider=false.
+  GitHubOwner:
+    Type: String
+    Default: rrahul0904
+  GitHubRepository:
+    Type: String
+    Default: applyai
+  GitHubOwnerId:
+    Type: String
+    Default: '10737521'
+    Description: Immutable GitHub owner ID used by repositories that opt into immutable OIDC subject claims.
+  GitHubRepositoryId:
+    Type: String
+    Default: '1315606023'
+    Description: Immutable GitHub repository ID used by repositories that opt into immutable OIDC subject claims.
+
+Conditions:
+  HasExplicitStateBucketName: !Not [!Equals [!Ref StateBucketName, '']]
+  ShouldCreateGitHubOidcProvider: !Equals [!Ref CreateGitHubOidcProvider, 'true']
+
+Resources:
+  TerraformStateBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !If
+        - HasExplicitStateBucketName
+        - !Ref StateBucketName
+        - !Sub '${ProjectName}-terraform-state-${AWS::AccountId}-${AWS::Region}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: Application
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormationBootstrap
+
+  TerraformStateBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref TerraformStateBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt TerraformStateBucket.Arn
+              - !Sub '${TerraformStateBucket.Arn}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+
+  GitHubActionsOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: ShouldCreateGitHubOidcProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      Tags:
+        - Key: Application
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  GitHubDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-${EnvironmentName}-github-deploy'
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - ShouldCreateGitHubOidcProvider
+                - !Ref GitHubActionsOidcProvider
+                - !Ref ExistingGitHubOidcProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              ForAnyValue:StringLike:
+                token.actions.githubusercontent.com:sub:
+                  - !Sub 'repo:${GitHubOwner}/${GitHubRepository}:environment:${EnvironmentName}'
+                  - !Sub 'repo:${GitHubOwner}@${GitHubOwnerId}/${GitHubRepository}@${GitHubRepositoryId}:environment:${EnvironmentName}'
+      Policies:
+        - PolicyName: ApplyAIStagingTerraformAndRelease
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: TerraformState
+                Effect: Allow
+                Action:
+                  - s3:GetBucketVersioning
+                  - s3:GetEncryptionConfiguration
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:ListBucket
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource:
+                  - !GetAtt TerraformStateBucket.Arn
+                  - !Sub '${TerraformStateBucket.Arn}/*'
+              - Sid: StagingInfrastructure
+                Effect: Allow
+                Action:
+                  - ec2:*
+                  - elasticloadbalancing:*
+                  - ecs:*
+                  - ecr:*
+                  - rds:*
+                  - sqs:*
+                  - s3:*
+                  - logs:*
+                  - cloudwatch:*
+                  - events:*
+                  - route53:*
+                  - acm:DescribeCertificate
+                  - secretsmanager:DescribeSecret
+                  - secretsmanager:GetSecretValue
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:GetRole
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:PassRole
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:GetRolePolicy
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:ListAttachedRolePolicies
+                  - iam:ListRolePolicies
+                Resource: '*'
+      Tags:
+        - Key: Application
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormationBootstrap
+
+Outputs:
+  TerraformStateBucketName:
+    Description: Set this as the GitHub staging environment variable TF_STATE_BUCKET.
+    Value: !Ref TerraformStateBucket
+  GitHubDeployRoleArn:
+    Description: Set this as the GitHub staging environment variable AWS_DEPLOY_ROLE_ARN.
+    Value: !GetAtt GitHubDeployRole.Arn
+  GitHubOidcProviderArn:
+    Value: !If
+      - ShouldCreateGitHubOidcProvider
+      - !Ref GitHubActionsOidcProvider
+      - !Ref ExistingGitHubOidcProviderArn

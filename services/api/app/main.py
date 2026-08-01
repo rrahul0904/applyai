@@ -1,0 +1,115 @@
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+
+from app.api import applications, jobs, me, onboarding, profiles, resumes
+from app.core.config import get_settings
+from app.core.database import engine
+
+
+settings = get_settings()
+app = FastAPI(
+    title="ApplyAI API",
+    version="0.1.0",
+    openapi_url="/api/v1/openapi.json",
+    docs_url="/api/docs",
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[settings.web_origin],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
+)
+
+
+@app.exception_handler(HTTPException)
+async def http_error(_request: Request, exc: HTTPException) -> JSONResponse:
+    if isinstance(exc.detail, dict):
+        detail = exc.detail
+    else:
+        code_by_status = {
+            401: "AUTH_REQUIRED",
+            403: "FORBIDDEN",
+            404: "NOT_FOUND",
+            409: "CONFLICT",
+            422: "INVALID_REQUEST",
+            429: "RATE_LIMITED",
+            503: "NOT_READY",
+        }
+        detail = {
+            "code": code_by_status.get(exc.status_code, "REQUEST_ERROR"),
+            "message": str(exc.detail),
+        }
+    return JSONResponse(status_code=exc.status_code, content={"error": detail})
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(
+    _request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    fields = [
+        {
+            "field": ".".join(str(part) for part in error["loc"][1:]),
+            "message": error["msg"],
+        }
+        for error in exc.errors()
+    ]
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": {
+                "code": "VALIDATION_ERROR",
+                "message": "Please check the highlighted fields",
+                "fields": fields,
+            }
+        },
+    )
+
+
+@app.exception_handler(Exception)
+async def unexpected_error(_request: Request, _exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": {
+                "code": "INTERNAL_ERROR",
+                "message": "Something went wrong. Please try again.",
+            }
+        },
+    )
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.get("/ready")
+def ready() -> dict[str, str]:
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "NOT_READY",
+                "message": "A required service is unavailable",
+            },
+        ) from exc
+    return {"status": "ready"}
+
+
+for router in (
+    me.router,
+    onboarding.router,
+    profiles.router,
+    resumes.router,
+    jobs.router,
+    applications.router,
+):
+    app.include_router(router, prefix="/api/v1")

@@ -1,0 +1,29 @@
+aws_region = "us-east-1"
+
+# Exact Vercel staging origin. Do not use a wildcard.
+web_origin = "https://staging.example.com"
+
+# ACM certificate for the API staging hostname, for example api-staging.example.com.
+api_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/replace-me"
+
+# Clerk staging JWT verification values. The Clerk secret key belongs in Vercel,
+# not in this Terraform file or the FastAPI task definition.
+clerk_issuer   = "https://your-staging-clerk-instance.clerk.accounts.dev"
+clerk_jwks_url = "https://your-staging-clerk-instance.clerk.accounts.dev/.well-known/jwks.json"
+clerk_audience = ""
+
+# Start with a small explicit set and validate ingestion/dedup/freshness before expanding.
+greenhouse_board_tokens = [
+  "example-company",
+]
+
+# Infrastructure can be created before an image exists. After the first image is
+# pushed and migrations are applied, set these to 1 and enable ingestion.
+image_tag                  = "staging"
+api_desired_count          = 0
+worker_desired_count       = 0
+outbox_desired_count       = 0
+ingestion_schedule_enabled = false
+
+# Optional existing SNS topic for alarm notifications.
+alarm_sns_topic_arn = null

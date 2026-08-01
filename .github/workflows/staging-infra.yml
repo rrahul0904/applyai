@@ -1,0 +1,101 @@
+name: ApplyAI Staging Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Plan only, or apply the dormant AWS staging foundation
+        required: true
+        default: plan
+        type: choice
+        options:
+          - plan
+          - apply
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: applyai-staging-infrastructure
+  cancel-in-progress: false
+
+jobs:
+  terraform:
+    name: Terraform ${{ inputs.mode }}
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+      TF_VAR_web_origin: ${{ vars.WEB_ORIGIN }}
+      TF_VAR_api_certificate_arn: ${{ vars.API_CERTIFICATE_ARN }}
+      TF_VAR_clerk_issuer: ${{ vars.CLERK_ISSUER }}
+      TF_VAR_clerk_jwks_url: ${{ vars.CLERK_JWKS_URL }}
+      TF_VAR_clerk_audience: ${{ vars.CLERK_AUDIENCE }}
+      TF_VAR_greenhouse_board_tokens: ${{ vars.GREENHOUSE_BOARD_TOKENS || '[]' }}
+      TF_VAR_image_tag: bootstrap
+      TF_VAR_api_desired_count: '0'
+      TF_VAR_worker_desired_count: '0'
+      TF_VAR_outbox_desired_count: '0'
+      TF_VAR_ingestion_schedule_enabled: 'false'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Validate deployment environment inputs
+        shell: bash
+        env:
+          AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          : "${AWS_DEPLOY_ROLE_ARN:?Set AWS_DEPLOY_ROLE_ARN in the GitHub staging environment}"
+          : "${TF_STATE_BUCKET:?Set TF_STATE_BUCKET in the GitHub staging environment}"
+          : "${TF_VAR_web_origin:?Set WEB_ORIGIN in the GitHub staging environment}"
+          : "${TF_VAR_api_certificate_arn:?Set API_CERTIFICATE_ARN in the GitHub staging environment}"
+          : "${TF_VAR_clerk_issuer:?Set CLERK_ISSUER in the GitHub staging environment}"
+          : "${TF_VAR_clerk_jwks_url:?Set CLERK_JWKS_URL in the GitHub staging environment}"
+
+      - name: Configure AWS credentials through GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@0e613a0980cbf65ed5b322eb7a1e075d28913a83
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: applyai-staging-infra-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: '1.15.5'
+
+      - name: Check Terraform formatting
+        run: terraform -chdir=infra/staging fmt -check -diff -recursive
+
+      - name: Initialize remote state
+        run: >-
+          terraform -chdir=infra/staging init
+          -backend-config="bucket=${TF_STATE_BUCKET}"
+          -backend-config="region=${AWS_REGION}"
+
+      - name: Validate Terraform
+        run: terraform -chdir=infra/staging validate
+
+      - name: Plan dormant staging foundation
+        run: terraform -chdir=infra/staging plan -input=false -out=tfplan
+
+      - name: Apply dormant staging foundation
+        if: inputs.mode == 'apply'
+        run: terraform -chdir=infra/staging apply -input=false -auto-approve tfplan
+
+      - name: Write infrastructure outputs
+        if: inputs.mode == 'apply'
+        run: |
+          {
+            echo '## ApplyAI staging foundation'
+            echo
+            echo 'Terraform applied with API/worker/outbox desired counts at 0 and Greenhouse scheduling disabled.'
+            echo
+            echo '```text'
+            terraform -chdir=infra/staging output
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,233 @@
+name: ApplyAI Staging Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      enable_ingestion:
+        description: Enable the scheduled Greenhouse ingestion task after a successful release
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: applyai-staging-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build, migrate, activate, verify
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+      API_BASE_URL: ${{ vars.API_BASE_URL }}
+      TF_VAR_web_origin: ${{ vars.WEB_ORIGIN }}
+      TF_VAR_api_certificate_arn: ${{ vars.API_CERTIFICATE_ARN }}
+      TF_VAR_clerk_issuer: ${{ vars.CLERK_ISSUER }}
+      TF_VAR_clerk_jwks_url: ${{ vars.CLERK_JWKS_URL }}
+      TF_VAR_clerk_audience: ${{ vars.CLERK_AUDIENCE }}
+      TF_VAR_greenhouse_board_tokens: ${{ vars.GREENHOUSE_BOARD_TOKENS || '[]' }}
+    steps:
+      - name: Checkout exact release source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Validate deployment environment inputs
+        shell: bash
+        env:
+          AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          : "${AWS_DEPLOY_ROLE_ARN:?Set AWS_DEPLOY_ROLE_ARN in the GitHub staging environment}"
+          : "${TF_STATE_BUCKET:?Set TF_STATE_BUCKET in the GitHub staging environment}"
+          : "${API_BASE_URL:?Set API_BASE_URL in the GitHub staging environment}"
+          : "${TF_VAR_web_origin:?Set WEB_ORIGIN in the GitHub staging environment}"
+          : "${TF_VAR_api_certificate_arn:?Set API_CERTIFICATE_ARN in the GitHub staging environment}"
+          : "${TF_VAR_clerk_issuer:?Set CLERK_ISSUER in the GitHub staging environment}"
+          : "${TF_VAR_clerk_jwks_url:?Set CLERK_JWKS_URL in the GitHub staging environment}"
+          case "$API_BASE_URL" in
+            https://*) ;;
+            *) echo 'API_BASE_URL must use HTTPS' >&2; exit 1 ;;
+          esac
+
+      - name: Configure AWS credentials through GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@0e613a0980cbf65ed5b322eb7a1e075d28913a83
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: applyai-staging-release-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: '1.15.5'
+
+      - name: Initialize staging state
+        run: >-
+          terraform -chdir=infra/staging init
+          -backend-config="bucket=${TF_STATE_BUCKET}"
+          -backend-config="region=${AWS_REGION}"
+
+      - name: Resolve release identifiers
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          image_tag="${GITHUB_SHA}"
+          repository_url="$(terraform -chdir=infra/staging output -raw ecr_repository_url)"
+          repository_name="${repository_url##*/}"
+          cluster="$(terraform -chdir=infra/staging output -raw ecs_cluster_name)"
+          subnets="$(terraform -chdir=infra/staging output -json app_subnet_ids | jq -r 'join(",")')"
+          security_group="$(terraform -chdir=infra/staging output -raw ecs_security_group_id)"
+          {
+            echo "image_tag=${image_tag}"
+            echo "repository_url=${repository_url}"
+            echo "repository_name=${repository_name}"
+            echo "cluster=${cluster}"
+            echo "subnets=${subnets}"
+            echo "security_group=${security_group}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@62f4f872db3836360b72999f4b87f1ff13310f3a
+
+      - name: Build and push immutable API image
+        id: image
+        shell: bash
+        env:
+          IMAGE_TAG: ${{ steps.release.outputs.image_tag }}
+          REPOSITORY_URL: ${{ steps.release.outputs.repository_url }}
+          REPOSITORY_NAME: ${{ steps.release.outputs.repository_name }}
+        run: |
+          set -euo pipefail
+          image_uri="${REPOSITORY_URL}:${IMAGE_TAG}"
+          if aws ecr describe-images \
+            --repository-name "$REPOSITORY_NAME" \
+            --image-ids "imageTag=${IMAGE_TAG}" >/dev/null 2>&1; then
+            echo "Image ${image_uri} already exists; reusing immutable release image."
+          else
+            docker build --pull --tag "$image_uri" services/api
+            docker push "$image_uri"
+          fi
+          echo "image_uri=${image_uri}" >> "$GITHUB_OUTPUT"
+
+      - name: Register migration task for the exact release image
+        id: migration_definition
+        shell: bash
+        env:
+          IMAGE_URI: ${{ steps.image.outputs.image_uri }}
+        run: |
+          set -euo pipefail
+          current="$(aws ecs describe-task-definition \
+            --task-definition applyai-staging-migration \
+            --query taskDefinition \
+            --output json)"
+          printf '%s' "$current" | jq --arg image "$IMAGE_URI" '
+            del(
+              .taskDefinitionArn,
+              .revision,
+              .status,
+              .requiresAttributes,
+              .compatibilities,
+              .registeredAt,
+              .registeredBy
+            )
+            | .containerDefinitions[0].image = $image
+          ' > /tmp/applyai-migration-task.json
+          task_definition="$(aws ecs register-task-definition \
+            --cli-input-json file:///tmp/applyai-migration-task.json \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)"
+          echo "task_definition=${task_definition}" >> "$GITHUB_OUTPUT"
+
+      - name: Run Alembic migration gate
+        id: migrate
+        shell: bash
+        env:
+          CLUSTER: ${{ steps.release.outputs.cluster }}
+          TASK_DEFINITION: ${{ steps.migration_definition.outputs.task_definition }}
+          SUBNETS: ${{ steps.release.outputs.subnets }}
+          SECURITY_GROUP: ${{ steps.release.outputs.security_group }}
+        run: |
+          set -euo pipefail
+          task_arn="$(aws ecs run-task \
+            --cluster "$CLUSTER" \
+            --task-definition "$TASK_DEFINITION" \
+            --launch-type FARGATE \
+            --network-configuration \
+              "awsvpcConfiguration={subnets=[${SUBNETS}],securityGroups=[${SECURITY_GROUP}],assignPublicIp=DISABLED}" \
+            --query 'tasks[0].taskArn' \
+            --output text)"
+          test -n "$task_arn" && test "$task_arn" != "None"
+          aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$task_arn"
+          exit_code="$(aws ecs describe-tasks \
+            --cluster "$CLUSTER" \
+            --tasks "$task_arn" \
+            --query 'tasks[0].containers[0].exitCode' \
+            --output text)"
+          if [ "$exit_code" != "0" ]; then
+            aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$task_arn" --output json
+            echo "Migration task failed with exit code ${exit_code}; application services were not changed." >&2
+            exit 1
+          fi
+
+      - name: Plan release activation
+        env:
+          TF_VAR_image_tag: ${{ steps.release.outputs.image_tag }}
+          TF_VAR_api_desired_count: '1'
+          TF_VAR_worker_desired_count: '1'
+          TF_VAR_outbox_desired_count: '1'
+          TF_VAR_ingestion_schedule_enabled: ${{ inputs.enable_ingestion }}
+        run: terraform -chdir=infra/staging plan -input=false -out=release.tfplan
+
+      - name: Activate release through Terraform
+        env:
+          TF_VAR_image_tag: ${{ steps.release.outputs.image_tag }}
+          TF_VAR_api_desired_count: '1'
+          TF_VAR_worker_desired_count: '1'
+          TF_VAR_outbox_desired_count: '1'
+          TF_VAR_ingestion_schedule_enabled: ${{ inputs.enable_ingestion }}
+        run: terraform -chdir=infra/staging apply -input=false -auto-approve release.tfplan
+
+      - name: Wait for ECS services to stabilize
+        shell: bash
+        env:
+          CLUSTER: ${{ steps.release.outputs.cluster }}
+        run: |
+          set -euo pipefail
+          aws ecs wait services-stable \
+            --cluster "$CLUSTER" \
+            --services \
+              applyai-staging-api \
+              applyai-staging-worker \
+              applyai-staging-outbox
+
+      - name: Verify API health and database readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 8 --retry-delay 5 "${API_BASE_URL%/}/health"
+          echo
+          curl --fail --silent --show-error --retry 8 --retry-delay 5 "${API_BASE_URL%/}/ready"
+          echo
+
+      - name: Write release summary
+        env:
+          IMAGE_URI: ${{ steps.image.outputs.image_uri }}
+        run: |
+          {
+            echo '## ApplyAI staging release'
+            echo
+            echo "- Source commit: \`${GITHUB_SHA}\`"
+            echo "- Image: \`${IMAGE_URI}\`"
+            echo '- Alembic migration gate: passed'
+            echo '- ECS services: stable'
+            echo '- /health: passed'
+            echo '- /ready: passed'
+            echo "- Greenhouse schedule enabled: ${{ inputs.enable_ingestion }}"
+          } >> "$GITHUB_STEP_SUMMARY"

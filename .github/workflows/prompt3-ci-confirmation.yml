@@ -1,13 +1,11 @@
 name: Prompt 3 CI Confirmation
 
 on:
-  push:
-    branches:
-      - agent/applyai-job-data-scale-quality
+  workflow_dispatch:
 
 permissions:
   actions: read
-  contents: write
+  contents: read
 
 concurrency:
   group: applyai-prompt3-ci-confirmation
@@ -15,7 +13,6 @@ concurrency:
 
 jobs:
   confirm:
-    if: ${{ !contains(github.event.head_commit.message, '[prompt3-ci]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 55
     env:
@@ -24,10 +21,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          ref: agent/applyai-job-data-scale-quality
-          fetch-depth: 0
-
       - name: Wait for exact ApplyAI CI run
         id: ci
         shell: bash
@@ -36,7 +29,7 @@ jobs:
           deadline=$((SECONDS + 3000))
           while [ "$SECONDS" -lt "$deadline" ]; do
             payload="$(gh api --method GET \
-              "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?branch=agent/applyai-job-data-scale-quality&per_page=50")"
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?branch=${GITHUB_REF_NAME}&per_page=50")"
             run="$(printf '%s' "$payload" | jq -c --arg sha "$TESTED_SHA" '
               [.workflow_runs[] | select(.head_sha == $sha)] | sort_by(.created_at) | last // empty
             ')"
@@ -50,9 +43,12 @@ jobs:
                   exit 1
                 }
                 {
-                  echo "run_id=${run_id}"
-                  echo "conclusion=${conclusion}"
-                } >> "$GITHUB_OUTPUT"
+                  echo "## Prompt 3 CI confirmation"
+                  echo
+                  echo "- Tested SHA: \`${TESTED_SHA}\`"
+                  echo "- ApplyAI CI run: \`${run_id}\`"
+                  echo "- Conclusion: \`${conclusion}\`"
+                } >> "$GITHUB_STEP_SUMMARY"
                 exit 0
               fi
             fi
@@ -60,42 +56,3 @@ jobs:
           done
           echo "Timed out waiting for ApplyAI CI on ${TESTED_SHA}." >&2
           exit 1
-
-      - name: Record exact CI evidence
-        shell: bash
-        env:
-          RUN_ID: ${{ steps.ci.outputs.run_id }}
-          CONCLUSION: ${{ steps.ci.outputs.conclusion }}
-        run: |
-          set -euo pipefail
-          mkdir -p docs/benchmarks
-          jq -n \
-            --arg tested_sha "$TESTED_SHA" \
-            --arg run_id "$RUN_ID" \
-            --arg conclusion "$CONCLUSION" \
-            --arg recorded_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            '{
-              status: "PASS",
-              tested_sha: $tested_sha,
-              applyai_ci_run_id: ($run_id | tonumber),
-              conclusion: $conclusion,
-              recorded_at: $recorded_at,
-              includes: [
-                "web_lint",
-                "web_typecheck",
-                "web_tests",
-                "web_build",
-                "openapi_drift",
-                "backend_tests",
-                "alembic_validation",
-                "api_container_build",
-                "terraform_validation",
-                "candidate_mvp_playwright"
-              ]
-            }' > docs/benchmarks/prompt3-ci-gate.json
-          git config user.name 'applyai-ci'
-          git config user.email 'applyai-ci@users.noreply.github.com'
-          git add docs/benchmarks/prompt3-ci-gate.json
-          git commit -m 'Record Prompt 3 exact CI gate [prompt3-ci]'
-          git pull --rebase origin agent/applyai-job-data-scale-quality
-          git push origin HEAD:agent/applyai-job-data-scale-quality

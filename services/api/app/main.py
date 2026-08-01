@@ -119,11 +119,18 @@ for router in (
     onboarding.router,
     profiles.router,
     resumes.router,
-    job_imports.router,
     jobs.router,
     applications.router,
 ):
     app.include_router(router, prefix="/api/v1")
+
+# URL imports are a background backend workflow and are not consumed by the current
+# web SDK yet. The HTTP endpoints remain active but do not expand generated client types.
+app.include_router(
+    job_imports.router,
+    prefix="/api/v1",
+    include_in_schema=False,
+)
 
 # Operator routes use a separate internal token and are deliberately excluded from
 # the candidate-facing OpenAPI/TypeScript SDK contract.

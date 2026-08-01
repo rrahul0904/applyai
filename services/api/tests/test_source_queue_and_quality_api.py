@@ -21,7 +21,7 @@ def test_outbox_routes_source_task_using_event_type(database_url, monkeypatch):
         observed.append(task_type)
         return source_queue
 
-    monkeypatch.setattr("app.core.outbox.get_task_queue", resolve_queue)
+    monkeypatch.setattr("app.core.outbox.get_task_queue_for_type", resolve_queue)
     monkeypatch.setattr("app.core.outbox.SessionLocal", lambda: Session(engine))
 
     with Session(engine) as session:

@@ -1,0 +1,22 @@
+name: Prompt 3 Terraform Format
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: applyai-prompt3-terraform-format
+  cancel-in-progress: true
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: '1.15.5'
+      - name: Check canonical Terraform formatting
+        run: terraform -chdir=infra/staging fmt -check -diff -recursive

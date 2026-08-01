@@ -23,6 +23,17 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+_TRUST_PRIORITY = {
+    SourceTrustLevel.EMPLOYER_DIRECT.value: 100,
+    SourceTrustLevel.OFFICIAL_ATS.value: 90,
+    SourceTrustLevel.EMPLOYER_CAREER_SITE.value: 80,
+    SourceTrustLevel.LICENSED_FEED.value: 70,
+    SourceTrustLevel.STRUCTURED_JOB_PAGE.value: 60,
+    SourceTrustLevel.THIRD_PARTY_SOURCE.value: 40,
+    SourceTrustLevel.UNVERIFIED.value: 20,
+}
+
+
 def upsert_source(
     session: Session,
     *,
@@ -48,10 +59,13 @@ def upsert_source(
             base_url=base_url,
             configuration=configuration,
             trust_level=trust_level.value,
+            priority=_TRUST_PRIORITY[trust_level.value],
             enabled=True,
             crawl_allowed=True,
             health_status=SourceHealthStatus.HEALTHY.value,
             crawl_interval_seconds=interval_seconds,
+            min_interval_seconds=min(900, interval_seconds),
+            max_interval_seconds=max(604_800, interval_seconds),
             next_run_at=utcnow(),
         )
         session.add(source)
@@ -62,6 +76,7 @@ def upsert_source(
     source.base_url = base_url
     source.configuration = configuration
     source.trust_level = trust_level.value
+    source.priority = max(source.priority or 0, _TRUST_PRIORITY[trust_level.value])
     source.crawl_interval_seconds = interval_seconds
     return source
 
@@ -147,7 +162,11 @@ def claim_due_source_ids(
                     JobSourceRegistry.lease_expires_at < now,
                 ),
             )
-            .order_by(JobSourceRegistry.next_run_at, JobSourceRegistry.created_at)
+            .order_by(
+                JobSourceRegistry.priority.desc(),
+                JobSourceRegistry.next_run_at,
+                JobSourceRegistry.created_at,
+            )
             .with_for_update(skip_locked=True)
             .limit(settings.job_source_claim_batch_size)
         )
@@ -161,11 +180,35 @@ def claim_due_source_ids(
     return [source.id for source in rows]
 
 
-def _next_interval(source: JobSourceRegistry, settings: Settings) -> int:
-    if source.consecutive_failures <= 0:
-        return source.crawl_interval_seconds
-    retry_interval = source.crawl_interval_seconds * (2 ** min(source.consecutive_failures, 8))
-    return min(retry_interval, settings.job_source_failure_max_backoff_seconds)
+def adaptive_interval_seconds(source: JobSourceRegistry, settings: Settings) -> int:
+    source_minimum = int(source.min_interval_seconds or settings.job_source_min_interval_seconds)
+    source_maximum = int(source.max_interval_seconds or settings.job_source_max_interval_seconds)
+    source_interval = int(source.crawl_interval_seconds or settings.job_source_default_interval_seconds)
+    minimum = max(settings.job_source_min_interval_seconds, source_minimum)
+    maximum = min(settings.job_source_max_interval_seconds, source_maximum)
+    base = max(minimum, min(source_interval, maximum))
+
+    failure_count = int(source.consecutive_failures or 0)
+    change_count = max(0, int(source.last_change_count or 0))
+    job_count = max(0, int(source.last_job_count or 0))
+
+    if failure_count > 0:
+        failure_interval = base * (2 ** min(failure_count, 8))
+        return min(
+            maximum,
+            settings.job_source_failure_max_backoff_seconds,
+            failure_interval,
+        )
+
+    if change_count >= 25 or (
+        job_count >= 100 and change_count / max(job_count, 1) >= 0.10
+    ):
+        return max(minimum, int(base * 0.5))
+    if change_count > 0 or job_count >= 1_000:
+        return max(minimum, int(base * 0.75))
+    if job_count == 0:
+        return min(maximum, int(base * 2.0))
+    return min(maximum, int(base * 1.25))
 
 
 def run_registered_source(
@@ -185,11 +228,15 @@ def run_registered_source(
             raise RuntimeError("Job source is disabled or crawling is not allowed")
 
         connector = JobSourceAdapterFactory.create(source)
+        counts: dict[str, int] | None = None
         try:
             health = connector.health()
             if not health.healthy:
                 raise RuntimeError(health.detail)
             counts = RegisteredSourceIngestionPipeline(session).run(source, connector)
+            source = session.get(JobSourceRegistry, source_id)
+            if source is not None:
+                source.last_change_count = counts["created"] + counts["updated"] + counts["closed"]
             return counts
         finally:
             close = getattr(connector, "close", None)
@@ -198,7 +245,7 @@ def run_registered_source(
             source = session.get(JobSourceRegistry, source_id)
             if source is not None:
                 source.next_run_at = utcnow() + timedelta(
-                    seconds=_next_interval(source, settings)
+                    seconds=adaptive_interval_seconds(source, settings)
                 )
                 source.locked_at = None
                 source.locked_by = None
@@ -207,6 +254,10 @@ def run_registered_source(
 
 
 def run_due_sources(settings: Settings | None = None) -> dict[str, dict[str, int] | str]:
+    """Compatibility synchronous runner retained for local operations/tests.
+
+    Staging Prompt 3 uses the transactional dispatcher and dedicated source queue.
+    """
     settings = settings or get_settings()
     worker_id = f"{socket.gethostname()}:{uuid.uuid4()}"
     with SessionLocal() as session:
@@ -235,7 +286,7 @@ def run_due_sources(settings: Settings | None = None) -> dict[str, dict[str, int
                 source = session.get(JobSourceRegistry, source_id)
                 if source is not None:
                     source.next_run_at = utcnow() + timedelta(
-                        seconds=_next_interval(source, settings)
+                        seconds=adaptive_interval_seconds(source, settings)
                     )
                     source.locked_at = None
                     source.locked_by = None

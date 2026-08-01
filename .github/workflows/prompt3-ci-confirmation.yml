@@ -1,0 +1,58 @@
+name: Prompt 3 CI Confirmation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: applyai-prompt3-ci-confirmation
+  cancel-in-progress: true
+
+jobs:
+  confirm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TESTED_SHA: ${{ github.sha }}
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Wait for exact ApplyAI CI run
+        id: ci
+        shell: bash
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 3000))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            payload="$(gh api --method GET \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?branch=${GITHUB_REF_NAME}&per_page=50")"
+            run="$(printf '%s' "$payload" | jq -c --arg sha "$TESTED_SHA" '
+              [.workflow_runs[] | select(.head_sha == $sha)] | sort_by(.created_at) | last // empty
+            ')"
+            if [ -n "$run" ]; then
+              status="$(printf '%s' "$run" | jq -r '.status')"
+              conclusion="$(printf '%s' "$run" | jq -r '.conclusion // ""')"
+              run_id="$(printf '%s' "$run" | jq -r '.id')"
+              if [ "$status" = "completed" ]; then
+                test "$conclusion" = "success" || {
+                  echo "ApplyAI CI run ${run_id} concluded ${conclusion}." >&2
+                  exit 1
+                }
+                {
+                  echo "## Prompt 3 CI confirmation"
+                  echo
+                  echo "- Tested SHA: \`${TESTED_SHA}\`"
+                  echo "- ApplyAI CI run: \`${run_id}\`"
+                  echo "- Conclusion: \`${conclusion}\`"
+                } >> "$GITHUB_STEP_SUMMARY"
+                exit 0
+              fi
+            fi
+            sleep 20
+          done
+          echo "Timed out waiting for ApplyAI CI on ${TESTED_SHA}." >&2
+          exit 1

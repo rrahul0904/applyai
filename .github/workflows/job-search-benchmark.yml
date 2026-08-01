@@ -1,0 +1,86 @@
+name: Job Search Scale Benchmark
+
+on:
+  pull_request:
+    paths:
+      - "services/api/app/jobs/**"
+      - "services/api/app/models.py"
+      - "services/api/scripts/benchmark_job_search.py"
+      - "services/api/alembic/**"
+      - ".github/workflows/job-search-benchmark.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: applyai-job-search-benchmark-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    name: PostgreSQL search benchmark (${{ matrix.rows }} jobs)
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    strategy:
+      fail-fast: true
+      max-parallel: 1
+      matrix:
+        include:
+          - rows: 10000
+            port: 55432
+          - rows: 50000
+            port: 55433
+          - rows: 250000
+            port: 55434
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: applyai
+          POSTGRES_PASSWORD: applyai
+          POSTGRES_DB: applyai_benchmark
+        ports:
+          - "${{ matrix.port }}:5432"
+        options: >-
+          --health-cmd "pg_isready -U applyai -d applyai_benchmark"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      ENVIRONMENT: test
+      DATABASE_URL: postgresql+psycopg://applyai:applyai@127.0.0.1:${{ matrix.port }}/applyai_benchmark
+      ROW_COUNT: ${{ matrix.rows }}
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12.11"
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+      - name: Install API dependencies
+        working-directory: services/api
+        run: uv sync --group dev --locked
+      - name: Apply all migrations
+        working-directory: services/api
+        run: uv run alembic upgrade head
+      - name: Prepare benchmark artifact directory
+        run: mkdir -p artifacts
+      - name: Run measured EXPLAIN ANALYZE benchmark
+        working-directory: services/api
+        env:
+          PYTHONPATH: .
+        run: |
+          uv run python scripts/benchmark_job_search.py \
+            --rows "$ROW_COUNT" \
+            --output "../../artifacts/job-search-${ROW_COUNT}.json" \
+            --cleanup
+      - name: Upload measured benchmark report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: applyai-job-search-${{ env.ROW_COUNT }}
+          path: artifacts/job-search-${{ env.ROW_COUNT }}.json
+          retention-days: 30
+          if-no-files-found: warn

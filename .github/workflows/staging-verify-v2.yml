@@ -1,0 +1,173 @@
+name: ApplyAI Staging Verification V2
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: applyai-staging-verification-v2
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify API, ECS, queues, database, source platform
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: staging
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+      API_BASE_URL: ${{ vars.API_BASE_URL }}
+      TF_VAR_web_origin: ${{ vars.WEB_ORIGIN }}
+      TF_VAR_api_certificate_arn: ${{ vars.API_CERTIFICATE_ARN }}
+      TF_VAR_clerk_issuer: ${{ vars.CLERK_ISSUER }}
+      TF_VAR_clerk_jwks_url: ${{ vars.CLERK_JWKS_URL }}
+      TF_VAR_clerk_audience: ${{ vars.CLERK_AUDIENCE }}
+      TF_VAR_greenhouse_board_tokens: ${{ vars.GREENHOUSE_BOARD_TOKENS || '[]' }}
+      TF_VAR_lever_site_names: ${{ vars.LEVER_SITE_NAMES || '[]' }}
+      TF_VAR_ashby_board_names: ${{ vars.ASHBY_BOARD_NAMES || '[]' }}
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Configure AWS credentials through GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@0e613a0980cbf65ed5b322eb7a1e075d28913a83
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: applyai-staging-verify-v2-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: '1.15.5'
+
+      - name: Initialize staging state
+        run: >-
+          terraform -chdir=infra/staging init
+          -backend-config="bucket=${TF_STATE_BUCKET}"
+          -backend-config="region=${AWS_REGION}"
+
+      - name: Verify HTTP health and database readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error "${API_BASE_URL%/}/health"
+          echo
+          curl --fail --silent --show-error "${API_BASE_URL%/}/ready"
+          echo
+
+      - name: Verify ECS long-lived services
+        shell: bash
+        run: |
+          set -euo pipefail
+          cluster="$(terraform -chdir=infra/staging output -raw ecs_cluster_name)"
+          services=(
+            "$(terraform -chdir=infra/staging output -raw api_service_name)"
+            "$(terraform -chdir=infra/staging output -raw worker_service_name)"
+            "$(terraform -chdir=infra/staging output -raw source_worker_service_name)"
+            "$(terraform -chdir=infra/staging output -raw source_outbox_service_name)"
+          )
+          aws ecs describe-services \
+            --cluster "$cluster" \
+            --services "${services[@]}" \
+            --output json >/tmp/services.json
+          jq -e '.failures | length == 0' /tmp/services.json >/dev/null
+          jq -e '
+            all(.services[];
+              if .desiredCount == 0 then true
+              else .runningCount == .desiredCount and .pendingCount == 0
+              end
+            )
+          ' /tmp/services.json >/dev/null
+
+      - name: Verify resume and source queue redrive configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          resume_queue="$(terraform -chdir=infra/staging output -raw resume_queue_url)"
+          resume_dlq="$(terraform -chdir=infra/staging output -raw resume_dlq_url)"
+          source_queue="$(terraform -chdir=infra/staging output -raw source_queue_url)"
+          source_dlq="$(terraform -chdir=infra/staging output -raw source_dlq_url)"
+          for queue in "$resume_queue" "$resume_dlq" "$source_queue" "$source_dlq"; do
+            aws sqs get-queue-attributes --queue-url "$queue" --attribute-names All >/dev/null
+          done
+          resume_policy="$(aws sqs get-queue-attributes \
+            --queue-url "$resume_queue" \
+            --attribute-names RedrivePolicy \
+            --query 'Attributes.RedrivePolicy' \
+            --output text)"
+          source_attributes="$(aws sqs get-queue-attributes \
+            --queue-url "$source_queue" \
+            --attribute-names RedrivePolicy VisibilityTimeout \
+            --output json)"
+          source_policy="$(printf '%s' "$source_attributes" | jq -r '.Attributes.RedrivePolicy')"
+          source_visibility="$(printf '%s' "$source_attributes" | jq -r '.Attributes.VisibilityTimeout')"
+          expected_source_visibility="$(terraform -chdir=infra/staging console <<< 'var.source_sqs_visibility_timeout_seconds' | tr -cd '0-9')"
+          test "$resume_policy" != "None"
+          test "$source_policy" != "null"
+          test "$source_visibility" = "$expected_source_visibility"
+
+      - name: Verify private resume bucket controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          bucket="$(terraform -chdir=infra/staging output -raw resume_bucket_name)"
+          aws s3api get-public-access-block --bucket "$bucket" >/tmp/resume-public-access.json
+          jq -e '
+            .PublicAccessBlockConfiguration.BlockPublicAcls == true and
+            .PublicAccessBlockConfiguration.IgnorePublicAcls == true and
+            .PublicAccessBlockConfiguration.BlockPublicPolicy == true and
+            .PublicAccessBlockConfiguration.RestrictPublicBuckets == true
+          ' /tmp/resume-public-access.json >/dev/null
+          test "$(aws s3api get-bucket-versioning --bucket "$bucket" --query Status --output text)" = "Enabled"
+          aws s3api get-bucket-encryption --bucket "$bucket" >/dev/null
+
+      - name: Verify Aurora and task scheduling resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          endpoint="$(terraform -chdir=infra/staging output -raw aurora_cluster_endpoint)"
+          test -n "$endpoint"
+          dispatcher_family="$(terraform -chdir=infra/staging output -raw source_dispatch_task_family)"
+          aws ecs describe-task-definition --task-definition "$dispatcher_family" >/dev/null
+          rule_name="$(terraform -chdir=infra/staging output -raw source_dispatch_rule_name)"
+          aws events describe-rule --name "$rule_name" >/tmp/source-rule.json
+          jq -e '.State == "ENABLED" or .State == "DISABLED"' /tmp/source-rule.json >/dev/null
+
+      - name: Verify CloudWatch source alarms exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          alarms=(
+            applyai-staging-source-queue-depth
+            applyai-staging-source-oldest-message
+            applyai-staging-source-dlq-not-empty
+            applyai-staging-source-task-failures
+          )
+          for alarm in "${alarms[@]}"; do
+            count="$(aws cloudwatch describe-alarms \
+              --alarm-names "$alarm" \
+              --query 'length(MetricAlarms)' \
+              --output text)"
+            test "$count" = "1"
+          done
+
+      - name: Write verification summary
+        shell: bash
+        run: |
+          {
+            echo "## ApplyAI staging infrastructure verification V2"
+            echo
+            echo "- API health/readiness: passed"
+            echo "- API, resume worker, source worker and source-aware outbox ECS state: passed"
+            echo "- Resume and source SQS/DLQ redrive: passed"
+            echo "- Source queue visibility configuration: passed"
+            echo "- Private/versioned/encrypted resume S3: passed"
+            echo "- Aurora endpoint and source dispatcher task: present"
+            echo "- Source queue, DLQ and failure alarms: present"
+            echo
+            echo "This verifies infrastructure state only. Real provider ingestion, Candidate A/B acceptance, failure injection, restore drills and cost measurement remain separate staging evidence."
+          } >> "$GITHUB_STEP_SUMMARY"

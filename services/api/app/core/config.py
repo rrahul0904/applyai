@@ -47,11 +47,16 @@ class Settings(BaseSettings):
     task_queue_provider: str = "memory"
     sqs_queue_url: str | None = None
     sqs_dlq_url: str | None = None
+    source_sqs_queue_url: str | None = None
+    source_sqs_dlq_url: str | None = None
     sqs_region: str = "us-east-1"
     sqs_visibility_timeout_seconds: int = Field(default=300, ge=30, le=43_200)
     sqs_visibility_heartbeat_seconds: int = Field(default=120, ge=10, le=3600)
+    source_sqs_visibility_timeout_seconds: int = Field(default=900, ge=60, le=43_200)
+    source_sqs_visibility_heartbeat_seconds: int = Field(default=300, ge=10, le=3600)
     sqs_wait_time_seconds: int = Field(default=20, ge=1, le=20)
     sqs_max_receive_count: int = Field(default=5, ge=1, le=100)
+    source_sqs_max_receive_count: int = Field(default=5, ge=1, le=100)
     resume_processing_timeout_seconds: int = Field(default=900, ge=60, le=86_400)
     outbox_batch_size: int = Field(default=25, ge=1, le=100)
     outbox_retry_base_seconds: int = Field(default=5, ge=1, le=300)
@@ -67,8 +72,12 @@ class Settings(BaseSettings):
     job_unknown_after_misses: int = Field(default=1, ge=1, le=20)
     job_stale_after_misses: int = Field(default=3, ge=2, le=50)
     job_source_claim_batch_size: int = Field(default=10, ge=1, le=100)
+    job_source_dispatch_batch_size: int = Field(default=25, ge=1, le=250)
+    job_source_max_inflight: int = Field(default=250, ge=1, le=10_000)
     job_source_lease_seconds: int = Field(default=900, ge=60, le=43_200)
     job_source_default_interval_seconds: int = Field(default=21_600, ge=300, le=2_592_000)
+    job_source_min_interval_seconds: int = Field(default=900, ge=300, le=86_400)
+    job_source_max_interval_seconds: int = Field(default=604_800, ge=3_600, le=7_776_000)
     job_source_failure_max_backoff_seconds: int = Field(
         default=604_800, ge=3_600, le=2_592_000
     )
@@ -89,6 +98,12 @@ class Settings(BaseSettings):
         ge=3_600,
         le=7_776_000,
     )
+
+    apply_url_check_batch_size: int = Field(default=50, ge=1, le=500)
+    apply_url_valid_interval_seconds: int = Field(default=604_800, ge=3_600, le=7_776_000)
+    apply_url_error_interval_seconds: int = Field(default=86_400, ge=900, le=604_800)
+    apply_url_not_found_confirmations: int = Field(default=2, ge=1, le=10)
+    raw_job_payload_retention_days: int = Field(default=90, ge=7, le=3_650)
 
     @model_validator(mode="after")
     def guard_runtime_configuration(self) -> "Settings":
@@ -157,6 +172,8 @@ class Settings(BaseSettings):
             raise ValueError(f"{environment.title()} requires SQS_DLQ_URL")
         if self.sqs_visibility_heartbeat_seconds >= self.sqs_visibility_timeout_seconds:
             raise ValueError("SQS visibility heartbeat must be shorter than visibility timeout")
+        if self.source_sqs_visibility_heartbeat_seconds >= self.source_sqs_visibility_timeout_seconds:
+            raise ValueError("Source SQS heartbeat must be shorter than visibility timeout")
         if self.resume_processing_timeout_seconds < self.sqs_visibility_timeout_seconds:
             raise ValueError(
                 "RESUME_PROCESSING_TIMEOUT_SECONDS must be at least SQS visibility timeout"
@@ -165,6 +182,10 @@ class Settings(BaseSettings):
             raise ValueError(
                 "JOB_STALE_AFTER_MISSES must be greater than JOB_UNKNOWN_AFTER_MISSES"
             )
+        if self.job_source_min_interval_seconds > self.job_source_default_interval_seconds:
+            raise ValueError("JOB_SOURCE_MIN_INTERVAL_SECONDS cannot exceed the default interval")
+        if self.job_source_default_interval_seconds > self.job_source_max_interval_seconds:
+            raise ValueError("JOB_SOURCE_DEFAULT_INTERVAL_SECONDS cannot exceed the maximum interval")
         if self.career_discovery_max_pages < 2:
             raise ValueError("CAREER_DISCOVERY_MAX_PAGES must allow robots and one target page")
 

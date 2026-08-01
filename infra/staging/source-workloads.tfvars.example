@@ -1,0 +1,39 @@
+# ApplyAI staging source-workload example.
+# Do not commit real credentials, Clerk secrets, private URLs, or provider tokens here.
+# Use GitHub environment variables and AWS Secrets Manager for sensitive values.
+
+# The normal staging foundation should be applied with all desired counts at zero.
+# Activate source workloads only after the immutable image passes migrations.
+source_worker_desired_count = 1
+source_worker_cpu           = 512
+source_worker_memory        = 1024
+
+# V2 uses one source-aware outbox publisher for both candidate/resume and source tasks.
+# The legacy resume-only outbox remains at zero during V2 activation.
+source_outbox_desired_count = 1
+source_outbox_cpu           = 256
+source_outbox_memory        = 512
+outbox_desired_count        = 0
+
+# EventBridge runs one bounded dispatcher; it does not ingest every source in the
+# scheduled task and does not create one rule per employer.
+ingestion_schedule_enabled         = false
+source_dispatch_schedule_enabled   = false
+source_dispatch_schedule_expression = "rate(15 minutes)"
+source_dispatcher_cpu              = 256
+source_dispatcher_memory           = 512
+
+# Dedicated source task queue. The worker extends visibility while a source is
+# ingesting/verifying; exhausted messages are moved by SQS to the source DLQ.
+source_sqs_visibility_timeout_seconds   = 900
+source_sqs_visibility_heartbeat_seconds = 300
+source_sqs_max_receive_count            = 5
+
+source_queue_depth_alarm_threshold = 25
+source_queue_age_alarm_seconds     = 900
+
+# Keep the first real staging source set deliberately small and reviewed.
+# These are public ATS board/site identifiers, not credentials.
+greenhouse_board_tokens = []
+lever_site_names        = []
+ashby_board_names       = []

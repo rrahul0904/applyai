@@ -1,0 +1,23 @@
+name: Prompt 3 Workflow Gate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: applyai-prompt3-workflow-gate
+  cancel-in-progress: true
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install actionlint
+        shell: bash
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+      - name: Validate every workflow
+        shell: bash
+        run: '"$(go env GOPATH)/bin/actionlint" -color'

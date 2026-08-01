@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.durability_models import JobIngestionRun
 from app.job_source_models import JobSourceRegistry
 from app.jobs.adapters import raw_from_connector
-from app.jobs.connectors import JobSourceConnector
+from app.jobs.connectors import JobSourceConnector, NormalizedJob
 from app.jobs.contracts import (
     SourceHealthStatus,
     ValidationStatus,
@@ -20,6 +20,7 @@ from app.jobs.contracts import (
     validate_raw_job,
 )
 from app.jobs.pipeline import JobIngestionPipeline, payload_hash
+from app.jobs.source_authority import record_field_provenance, should_source_update_canonical
 from app.models import Job, JobSource, JobSourceLink, JobStatusHistory, RawJobPosting as RawJobPostingModel
 
 
@@ -30,12 +31,59 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+class AuthorityAwareJobIngestionPipeline(JobIngestionPipeline):
+    """Preserve all source links while allowing only the selected source to mutate canonical fields."""
+
+    def __init__(self, session: Session) -> None:
+        super().__init__(session)
+        self._active_connector: str | None = None
+        self._active_external_job_id: str | None = None
+
+    def ingest_one(
+        self,
+        connector_key: str,
+        item: NormalizedJob,
+        *,
+        source_company: str | None = None,
+    ) -> str:
+        self._active_connector = connector_key
+        self._active_external_job_id = item.external_job_id
+        try:
+            return super().ingest_one(
+                connector_key,
+                item,
+                source_company=source_company,
+            )
+        finally:
+            self._active_connector = None
+            self._active_external_job_id = None
+
+    def canonical_changed(self, job: Job, item: NormalizedJob) -> bool:
+        if not super().canonical_changed(job, item):
+            return False
+        if not self._active_connector or not self._active_external_job_id:
+            return True
+        posting_source = self.session.scalar(
+            select(JobSource).where(
+                JobSource.connector_key == self._active_connector,
+                JobSource.external_job_id == self._active_external_job_id,
+            )
+        )
+        if posting_source is None:
+            return True
+        return should_source_update_canonical(
+            self.session,
+            job.id,
+            posting_source.id,
+        )
+
+
 class RegisteredSourceIngestionPipeline:
     """Run one registry source while reusing the proven canonical job pipeline."""
 
     def __init__(self, session: Session) -> None:
         self.session = session
-        self.canonical = JobIngestionPipeline(session)
+        self.canonical = AuthorityAwareJobIngestionPipeline(session)
 
     def run(
         self,
@@ -141,6 +189,13 @@ class RegisteredSourceIngestionPipeline:
                         }
                     )
                     posting_source.checkpoint = checkpoint
+                    link = self.session.scalar(
+                        select(JobSourceLink).where(
+                            JobSourceLink.job_source_id == posting_source.id
+                        )
+                    )
+                    if link is not None:
+                        record_field_provenance(self.session, link.job_id)
                     dedup_reason = str(checkpoint.get("dedup_reason") or "")
                     if dedup_reason and dedup_reason not in {
                         "SOURCE_IDENTITY",

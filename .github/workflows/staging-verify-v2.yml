@@ -2,6 +2,12 @@ name: ApplyAI Staging Verification V2
 
 on:
   workflow_dispatch:
+    inputs:
+      expect_source_dispatch_enabled:
+        description: Require the EventBridge source dispatcher to be enabled
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -33,6 +39,17 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+      - name: Validate verification inputs
+        shell: bash
+        env:
+          AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          : "${AWS_DEPLOY_ROLE_ARN:?Set AWS_DEPLOY_ROLE_ARN}"
+          : "${TF_STATE_BUCKET:?Set TF_STATE_BUCKET}"
+          : "${API_BASE_URL:?Set API_BASE_URL}"
+          case "$API_BASE_URL" in https://*) ;; *) echo 'API_BASE_URL must use HTTPS' >&2; exit 1 ;; esac
+
       - name: Configure AWS credentials through GitHub OIDC
         uses: aws-actions/configure-aws-credentials@0e613a0980cbf65ed5b322eb7a1e075d28913a83
         with:
@@ -54,12 +71,27 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error "${API_BASE_URL%/}/health"
+          curl --fail --silent --show-error "${API_BASE_URL%/}/health" >/tmp/health.json
+          curl --fail --silent --show-error "${API_BASE_URL%/}/ready" >/tmp/ready.json
+          cat /tmp/health.json
           echo
-          curl --fail --silent --show-error "${API_BASE_URL%/}/ready"
+          cat /tmp/ready.json
           echo
 
-      - name: Verify ECS long-lived services
+      - name: Verify ALB target health
+        shell: bash
+        run: |
+          set -euo pipefail
+          target_group="$(terraform -chdir=infra/staging output -raw api_target_group_arn)"
+          aws elbv2 describe-target-health --target-group-arn "$target_group" >/tmp/target-health.json
+          jq -e '
+            [.TargetHealthDescriptions[] | select(.TargetHealth.State == "healthy")] | length > 0
+          ' /tmp/target-health.json >/dev/null
+          jq -e '
+            all(.TargetHealthDescriptions[]; .TargetHealth.State == "healthy")
+          ' /tmp/target-health.json >/dev/null
+
+      - name: Verify ECS long-lived services and immutable image consistency
         shell: bash
         run: |
           set -euo pipefail
@@ -77,23 +109,83 @@ jobs:
           jq -e '.failures | length == 0' /tmp/services.json >/dev/null
           jq -e '
             all(.services[];
-              if .desiredCount == 0 then true
-              else .runningCount == .desiredCount and .pendingCount == 0
-              end
+              .desiredCount > 0 and
+              .runningCount == .desiredCount and
+              .pendingCount == 0 and
+              (.deployments | any(.status == "PRIMARY" and .rolloutState == "COMPLETED"))
             )
           ' /tmp/services.json >/dev/null
 
-      - name: Verify resume and source queue redrive configuration
+          : > /tmp/runtime-images.txt
+          for service in "${services[@]}"; do
+            task_definition="$(aws ecs describe-services \
+              --cluster "$cluster" \
+              --services "$service" \
+              --query 'services[0].taskDefinition' \
+              --output text)"
+            aws ecs describe-task-definition \
+              --task-definition "$task_definition" \
+              --query 'taskDefinition.containerDefinitions[].image' \
+              --output text >> /tmp/runtime-images.txt
+          done
+          test "$(tr '\t ' '\n' < /tmp/runtime-images.txt | sed '/^$/d' | sort -u | wc -l | tr -d ' ')" = "1"
+
+      - name: Verify ECS tasks use private application subnets
+        shell: bash
+        run: |
+          set -euo pipefail
+          cluster="$(terraform -chdir=infra/staging output -raw ecs_cluster_name)"
+          app_subnets="$(terraform -chdir=infra/staging output -json app_subnet_ids)"
+          services=(
+            "$(terraform -chdir=infra/staging output -raw api_service_name)"
+            "$(terraform -chdir=infra/staging output -raw worker_service_name)"
+            "$(terraform -chdir=infra/staging output -raw source_worker_service_name)"
+            "$(terraform -chdir=infra/staging output -raw source_outbox_service_name)"
+          )
+          : > /tmp/task-arns.txt
+          for service in "${services[@]}"; do
+            aws ecs list-tasks \
+              --cluster "$cluster" \
+              --service-name "$service" \
+              --desired-status RUNNING \
+              --query 'taskArns[]' \
+              --output text | tr '\t' '\n' >> /tmp/task-arns.txt
+          done
+          sed -i '/^$/d' /tmp/task-arns.txt
+          test -s /tmp/task-arns.txt
+          mapfile -t task_arns < /tmp/task-arns.txt
+          aws ecs describe-tasks --cluster "$cluster" --tasks "${task_arns[@]}" >/tmp/tasks.json
+          jq -r '
+            .tasks[].attachments[]?.details[]? |
+            select(.name == "networkInterfaceId") |
+            .value
+          ' /tmp/tasks.json > /tmp/eni-ids.txt
+          test -s /tmp/eni-ids.txt
+          mapfile -t eni_ids < /tmp/eni-ids.txt
+          aws ec2 describe-network-interfaces --network-interface-ids "${eni_ids[@]}" >/tmp/enis.json
+          jq -e --argjson app_subnets "$app_subnets" '
+            all(.NetworkInterfaces[];
+              (.Association.PublicIp? == null) and
+              (.SubnetId as $subnet | $app_subnets | index($subnet) != null)
+            )
+          ' /tmp/enis.json >/dev/null
+
+      - name: Verify resume and source queue encryption and redrive
         shell: bash
         run: |
           set -euo pipefail
           resume_queue="$(terraform -chdir=infra/staging output -raw resume_queue_url)"
           resume_dlq="$(terraform -chdir=infra/staging output -raw resume_dlq_url)"
+          resume_dlq_arn="$(terraform -chdir=infra/staging output -raw resume_dlq_arn)"
           source_queue="$(terraform -chdir=infra/staging output -raw source_queue_url)"
           source_dlq="$(terraform -chdir=infra/staging output -raw source_dlq_url)"
+          source_dlq_arn="$(terraform -chdir=infra/staging output -raw source_dlq_arn)"
+
           for queue in "$resume_queue" "$resume_dlq" "$source_queue" "$source_dlq"; do
-            aws sqs get-queue-attributes --queue-url "$queue" --attribute-names All >/dev/null
+            attributes="$(aws sqs get-queue-attributes --queue-url "$queue" --attribute-names All --output json)"
+            test "$(printf '%s' "$attributes" | jq -r '.Attributes.SqsManagedSseEnabled')" = "true"
           done
+
           resume_policy="$(aws sqs get-queue-attributes \
             --queue-url "$resume_queue" \
             --attribute-names RedrivePolicy \
@@ -105,10 +197,11 @@ jobs:
             --output json)"
           source_policy="$(printf '%s' "$source_attributes" | jq -r '.Attributes.RedrivePolicy')"
           source_visibility="$(printf '%s' "$source_attributes" | jq -r '.Attributes.VisibilityTimeout')"
-          expected_source_visibility="$(terraform -chdir=infra/staging console <<< 'var.source_sqs_visibility_timeout_seconds' | tr -cd '0-9')"
-          test "$resume_policy" != "None"
-          test "$source_policy" != "null"
-          test "$source_visibility" = "$expected_source_visibility"
+          test "$(printf '%s' "$resume_policy" | jq -r '.deadLetterTargetArn')" = "$resume_dlq_arn"
+          test "$(printf '%s' "$source_policy" | jq -r '.deadLetterTargetArn')" = "$source_dlq_arn"
+          test "$(printf '%s' "$resume_policy" | jq -r '.maxReceiveCount | tonumber')" -gt 1
+          test "$(printf '%s' "$source_policy" | jq -r '.maxReceiveCount | tonumber')" -gt 1
+          test "$source_visibility" -ge 60
 
       - name: Verify private resume bucket controls
         shell: bash
@@ -125,22 +218,62 @@ jobs:
           test "$(aws s3api get-bucket-versioning --bucket "$bucket" --query Status --output text)" = "Enabled"
           aws s3api get-bucket-encryption --bucket "$bucket" >/dev/null
 
-      - name: Verify Aurora and task scheduling resources
+      - name: Verify Aurora encryption, backup and private instance state
         shell: bash
         run: |
           set -euo pipefail
-          endpoint="$(terraform -chdir=infra/staging output -raw aurora_cluster_endpoint)"
-          test -n "$endpoint"
+          cluster_id="$(terraform -chdir=infra/staging output -raw aurora_cluster_identifier)"
+          instance_id="$(terraform -chdir=infra/staging output -raw aurora_instance_identifier)"
+          secret_arn="$(terraform -chdir=infra/staging output -raw aurora_master_secret_arn)"
+          aws rds describe-db-clusters --db-cluster-identifier "$cluster_id" >/tmp/cluster.json
+          aws rds describe-db-instances --db-instance-identifier "$instance_id" >/tmp/instance.json
+          jq -e '
+            .DBClusters[0].Status == "available" and
+            .DBClusters[0].StorageEncrypted == true and
+            .DBClusters[0].BackupRetentionPeriod >= 7
+          ' /tmp/cluster.json >/dev/null
+          jq -e '
+            .DBInstances[0].DBInstanceStatus == "available" and
+            .DBInstances[0].PubliclyAccessible == false
+          ' /tmp/instance.json >/dev/null
+          aws secretsmanager describe-secret --secret-id "$secret_arn" >/dev/null
+
+      - name: Verify dispatcher state and task definition
+        shell: bash
+        env:
+          EXPECT_ENABLED: ${{ inputs.expect_source_dispatch_enabled }}
+        run: |
+          set -euo pipefail
           dispatcher_family="$(terraform -chdir=infra/staging output -raw source_dispatch_task_family)"
           aws ecs describe-task-definition --task-definition "$dispatcher_family" >/dev/null
           rule_name="$(terraform -chdir=infra/staging output -raw source_dispatch_rule_name)"
           aws events describe-rule --name "$rule_name" >/tmp/source-rule.json
-          jq -e '.State == "ENABLED" or .State == "DISABLED"' /tmp/source-rule.json >/dev/null
+          expected_state="DISABLED"
+          if [ "$EXPECT_ENABLED" = "true" ]; then
+            expected_state="ENABLED"
+          fi
+          test "$(jq -r '.State' /tmp/source-rule.json)" = "$expected_state"
 
-      - name: Verify CloudWatch source alarms exist
+      - name: Verify CloudWatch logs and source alarms exist
         shell: bash
         run: |
           set -euo pipefail
+          log_groups=(
+            /applyai/staging/api
+            /applyai/staging/worker
+            /applyai/staging/migration
+            /applyai/staging/source-worker
+            /applyai/staging/source-dispatcher
+            /applyai/staging/outbox-v2
+          )
+          for log_group in "${log_groups[@]}"; do
+            count="$(aws logs describe-log-groups \
+              --log-group-name-prefix "$log_group" \
+              --query "length(logGroups[?logGroupName=='${log_group}'])" \
+              --output text)"
+            test "$count" = "1"
+          done
+
           alarms=(
             applyai-staging-source-queue-depth
             applyai-staging-source-oldest-message
@@ -157,17 +290,22 @@ jobs:
 
       - name: Write verification summary
         shell: bash
+        env:
+          EXPECT_SOURCE_DISPATCH: ${{ inputs.expect_source_dispatch_enabled }}
         run: |
+          image="$(tr '\t ' '\n' < /tmp/runtime-images.txt | sed '/^$/d' | sort -u)"
           {
             echo "## ApplyAI staging infrastructure verification V2"
             echo
-            echo "- API health/readiness: passed"
-            echo "- API, resume worker, source worker and source-aware outbox ECS state: passed"
-            echo "- Resume and source SQS/DLQ redrive: passed"
-            echo "- Source queue visibility configuration: passed"
+            echo "- API health/readiness and ALB target health: passed"
+            echo "- API, resume worker, source worker and source-aware outbox: nonzero and stable"
+            echo "- Runtime image consistency: \`${image}\`"
+            echo "- ECS tasks: private application subnets with no public IP"
+            echo "- Resume and source SQS/DLQ encryption/redrive: passed"
             echo "- Private/versioned/encrypted resume S3: passed"
-            echo "- Aurora endpoint and source dispatcher task: present"
-            echo "- Source queue, DLQ and failure alarms: present"
+            echo "- Aurora: available, encrypted, backed up and private"
+            echo "- Source dispatcher expected enabled: \`${EXPECT_SOURCE_DISPATCH}\`"
+            echo "- Required runtime log groups and source alarms: present"
             echo
-            echo "This verifies infrastructure state only. Real provider ingestion, Candidate A/B acceptance, failure injection, restore drills and cost measurement remain separate staging evidence."
+            echo "This verifies deployed infrastructure state only. Real provider ingestion, Candidate A/B acceptance, failure injection, restore drills and cost measurement remain separate staging evidence."
           } >> "$GITHUB_STEP_SUMMARY"

@@ -25,7 +25,10 @@ jobs:
       API_CERTIFICATE_ARN: ${{ vars.API_CERTIFICATE_ARN }}
       CLERK_ISSUER: ${{ vars.CLERK_ISSUER }}
       CLERK_JWKS_URL: ${{ vars.CLERK_JWKS_URL }}
+      CLERK_AUDIENCE: ${{ vars.CLERK_AUDIENCE }}
       GREENHOUSE_BOARD_TOKENS: ${{ vars.GREENHOUSE_BOARD_TOKENS || '[]' }}
+      LEVER_SITE_NAMES: ${{ vars.LEVER_SITE_NAMES || '[]' }}
+      ASHBY_BOARD_NAMES: ${{ vars.ASHBY_BOARD_NAMES || '[]' }}
     steps:
       - name: Validate environment variable shapes
         shell: bash
@@ -38,11 +41,40 @@ jobs:
           : "${API_CERTIFICATE_ARN:?Set API_CERTIFICATE_ARN}"
           : "${CLERK_ISSUER:?Set CLERK_ISSUER}"
           : "${CLERK_JWKS_URL:?Set CLERK_JWKS_URL}"
+          : "${CLERK_AUDIENCE:?Set CLERK_AUDIENCE}"
+
           case "$WEB_ORIGIN" in https://*) ;; *) echo 'WEB_ORIGIN must use HTTPS' >&2; exit 1 ;; esac
           case "$API_BASE_URL" in https://*) ;; *) echo 'API_BASE_URL must use HTTPS' >&2; exit 1 ;; esac
           case "$CLERK_ISSUER" in https://*) ;; *) echo 'CLERK_ISSUER must use HTTPS' >&2; exit 1 ;; esac
           case "$CLERK_JWKS_URL" in https://*) ;; *) echo 'CLERK_JWKS_URL must use HTTPS' >&2; exit 1 ;; esac
-          printf '%s' "$GREENHOUSE_BOARD_TOKENS" | jq -e 'type == "array" and all(.[]; type == "string")' >/dev/null
+
+          validate_source_list() {
+            local name="$1"
+            local value="$2"
+            printf '%s' "$value" | jq -e --arg name "$name" '
+              type == "array" and
+              length <= 5 and
+              all(.[]; type == "string" and length > 0 and . == (gsub("^\\s+|\\s+$"; ""))) and
+              (length == (unique | length))
+            ' >/dev/null || {
+              echo "${name} must be a JSON array of at most five unique, non-empty, trimmed strings." >&2
+              exit 1
+            }
+          }
+
+          validate_source_list GREENHOUSE_BOARD_TOKENS "$GREENHOUSE_BOARD_TOKENS"
+          validate_source_list LEVER_SITE_NAMES "$LEVER_SITE_NAMES"
+          validate_source_list ASHBY_BOARD_NAMES "$ASHBY_BOARD_NAMES"
+
+          total_sources="$(jq -n \
+            --argjson greenhouse "$GREENHOUSE_BOARD_TOKENS" \
+            --argjson lever "$LEVER_SITE_NAMES" \
+            --argjson ashby "$ASHBY_BOARD_NAMES" \
+            '$greenhouse | length + ($lever | length) + ($ashby | length)')"
+          test "$total_sources" -gt 0 || {
+            echo 'Configure at least one reviewed public ATS source before real staging preflight.' >&2
+            exit 1
+          }
 
       - name: Configure AWS credentials through GitHub OIDC
         uses: aws-actions/configure-aws-credentials@0e613a0980cbf65ed5b322eb7a1e075d28913a83
@@ -71,28 +103,40 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          certificate_region="$(printf '%s' "$API_CERTIFICATE_ARN" | cut -d: -f4)"
+          test "$certificate_region" = "$AWS_REGION" || {
+            echo "The ACM certificate must be in AWS_REGION (${AWS_REGION}); found ${certificate_region}." >&2
+            exit 1
+          }
           aws acm describe-certificate --certificate-arn "$API_CERTIFICATE_ARN" >/tmp/certificate.json
           jq -e '.Certificate.Status == "ISSUED"' /tmp/certificate.json >/dev/null
 
-      - name: Verify Clerk JWKS endpoint
+      - name: Verify Clerk issuer and JWKS endpoints
         shell: bash
         run: |
           set -euo pipefail
+          curl --fail --silent --show-error --location --retry 3 \
+            --output /dev/null "${CLERK_ISSUER%/}/.well-known/openid-configuration"
           curl --fail --silent --show-error --location --retry 3 "$CLERK_JWKS_URL" >/tmp/jwks.json
-          jq -e '.keys | type == "array" and length > 0' /tmp/jwks.json >/dev/null
+          jq -e '.keys | type == "array" and length > 0 and all(.[]; has("kid") and has("kty"))' /tmp/jwks.json >/dev/null
 
       - name: Write preflight summary
         shell: bash
         run: |
           account="$(jq -r '.Account' /tmp/aws-identity.json)"
           cert_domain="$(jq -r '.Certificate.DomainName' /tmp/certificate.json)"
+          greenhouse_count="$(printf '%s' "$GREENHOUSE_BOARD_TOKENS" | jq 'length')"
+          lever_count="$(printf '%s' "$LEVER_SITE_NAMES" | jq 'length')"
+          ashby_count="$(printf '%s' "$ASHBY_BOARD_NAMES" | jq 'length')"
           {
             echo '## ApplyAI staging preflight'
             echo
             echo "- AWS account reachable through OIDC: \`${account}\`"
             echo '- Terraform state bucket: private, encrypted and versioned'
             echo "- ACM certificate status: \`ISSUED\` (\`${cert_domain}\`)"
-            echo '- Clerk JWKS: reachable and contains signing keys'
+            echo '- Clerk issuer discovery and JWKS: reachable and valid'
+            echo '- Clerk audience: configured'
+            echo "- Reviewed ATS sources: Greenhouse \`${greenhouse_count}\`, Lever \`${lever_count}\`, Ashby \`${ashby_count}\`"
             echo '- Staging variable shapes: valid'
             echo
             echo 'Next gate: ApplyAI Staging Infrastructure in plan mode.'

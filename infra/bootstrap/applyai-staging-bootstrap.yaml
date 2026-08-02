@@ -137,39 +137,112 @@ Resources:
               - Sid: TerraformState
                 Effect: Allow
                 Action:
+                  - s3:GetBucketLocation
+                  - s3:GetBucketPublicAccessBlock
                   - s3:GetBucketVersioning
                   - s3:GetEncryptionConfiguration
                   - s3:GetObject
                   - s3:GetObjectVersion
                   - s3:ListBucket
+                  - s3:ListBucketVersions
                   - s3:PutObject
                   - s3:DeleteObject
                 Resource:
                   - !GetAtt TerraformStateBucket.Arn
                   - !Sub '${TerraformStateBucket.Arn}/*'
-              - Sid: StagingInfrastructure
+
+              - Sid: RegionalStagingControlPlane
                 Effect: Allow
                 Action:
                   - ec2:*
                   - elasticloadbalancing:*
                   - ecs:*
-                  - ecr:*
                   - rds:*
-                  - sqs:*
-                  - s3:*
-                  - logs:*
                   - cloudwatch:*
-                  - events:*
-                  - route53:*
                   - acm:DescribeCertificate
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    aws:RequestedRegion: !Ref AWS::Region
+
+              - Sid: StagingEcrAuthorization
+                Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    aws:RequestedRegion: !Ref AWS::Region
+
+              - Sid: StagingEcrRepositories
+                Effect: Allow
+                Action:
+                  - ecr:*
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/${ProjectName}-${EnvironmentName}-*'
+
+              - Sid: StagingQueues
+                Effect: Allow
+                Action:
+                  - sqs:*
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${ProjectName}-${EnvironmentName}-*'
+
+              - Sid: StagingLogs
+                Effect: Allow
+                Action:
+                  - logs:*
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/applyai/${EnvironmentName}/*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/applyai/${EnvironmentName}/*:*'
+
+              - Sid: StagingEventRules
+                Effect: Allow
+                Action:
+                  - events:*
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${ProjectName}-${EnvironmentName}-*'
+
+              - Sid: StagingResumeBuckets
+                Effect: Allow
+                Action:
+                  - s3:CreateBucket
+                  - s3:DeleteBucket
+                  - s3:GetBucketCORS
+                  - s3:GetBucketLocation
+                  - s3:GetBucketPolicy
+                  - s3:GetBucketPublicAccessBlock
+                  - s3:GetBucketTagging
+                  - s3:GetBucketVersioning
+                  - s3:GetEncryptionConfiguration
+                  - s3:ListBucket
+                  - s3:PutBucketCORS
+                  - s3:PutBucketPublicAccessBlock
+                  - s3:PutBucketTagging
+                  - s3:PutBucketVersioning
+                  - s3:PutEncryptionConfiguration
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-${EnvironmentName}-*'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ProjectName}-${EnvironmentName}-*/*'
+
+              - Sid: RdsManagedDatabaseSecret
+                Effect: Allow
+                Action:
                   - secretsmanager:DescribeSecret
                   - secretsmanager:GetSecretValue
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:rds!cluster-*'
+
+              - Sid: StagingIamRoles
+                Effect: Allow
+                Action:
                   - iam:CreateRole
                   - iam:DeleteRole
                   - iam:GetRole
+                  - iam:UpdateAssumeRolePolicy
                   - iam:TagRole
                   - iam:UntagRole
-                  - iam:PassRole
+                  - iam:ListRoleTags
                   - iam:PutRolePolicy
                   - iam:DeleteRolePolicy
                   - iam:GetRolePolicy
@@ -177,7 +250,20 @@ Resources:
                   - iam:DetachRolePolicy
                   - iam:ListAttachedRolePolicies
                   - iam:ListRolePolicies
-                Resource: '*'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${EnvironmentName}-*'
+
+              - Sid: PassOnlyApplyAIStagingRoles
+                Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${EnvironmentName}-*'
+                Condition:
+                  StringEquals:
+                    iam:PassedToService:
+                      - ecs-tasks.amazonaws.com
+                      - events.amazonaws.com
       Tags:
         - Key: Application
           Value: !Ref ProjectName

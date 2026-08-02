@@ -3,6 +3,11 @@ name: ApplyAI Staging Release V2
 on:
   workflow_dispatch:
     inputs:
+      release_sha:
+        description: Full Git commit SHA to deploy; must be contained in main. Leave blank to use the workflow commit.
+        required: false
+        default: ""
+        type: string
       enable_source_dispatch:
         description: Enable the bounded EventBridge source dispatcher after activation
         required: true
@@ -49,8 +54,12 @@ jobs:
     steps:
       - name: Checkout exact release source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.release_sha || github.sha }}
+          fetch-depth: 0
 
-      - name: Validate deployment inputs
+      - name: Validate deployment inputs and approved source
+        id: source
         shell: bash
         env:
           AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
@@ -63,7 +72,28 @@ jobs:
           : "${TF_VAR_api_certificate_arn:?Set API_CERTIFICATE_ARN in the GitHub staging environment}"
           : "${TF_VAR_clerk_issuer:?Set CLERK_ISSUER in the GitHub staging environment}"
           : "${TF_VAR_clerk_jwks_url:?Set CLERK_JWKS_URL in the GitHub staging environment}"
+          : "${TF_VAR_clerk_audience:?Set CLERK_AUDIENCE in the GitHub staging environment}"
           case "$API_BASE_URL" in https://*) ;; *) echo 'API_BASE_URL must use HTTPS' >&2; exit 1 ;; esac
+
+          for value in \
+            "$TF_VAR_greenhouse_board_tokens" \
+            "$TF_VAR_lever_site_names" \
+            "$TF_VAR_ashby_board_names"; do
+            printf '%s' "$value" | jq -e '
+              type == "array" and
+              length <= 5 and
+              all(.[]; type == "string" and length > 0)
+            ' >/dev/null
+          done
+
+          source_sha="$(git rev-parse HEAD)"
+          test "${#source_sha}" = "40"
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$source_sha" origin/main || {
+            echo "Refusing to deploy ${source_sha}: it is not contained in origin/main." >&2
+            exit 1
+          }
+          echo "source_sha=${source_sha}" >> "$GITHUB_OUTPUT"
 
       - name: Configure AWS credentials through GitHub OIDC
         uses: aws-actions/configure-aws-credentials@0e613a0980cbf65ed5b322eb7a1e075d28913a83
@@ -86,16 +116,18 @@ jobs:
       - name: Resolve immutable release identifiers
         id: release
         shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
         run: |
           set -euo pipefail
-          image_tag="${GITHUB_SHA}"
           repository_url="$(terraform -chdir=infra/staging output -raw ecr_repository_url)"
           repository_name="${repository_url##*/}"
           cluster="$(terraform -chdir=infra/staging output -raw ecs_cluster_name)"
           subnets="$(terraform -chdir=infra/staging output -json app_subnet_ids | jq -r 'join(",")')"
           security_group="$(terraform -chdir=infra/staging output -raw ecs_security_group_id)"
           {
-            echo "image_tag=${image_tag}"
+            echo "source_sha=${SOURCE_SHA}"
+            echo "image_tag=${SOURCE_SHA}"
             echo "repository_url=${repository_url}"
             echo "repository_name=${repository_name}"
             echo "cluster=${cluster}"
@@ -124,7 +156,16 @@ jobs:
             docker build --pull --tag "$image_uri" services/api
             docker push "$image_uri"
           fi
-          echo "image_uri=${image_uri}" >> "$GITHUB_OUTPUT"
+          image_digest="$(aws ecr describe-images \
+            --repository-name "$REPOSITORY_NAME" \
+            --image-ids "imageTag=${IMAGE_TAG}" \
+            --query 'imageDetails[0].imageDigest' \
+            --output text)"
+          test -n "$image_digest" && test "$image_digest" != "None"
+          {
+            echo "image_uri=${image_uri}"
+            echo "image_digest=${image_digest}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Register exact-image migration task
         id: migration_definition
@@ -156,6 +197,7 @@ jobs:
           echo "task_definition=${task_definition}" >> "$GITHUB_OUTPUT"
 
       - name: Run Alembic migration gate
+        id: migration
         shell: bash
         env:
           CLUSTER: ${{ steps.release.outputs.cluster }}
@@ -164,6 +206,7 @@ jobs:
           SECURITY_GROUP: ${{ steps.release.outputs.security_group }}
         run: |
           set -euo pipefail
+          started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           task_arn="$(aws ecs run-task \
             --cluster "$CLUSTER" \
             --task-definition "$TASK_DEFINITION" \
@@ -174,13 +217,17 @@ jobs:
             --output text)"
           test -n "$task_arn" && test "$task_arn" != "None"
           aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$task_arn"
-          exit_code="$(aws ecs describe-tasks \
-            --cluster "$CLUSTER" \
-            --tasks "$task_arn" \
-            --query 'tasks[0].containers[0].exitCode' \
-            --output text)"
+          task_json="$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$task_arn" --output json)"
+          exit_code="$(printf '%s' "$task_json" | jq -r '.tasks[0].containers[0].exitCode // "missing"')"
+          stopped_at="$(printf '%s' "$task_json" | jq -r '.tasks[0].stoppedAt // empty')"
+          {
+            echo "task_arn=${task_arn}"
+            echo "exit_code=${exit_code}"
+            echo "started_at=${started_at}"
+            echo "stopped_at=${stopped_at}"
+          } >> "$GITHUB_OUTPUT"
           if [ "$exit_code" != "0" ]; then
-            aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$task_arn" --output json
+            printf '%s' "$task_json"
             echo "Migration failed; no service activation was attempted." >&2
             exit 1
           fi
@@ -258,15 +305,25 @@ jobs:
       - name: Write release summary
         shell: bash
         env:
+          SOURCE_SHA: ${{ steps.release.outputs.source_sha }}
           IMAGE_URI: ${{ steps.image.outputs.image_uri }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.image_digest }}
+          MIGRATION_TASK_ARN: ${{ steps.migration.outputs.task_arn }}
+          MIGRATION_TASK_DEFINITION: ${{ steps.migration_definition.outputs.task_definition }}
+          MIGRATION_STARTED_AT: ${{ steps.migration.outputs.started_at }}
+          MIGRATION_STOPPED_AT: ${{ steps.migration.outputs.stopped_at }}
           SOURCE_WORKER_COUNT: ${{ inputs.source_worker_count }}
           SOURCE_DISPATCH: ${{ inputs.enable_source_dispatch }}
         run: |
           {
             echo "## ApplyAI staging release V2"
             echo
-            echo "- Source commit: \`${GITHUB_SHA}\`"
+            echo "- Deployed source commit: \`${SOURCE_SHA}\`"
             echo "- Image: \`${IMAGE_URI}\`"
+            echo "- Image digest: \`${IMAGE_DIGEST}\`"
+            echo "- Migration task definition: \`${MIGRATION_TASK_DEFINITION}\`"
+            echo "- Migration task ARN: \`${MIGRATION_TASK_ARN}\`"
+            echo "- Migration execution: \`${MIGRATION_STARTED_AT}\` → \`${MIGRATION_STOPPED_AT}\`"
             echo "- Alembic migration gate: passed"
             echo "- API, resume worker, source worker and source-aware outbox: stable"
             echo "- Source worker count: \`${SOURCE_WORKER_COUNT}\`"

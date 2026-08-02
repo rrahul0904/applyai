@@ -33,7 +33,8 @@ The approved plan should create or update only the reviewed staging architecture
 - disabled legacy ingestion schedule;
 - disabled source EventBridge dispatcher;
 - CloudWatch logs and alarms;
-- least-privilege runtime/execution roles required by the current design.
+- separate least-privilege runtime roles for API, resume worker, resume outbox, source worker, source-aware outbox and database-only tasks;
+- a separate ECS execution role limited to image pull, logging and database-secret injection.
 
 ## Automated plan summary
 
@@ -65,10 +66,19 @@ Mark each item only after reading the real plan:
 - [ ] No long-lived AWS access keys are created.
 - [ ] GitHub OIDC deployment role remains scoped to the `staging` environment.
 - [ ] No wildcard credentialed CORS origin is introduced.
+- [ ] API role can access only required resume objects and has no queue-consumer permissions.
+- [ ] Resume worker role can read resume objects and consume only the resume queue.
+- [ ] Resume-only outbox can publish only to the resume queue.
+- [ ] Source worker can consume only the source queue.
+- [ ] Source-aware outbox can publish only to the resume and source queues.
+- [ ] Migration, legacy ingestion and source-dispatch tasks use a database-only task role with no S3/SQS policy.
+- [ ] ECS execution role is separate from runtime roles.
 - [ ] Legacy Greenhouse schedule is disabled.
 - [ ] Source dispatcher is disabled.
 - [ ] API, resume worker, legacy outbox, source worker and source-aware outbox desired counts are all zero.
 - [ ] No unreviewed resource deletion or replacement is present.
+
+If this is not a fresh account and the plan removes the previous shared ECS task role, stop and review that role migration explicitly rather than bypassing the destroy gate.
 
 ## Cost-sensitive resources
 

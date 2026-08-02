@@ -165,6 +165,18 @@ Resources:
                   StringEquals:
                     aws:RequestedRegion: !Ref AWS::Region
 
+              - Sid: RegionalReadOnlyDiscovery
+                Effect: Allow
+                Action:
+                  - ecr:DescribeRepositories
+                  - logs:DescribeLogGroups
+                  - events:ListRules
+                  - sqs:ListQueues
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    aws:RequestedRegion: !Ref AWS::Region
+
               - Sid: StagingEcrAuthorization
                 Effect: Allow
                 Action:

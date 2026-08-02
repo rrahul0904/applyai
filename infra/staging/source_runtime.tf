@@ -164,33 +164,6 @@ resource "aws_cloudwatch_log_group" "source_runtime" {
   retention_in_days = var.log_retention_days
 }
 
-resource "aws_iam_role_policy" "ecs_task_source_queues" {
-  name = "source-queue-access"
-  role = aws_iam_role.ecs_task.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "SourceQueues"
-        Effect = "Allow"
-        Action = [
-          "sqs:ChangeMessageVisibility",
-          "sqs:DeleteMessage",
-          "sqs:GetQueueAttributes",
-          "sqs:GetQueueUrl",
-          "sqs:ReceiveMessage",
-          "sqs:SendMessage"
-        ]
-        Resource = [
-          aws_sqs_queue.source.arn,
-          aws_sqs_queue.source_dlq.arn
-        ]
-      }
-    ]
-  })
-}
-
 resource "aws_ecs_task_definition" "source_worker" {
   family                   = "${local.name}-source-worker"
   cpu                      = tostring(var.source_worker_cpu)
@@ -198,7 +171,7 @@ resource "aws_ecs_task_definition" "source_worker" {
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   execution_role_arn       = aws_iam_role.ecs_execution.arn
-  task_role_arn            = aws_iam_role.ecs_task.arn
+  task_role_arn            = aws_iam_role.source_worker_task.arn
 
   runtime_platform {
     operating_system_family = "LINUX"
@@ -246,7 +219,7 @@ resource "aws_ecs_task_definition" "source_outbox" {
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   execution_role_arn       = aws_iam_role.ecs_execution.arn
-  task_role_arn            = aws_iam_role.ecs_task.arn
+  task_role_arn            = aws_iam_role.source_outbox_task.arn
 
   runtime_platform {
     operating_system_family = "LINUX"
@@ -294,7 +267,7 @@ resource "aws_ecs_task_definition" "source_dispatcher" {
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   execution_role_arn       = aws_iam_role.ecs_execution.arn
-  task_role_arn            = aws_iam_role.ecs_task.arn
+  task_role_arn            = aws_iam_role.database_task.arn
 
   runtime_platform {
     operating_system_family = "LINUX"
@@ -355,7 +328,7 @@ resource "aws_iam_role_policy" "source_eventbridge" {
         Action = ["iam:PassRole"]
         Resource = [
           aws_iam_role.ecs_execution.arn,
-          aws_iam_role.ecs_task.arn
+          aws_iam_role.database_task.arn
         ]
       }
     ]

@@ -96,70 +96,6 @@ resource "aws_iam_role_policy" "ecs_execution_database_secret" {
   })
 }
 
-resource "aws_iam_role" "ecs_task" {
-  name = "${local.name}-ecs-task"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Principal = {
-          Service = "ecs-tasks.amazonaws.com"
-        }
-        Action = "sts:AssumeRole"
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy" "ecs_task_runtime" {
-  name = "runtime-access"
-  role = aws_iam_role.ecs_task.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "ResumeBucketList"
-        Effect = "Allow"
-        Action = ["s3:ListBucket"]
-        Resource = [
-          aws_s3_bucket.resumes.arn
-        ]
-      },
-      {
-        Sid    = "ResumeObjects"
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:PutObject",
-          "s3:DeleteObject"
-        ]
-        Resource = [
-          "${aws_s3_bucket.resumes.arn}/*"
-        ]
-      },
-      {
-        Sid    = "ResumeQueues"
-        Effect = "Allow"
-        Action = [
-          "sqs:ChangeMessageVisibility",
-          "sqs:DeleteMessage",
-          "sqs:GetQueueAttributes",
-          "sqs:GetQueueUrl",
-          "sqs:ReceiveMessage",
-          "sqs:SendMessage"
-        ]
-        Resource = [
-          aws_sqs_queue.resume.arn,
-          aws_sqs_queue.resume_dlq.arn
-        ]
-      }
-    ]
-  })
-}
-
 resource "aws_ecs_cluster" "main" {
   name = local.name
 
@@ -176,7 +112,7 @@ resource "aws_ecs_task_definition" "api" {
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   execution_role_arn       = aws_iam_role.ecs_execution.arn
-  task_role_arn            = aws_iam_role.ecs_task.arn
+  task_role_arn            = aws_iam_role.api_task.arn
 
   runtime_platform {
     operating_system_family = "LINUX"
@@ -217,7 +153,7 @@ resource "aws_ecs_task_definition" "worker" {
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   execution_role_arn       = aws_iam_role.ecs_execution.arn
-  task_role_arn            = aws_iam_role.ecs_task.arn
+  task_role_arn            = aws_iam_role.resume_worker_task.arn
 
   runtime_platform {
     operating_system_family = "LINUX"
@@ -251,7 +187,7 @@ resource "aws_ecs_task_definition" "outbox" {
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   execution_role_arn       = aws_iam_role.ecs_execution.arn
-  task_role_arn            = aws_iam_role.ecs_task.arn
+  task_role_arn            = aws_iam_role.resume_outbox_task.arn
 
   runtime_platform {
     operating_system_family = "LINUX"
@@ -285,7 +221,7 @@ resource "aws_ecs_task_definition" "ingestion" {
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   execution_role_arn       = aws_iam_role.ecs_execution.arn
-  task_role_arn            = aws_iam_role.ecs_task.arn
+  task_role_arn            = aws_iam_role.database_task.arn
 
   runtime_platform {
     operating_system_family = "LINUX"
@@ -319,7 +255,7 @@ resource "aws_ecs_task_definition" "migration" {
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   execution_role_arn       = aws_iam_role.ecs_execution.arn
-  task_role_arn            = aws_iam_role.ecs_task.arn
+  task_role_arn            = aws_iam_role.database_task.arn
 
   runtime_platform {
     operating_system_family = "LINUX"
@@ -432,7 +368,7 @@ resource "aws_iam_role_policy" "eventbridge" {
         Action = ["iam:PassRole"]
         Resource = [
           aws_iam_role.ecs_execution.arn,
-          aws_iam_role.ecs_task.arn
+          aws_iam_role.database_task.arn
         ]
       }
     ]

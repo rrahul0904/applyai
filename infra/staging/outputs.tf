@@ -70,6 +70,14 @@ output "aurora_port" {
   value = aws_rds_cluster.database.port
 }
 
+output "aurora_cluster_identifier" {
+  value = aws_rds_cluster.database.cluster_identifier
+}
+
+output "aurora_instance_identifier" {
+  value = aws_rds_cluster_instance.database.identifier
+}
+
 output "aurora_master_secret_arn" {
   value = aws_rds_cluster.database.master_user_secret[0].secret_arn
 }

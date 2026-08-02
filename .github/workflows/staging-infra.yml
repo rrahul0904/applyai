@@ -34,11 +34,16 @@ jobs:
       TF_VAR_clerk_jwks_url: ${{ vars.CLERK_JWKS_URL }}
       TF_VAR_clerk_audience: ${{ vars.CLERK_AUDIENCE }}
       TF_VAR_greenhouse_board_tokens: ${{ vars.GREENHOUSE_BOARD_TOKENS || '[]' }}
+      TF_VAR_lever_site_names: ${{ vars.LEVER_SITE_NAMES || '[]' }}
+      TF_VAR_ashby_board_names: ${{ vars.ASHBY_BOARD_NAMES || '[]' }}
       TF_VAR_image_tag: bootstrap
       TF_VAR_api_desired_count: '0'
       TF_VAR_worker_desired_count: '0'
       TF_VAR_outbox_desired_count: '0'
+      TF_VAR_source_worker_desired_count: '0'
+      TF_VAR_source_outbox_desired_count: '0'
       TF_VAR_ingestion_schedule_enabled: 'false'
+      TF_VAR_source_dispatch_schedule_enabled: 'false'
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -55,6 +60,18 @@ jobs:
           : "${TF_VAR_api_certificate_arn:?Set API_CERTIFICATE_ARN in the GitHub staging environment}"
           : "${TF_VAR_clerk_issuer:?Set CLERK_ISSUER in the GitHub staging environment}"
           : "${TF_VAR_clerk_jwks_url:?Set CLERK_JWKS_URL in the GitHub staging environment}"
+          : "${TF_VAR_clerk_audience:?Set CLERK_AUDIENCE in the GitHub staging environment}"
+
+          for value in \
+            "$TF_VAR_greenhouse_board_tokens" \
+            "$TF_VAR_lever_site_names" \
+            "$TF_VAR_ashby_board_names"; do
+            printf '%s' "$value" | jq -e '
+              type == "array" and
+              length <= 5 and
+              all(.[]; type == "string" and length > 0)
+            ' >/dev/null
+          done
 
       - name: Configure AWS credentials through GitHub OIDC
         uses: aws-actions/configure-aws-credentials@0e613a0980cbf65ed5b322eb7a1e075d28913a83
@@ -83,6 +100,33 @@ jobs:
       - name: Plan dormant staging foundation
         run: terraform -chdir=infra/staging plan -input=false -out=tfplan
 
+      - name: Render reviewed plan artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          terraform -chdir=infra/staging show -json tfplan > infra/staging/tfplan.json
+          terraform -chdir=infra/staging show -no-color tfplan > infra/staging/tfplan.txt
+          jq '{
+            create: [.resource_changes[]? | select(.change.actions == ["create"]) | .address],
+            update: [.resource_changes[]? | select(.change.actions == ["update"]) | .address],
+            replace: [.resource_changes[]? | select(.change.actions | index("delete") and index("create")) | .address],
+            destroy: [.resource_changes[]? | select(.change.actions == ["delete"]) | .address]
+          }' infra/staging/tfplan.json > infra/staging/tfplan-summary.json
+          jq -e '.destroy | length == 0' infra/staging/tfplan-summary.json >/dev/null || {
+            echo 'Terraform plan contains destroy actions. Review and correct before apply.' >&2
+            cat infra/staging/tfplan-summary.json >&2
+            exit 1
+          }
+
+      - name: Upload Terraform plan evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: applyai-staging-terraform-${{ inputs.mode }}-${{ github.sha }}
+          path: |
+            infra/staging/tfplan.txt
+            infra/staging/tfplan-summary.json
+          retention-days: 30
+
       - name: Apply dormant staging foundation
         if: inputs.mode == 'apply'
         run: terraform -chdir=infra/staging apply -input=false -auto-approve tfplan
@@ -93,7 +137,9 @@ jobs:
           {
             echo '## ApplyAI staging foundation'
             echo
-            echo 'Terraform applied with API/worker/outbox desired counts at 0 and Greenhouse scheduling disabled.'
+            echo 'Terraform applied with every API/worker/outbox desired count at 0.'
+            echo 'Legacy ingestion and the source dispatcher remain disabled.'
+            echo 'Reviewed Greenhouse, Lever and Ashby identifiers were passed to Terraform.'
             echo
             echo '```text'
             terraform -chdir=infra/staging output

@@ -86,10 +86,12 @@ jobs:
 
       - name: Record immutable execution metadata
         run: |
-          printf '%s\n' "source_sha=${GITHUB_SHA}" > "$DEMO_OUTPUT_DIR/execution.txt"
-          printf '%s\n' "workflow_run_id=${GITHUB_RUN_ID}" >> "$DEMO_OUTPUT_DIR/execution.txt"
-          printf '%s\n' "postgres_image=postgres:17" >> "$DEMO_OUTPUT_DIR/execution.txt"
-          printf '%s\n' "generated_at=$(date -u +%FT%TZ)" >> "$DEMO_OUTPUT_DIR/execution.txt"
+          {
+            printf '%s\n' "source_sha=${GITHUB_SHA}"
+            printf '%s\n' "workflow_run_id=${GITHUB_RUN_ID}"
+            printf '%s\n' "postgres_image=postgres:17"
+            printf '%s\n' "generated_at=$(date -u +%FT%TZ)"
+          } > "$DEMO_OUTPUT_DIR/execution.txt"
 
       - name: Install Chromium
         run: pnpm --dir apps/web exec playwright install --with-deps chromium
@@ -98,7 +100,7 @@ jobs:
         run: |
           python -m http.server 4173 --bind 127.0.0.1 --directory "$DEMO_OUTPUT_DIR" >/tmp/applyai-job-source-demo.log 2>&1 &
           echo $! >/tmp/applyai-job-source-demo.pid
-          for attempt in {1..30}; do
+          for _ in {1..30}; do
             if curl --fail --silent "$DEMO_BASE_URL" >/dev/null; then
               exit 0
             fi
@@ -132,7 +134,6 @@ jobs:
           PY
 
       - name: Upload complete interactive demo
-        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: applyai-job-source-platform-demo-${{ github.sha }}

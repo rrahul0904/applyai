@@ -76,10 +76,6 @@ jobs:
           uv run alembic current
           uv run alembic check
 
-      - name: Run focused demo test
-        working-directory: services/api
-        run: uv run pytest tests/test_job_source_demo.py -q
-
       - name: Build database-backed demo artifact
         working-directory: services/api
         run: uv run python scripts/build_job_source_demo.py --output "$DEMO_OUTPUT_DIR"

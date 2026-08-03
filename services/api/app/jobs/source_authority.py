@@ -124,3 +124,6 @@ def record_field_provenance(session: Session, job_id) -> None:
             for field_name, value in values.items()
         ]
     )
+    # SessionLocal intentionally uses autoflush=False. Flush the authoritative
+    # field snapshot so later reads in the same unit of work observe all rows.
+    session.flush()

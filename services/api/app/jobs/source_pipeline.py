@@ -164,6 +164,10 @@ class RegisteredSourceIngestionPipeline:
                         normalized,
                         source_company=source.source_identity,
                     )
+                    # SessionLocal uses autoflush=False. Canonical ingestion can add
+                    # a new JobSourceLink, so make it visible before querying the
+                    # current posting source, dedup link, and authority provenance.
+                    self.session.flush()
                     posting_source = self.session.scalar(
                         select(JobSource).where(
                             JobSource.connector_key == connector.key,

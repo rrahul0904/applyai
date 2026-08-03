@@ -27,7 +27,7 @@ The demo verifies:
 - canonical job creation;
 - cross-source deduplication;
 - primary-source authority;
-- field-level provenance;
+- exactly seven canonical field-provenance records;
 - ingestion-run metrics;
 - multi-source freshness;
 - a source miss that does not retire a job while other trusted sources remain fresh.
@@ -79,7 +79,7 @@ uv run python scripts/build_job_source_demo.py \
   --output ../../artifacts/job-source-platform-demo
 ```
 
-Serve the generated files:
+Serve the generated files from the repository root:
 
 ```bash
 python -m http.server 4173 \
@@ -104,24 +104,34 @@ DEMO_SCREENSHOT_DIR="$PWD/artifacts/job-source-platform-demo/screenshots" \
 pnpm --dir apps/web exec node scripts/capture-job-source-demo.mjs
 ```
 
-## CI workflow
+## Automated validation
 
-Workflow:
+Focused regression test:
+
+```text
+services/api/tests/test_job_source_demo.py
+```
+
+The normal `ApplyAI CI` backend suite runs this regression with `autoflush=False`, matching the production `SessionLocal` behavior. It verifies the exact totals, primary source, active lifecycle, seven provenance fields, generated HTML, and account-free scope.
+
+Artifact workflow:
 
 ```text
 .github/workflows/job-source-platform-demo.yml
 ```
 
-The workflow:
+The artifact workflow:
 
 1. creates a fresh PostgreSQL 17 service;
-2. migrates from zero to Alembic head;
-3. runs the focused demo regression test;
-4. builds the real database-backed report;
+2. migrates from zero to Alembic head and checks migration drift;
+3. builds the real database-backed report once on the clean schema;
+4. records the source SHA, workflow run, PostgreSQL image, and generation time;
 5. serves the generated artifact locally;
 6. captures three Playwright screenshots;
-7. verifies all required files and evidence assertions;
+7. verifies all required files and machine-readable evidence assertions;
 8. uploads the complete artifact for 14 days.
+
+Keeping the regression and artifact databases separate prevents test state from influencing the published demonstration.
 
 ## Explicit boundaries
 

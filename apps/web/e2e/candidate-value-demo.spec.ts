@@ -11,11 +11,11 @@ async function captureDemo(page: Page, fileName: string) {
   mkdirSync(demoCaptureDir, { recursive: true });
   await page.screenshot({
     path: join(demoCaptureDir, `${fileName}.png`),
-    fullPage: true,
   });
 }
 
 test("candidate-first demo explains fit, truthful tailoring, and application planning", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/demo");
 
   await expect(

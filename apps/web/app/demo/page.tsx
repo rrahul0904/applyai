@@ -1,13 +1,13 @@
 import type { Metadata } from "next";
 
-import { CandidateValueDemo } from "./candidate-value-demo";
+import { FunctionalCandidateDemo } from "./functional-candidate-demo";
 
 export const metadata: Metadata = {
-  title: "ApplyAI Candidate Demo",
+  title: "ApplyAI Functional Candidate Workspace",
   description:
-    "A candidate-first ApplyAI walkthrough for personalized job discovery, truthful tailoring, and application planning.",
+    "An end-to-end ApplyAI workspace backed by the real profile, jobs, recommendation, resume tailoring, and application APIs.",
 };
 
 export default function DemoPage() {
-  return <CandidateValueDemo />;
+  return <FunctionalCandidateDemo />;
 }

@@ -1,12 +1,27 @@
-import { expect, test } from "@playwright/test";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 
-async function completeCandidateReview(page: import("@playwright/test").Page) {
+import { expect, test, type Page } from "@playwright/test";
+
+const demoCaptureDir = process.env.DEMO_CAPTURE_DIR;
+
+async function captureDemo(page: Page, fileName: string) {
+  if (!demoCaptureDir) return;
+  mkdirSync(demoCaptureDir, { recursive: true });
+  await page.screenshot({
+    path: join(demoCaptureDir, `${fileName}.png`),
+    animations: "disabled",
+  });
+}
+
+async function completeCandidateReview(page: Page) {
   await page.getByRole("button", { name: "Tailor my resume" }).click();
   await expect(
     page.getByRole("heading", {
       name: /Make your verified experience clearer for/,
     }),
   ).toBeVisible();
+  await captureDemo(page, "18-evidence-locked-resume-tailoring");
 
   const approveButtons = page.getByRole("button", { name: "Approve" });
   await approveButtons.nth(0).click();
@@ -21,6 +36,7 @@ async function completeCandidateReview(page: import("@playwright/test").Page) {
       name: "Review every word before the package is marked ready.",
     }),
   ).toBeVisible();
+  await captureDemo(page, "19-application-assistant-review");
 
   const verificationBoxes = page.getByRole("checkbox");
   await expect(verificationBoxes).toHaveCount(4);
@@ -39,6 +55,7 @@ async function completeCandidateReview(page: import("@playwright/test").Page) {
   await expect(page.getByText("100%", { exact: true })).toBeVisible();
   await expect(page.getByText("READY", { exact: true })).toBeVisible();
   await expect(page.getByText("External submission", { exact: true })).toBeVisible();
+  await captureDemo(page, "20-ready-application-package");
 }
 
 test("realistic candidate beta journey persists the reviewed application package", async ({
@@ -55,6 +72,7 @@ test("realistic candidate beta journey persists the reviewed application package
   await expect(page.getByText(/confidence · .* fit/i).first()).toBeVisible();
   await expect(page.getByText("ROLE ALIGNMENT", { exact: true })).toBeVisible();
   await expect(page.getByText("VERIFIED SKILLS", { exact: true })).toBeVisible();
+  await captureDemo(page, "17-ai-match-prioritization");
 
   await completeCandidateReview(page);
 

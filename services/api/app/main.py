@@ -8,7 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.api import (
     applications,
     candidate_workspace,
-    career_ai,
+    career_product,
     internal_job_discoveries,
     internal_job_quality,
     internal_job_sources,
@@ -129,7 +129,7 @@ for router in (
 
 for product_router in (
     candidate_workspace.router,
-    career_ai.router,
+    career_product.router,
 ):
     app.include_router(
         product_router,

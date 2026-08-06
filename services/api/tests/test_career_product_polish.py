@@ -1,16 +1,12 @@
 from collections import Counter
 
 from app.core.database import SessionLocal
-from app.jobs.connectors import DevelopmentSeedConnector
-from app.jobs.dataset import build_seed_records
-from app.jobs.pipeline import JobIngestionPipeline
+from app.jobs.seed import seed_development_jobs
 
 
 def seed_jobs() -> None:
     with SessionLocal() as session:
-        JobIngestionPipeline(session).run(
-            DevelopmentSeedConnector(build_seed_records())
-        )
+        seed_development_jobs(session)
 
 
 def candidate_profile() -> dict:

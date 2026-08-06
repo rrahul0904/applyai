@@ -9,6 +9,7 @@ from app.api import (
     applications,
     candidate_workspace,
     career_product,
+    career_product_contract,
     internal_job_discoveries,
     internal_job_quality,
     internal_job_sources,
@@ -129,6 +130,7 @@ for router in (
 
 for product_router in (
     candidate_workspace.router,
+    career_product_contract.router,
     career_product.router,
 ):
     app.include_router(

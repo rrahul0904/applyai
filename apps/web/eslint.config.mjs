@@ -15,13 +15,15 @@ export default defineConfig([
     },
   },
   {
-    files: ["app/demo/functional-candidate-demo.tsx"],
+    files: [
+      "app/demo/functional-candidate-demo.tsx",
+      "app/beta/beta-client.tsx",
+    ],
     rules: {
-      // The functional demo bootstraps a controlled session and then hydrates from
-      // several authenticated APIs. State changes occur after those external calls.
+      // These controlled product journeys bootstrap a session and then hydrate from
+      // authenticated APIs. State changes occur after those external calls.
       "react-hooks/set-state-in-effect": "off",
-      // The unauthenticated fallback must remain a plain navigation target because
-      // the demo route can run without the Clerk provider mounted.
+      // The unauthenticated fallback can run without the Clerk provider mounted.
       "@next/next/no-html-link-for-pages": "off",
     },
   },

@@ -58,7 +58,10 @@ async function request<T>(
 
 export type User = components["schemas"]["UserResponse"];
 export type OnboardingState = components["schemas"]["OnboardingStateResponse"];
-export type Profile = components["schemas"]["ProfileResponse"];
+export type Profile = components["schemas"]["ProfileResponse"] & {
+  target_roles: string[];
+  work_modes: string[];
+};
 export type ProfileWrite = components["schemas"]["ProfileReviewWrite"];
 export type ResumeVersion = components["schemas"]["ResumeVersionResponse"];
 export type ResumeExtraction = components["schemas"]["ResumeExtractionResponse"];

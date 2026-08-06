@@ -8,6 +8,7 @@ export default async function Home() {
       process.env.CLERK_SECRET_KEY,
   );
   const { userId } = clerkConfigured ? await auth() : { userId: null };
+
   return (
     <main>
       <header className="site-header">
@@ -33,34 +34,37 @@ export default async function Home() {
               </SignUpButton>
             </>
           ) : (
-            <span className="configuration-label">Authentication setup required</span>
+            <Link className="text-button" href="/demo">
+              View product demo
+            </Link>
           )}
         </nav>
       </header>
 
       <section className="hero">
-        <div className="eyebrow">Fewer applications. Better decisions.</div>
-        <h1>Know which jobs are worth your time.</h1>
+        <div className="eyebrow">Fewer applications. Better opportunities.</div>
+        <h1>Know which jobs are truly worth your time.</h1>
         <p>
-          ApplyAI brings your career profile, job search, application materials,
-          and follow-ups into one private workspace.
+          ApplyAI ranks opportunities for your goals, explains why you fit, helps
+          you strengthen a truthful application, and keeps every next step clear.
         </p>
         <div className="hero-actions">
           {userId ? (
             <Link className="button" href="/dashboard">
               Continue to your workspace
             </Link>
-          ) : clerkConfigured ? (
-            <SignUpButton>
-              <button className="button">Start your job search</button>
-            </SignUpButton>
           ) : (
-            <button className="button" disabled>
-              Configure Clerk to continue
-            </button>
+            <Link className="button" href="/demo">
+              Try the interactive demo
+            </Link>
           )}
+          {!userId && clerkConfigured ? (
+            <SignUpButton>
+              <button className="text-button">Create your workspace</button>
+            </SignUpButton>
+          ) : null}
           <a className="text-link" href="#foundation">
-            See how it works <span aria-hidden="true">↓</span>
+            See how it helps <span aria-hidden="true">↓</span>
           </a>
         </div>
       </section>
@@ -68,26 +72,26 @@ export default async function Home() {
       <section id="foundation" className="value-grid" aria-label="ApplyAI workflow">
         <article>
           <span className="step">01</span>
-          <h2>Build one verified profile</h2>
+          <h2>Start with your real experience</h2>
           <p>
-            Keep document facts separate from your own corrections and future AI
-            suggestions.
+            Turn your resume and preferences into an editable career profile that
+            reflects where you have been and where you want to go next.
           </p>
         </article>
         <article>
           <span className="step">02</span>
-          <h2>Find relevant, current jobs</h2>
+          <h2>See why each job fits</h2>
           <p>
-            Search canonical job records with clear source, salary, and freshness
-            information.
+            Focus on a small set of strong opportunities with clear strengths,
+            realistic gaps, salary fit, freshness, and source confidence.
           </p>
         </article>
         <article>
           <span className="step">03</span>
-          <h2>Track every decision</h2>
+          <h2>Apply with more confidence</h2>
           <p>
-            Save jobs, prepare applications, and preserve every status change in
-            an immutable history.
+            Approve truthful resume improvements, prepare the application, and keep
+            deadlines, follow-ups, and interviews in one calm workspace.
           </p>
         </article>
       </section>

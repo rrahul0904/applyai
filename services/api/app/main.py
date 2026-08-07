@@ -9,6 +9,7 @@ from app.api import (
     applications,
     candidate_workspace,
     career_intelligence_v2,
+    career_memory,
     career_product,
     career_product_contract,
     career_product_polish,
@@ -128,6 +129,7 @@ for router in (
     resumes.router,
     jobs.router,
     applications.router,
+    career_memory.router,
     career_intelligence_v2.router,
 ):
     app.include_router(router, prefix="/api/v1")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -22,8 +23,18 @@ from app.models import (
 )
 
 
-def _decimal(value: Decimal | None) -> float | None:
-    return float(value) if value is not None else None
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, uuid.UUID):
+        return str(value)
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    return value
 
 
 def build_career_ai_context(session: Session, user: User, job: Job) -> dict[str, Any]:
@@ -37,7 +48,10 @@ def build_career_ai_context(session: Session, user: User, job: Job) -> dict[str,
         )
     )
     compensation = session.scalar(
-        select(JobCompensation).where(JobCompensation.job_id == job.id).order_by(JobCompensation.id).limit(1)
+        select(JobCompensation)
+        .where(JobCompensation.job_id == job.id)
+        .order_by(JobCompensation.id)
+        .limit(1)
     )
     skills = list(
         session.scalars(
@@ -81,11 +95,7 @@ def build_career_ai_context(session: Session, user: User, job: Job) -> dict[str,
     for item in candidate["experiences"]:
         evidence[f"candidate.experience.{item.id}"] = " | ".join(
             part
-            for part in [
-                item.company_name,
-                item.title,
-                item.description or "",
-            ]
+            for part in [item.company_name, item.title, item.description or ""]
             if part
         )
     for item in candidate["skills"]:
@@ -104,7 +114,9 @@ def build_career_ai_context(session: Session, user: User, job: Job) -> dict[str,
     for item in locations:
         evidence[f"job.location.{item.id}"] = f"{item.location_text} | {item.work_mode}"
     for item in skills:
-        evidence[f"job.skill.{item.id}"] = f"{item.name} | {'required' if item.required else 'preferred'}"
+        evidence[f"job.skill.{item.id}"] = (
+            f"{item.name} | {'required' if item.required else 'preferred'}"
+        )
     for item in requirements:
         evidence[f"job.requirement.{item.id}"] = (
             f"{item.category} | {item.text} | {'required' if item.required else 'preferred'}"
@@ -115,7 +127,7 @@ def build_career_ai_context(session: Session, user: User, job: Job) -> dict[str,
             f"{compensation.currency}/{compensation.interval}"
         )
 
-    return {
+    context = {
         "candidate": {
             "profile_id": str(profile.id) if profile else None,
             "headline": profile.headline if profile else None,
@@ -204,6 +216,7 @@ def build_career_ai_context(session: Session, user: User, job: Job) -> dict[str,
         "deterministic_match": _match_payload(session, user, job),
         "evidence_catalog": evidence,
     }
+    return _json_safe(context)
 
 
 def get_owned_active_job(session: Session, job_id: uuid.UUID) -> Job | None:

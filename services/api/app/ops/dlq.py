@@ -3,9 +3,8 @@ import json
 from dataclasses import asdict, dataclass
 from typing import Any
 
-import boto3
-
 from app.core.config import Settings, get_settings
+from app.core.queue import sqs_client
 
 
 @dataclass(frozen=True)
@@ -56,12 +55,7 @@ def summarize_message(message: dict[str, Any]) -> FailedTaskSummary:
     )
 
 
-def inspect_resume_dlq(
-    *,
-    settings: Settings | None = None,
-    limit: int = 10,
-    client: Any | None = None,
-) -> list[FailedTaskSummary]:
+def inspect_resume_dlq(*, settings: Settings | None = None, limit: int = 10, client: Any | None = None) -> list[FailedTaskSummary]:
     settings = settings or get_settings()
     if settings.task_queue_provider != "sqs":
         raise RuntimeError("DLQ inspection requires TASK_QUEUE_PROVIDER=sqs")
@@ -70,7 +64,7 @@ def inspect_resume_dlq(
     if limit < 1 or limit > 10:
         raise ValueError("limit must be between 1 and 10")
 
-    sqs = client or boto3.client("sqs", region_name=settings.sqs_region)
+    sqs = client or sqs_client(region=settings.sqs_region)
     response = sqs.receive_message(
         QueueUrl=settings.sqs_dlq_url,
         MaxNumberOfMessages=limit,
@@ -82,12 +76,9 @@ def inspect_resume_dlq(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Inspect failed resume task identifiers in the configured SQS DLQ."
-    )
+    parser = argparse.ArgumentParser(description="Inspect failed resume task identifiers in the configured SQS DLQ.")
     parser.add_argument("--limit", type=int, default=10, choices=range(1, 11))
     args = parser.parse_args()
-
     summaries = inspect_resume_dlq(limit=args.limit)
     print(json.dumps([asdict(summary) for summary in summaries], indent=2, sort_keys=True))
 

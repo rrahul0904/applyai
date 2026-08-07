@@ -47,7 +47,7 @@ test("canonical candidate product persists cross-workspace career state", async 
   await page.getByRole("button", { name: "Save revision" }).click();
   await expect(page.getByText(/Version 2/)).toBeVisible();
   await page.reload();
-  await expect(page.getByDisplayValue("Verified E2E data engineer focused on reliable data platforms.")).toBeVisible();
+  await expect(page.getByLabel("Professional summary")).toHaveValue("Verified E2E data engineer focused on reliable data platforms.");
   await captureDemo(page, "15-resume-studio-persistence");
 
   await page.goto("/network");

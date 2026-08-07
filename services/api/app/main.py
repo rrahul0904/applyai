@@ -12,6 +12,7 @@ from app.api import (
     career_product,
     career_product_contract,
     career_product_polish,
+    internal_ai_quality,
     internal_job_discoveries,
     internal_job_quality,
     internal_job_sources,
@@ -153,6 +154,7 @@ for internal_router in (
     internal_job_sources.router,
     internal_job_discoveries.router,
     internal_job_quality.router,
+    internal_ai_quality.router,
 ):
     app.include_router(
         internal_router,

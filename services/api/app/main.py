@@ -7,22 +7,27 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.api import (
     applications,
+    billing_platform,
+    candidate_platform,
     candidate_workspace,
     career_intelligence_v2,
     career_memory,
     career_product,
     career_product_contract,
     career_product_polish,
+    employer_platform,
     internal_ai_quality,
     internal_job_discoveries,
     internal_job_quality,
     internal_job_sources,
+    internal_platform_admin,
     job_imports,
     jobs,
     me,
     onboarding,
     profiles,
     resumes,
+    semantic_matching,
 )
 from app.core.config import get_settings
 from app.core.database import engine
@@ -31,7 +36,7 @@ from app.core.database import engine
 settings = get_settings()
 app = FastAPI(
     title="ApplyAI API",
-    version="0.2.0",
+    version="0.3.0",
     openapi_url="/api/v1/openapi.json",
     docs_url="/api/docs",
 )
@@ -40,7 +45,7 @@ app.add_middleware(
     allow_origins=[settings.web_origin],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-    allow_headers=["Authorization", "Content-Type", "X-ApplyAI-Internal-Token"],
+    allow_headers=["Authorization", "Content-Type", "X-ApplyAI-Internal-Token", "Stripe-Signature"],
 )
 
 
@@ -131,6 +136,10 @@ for router in (
     applications.router,
     career_memory.router,
     career_intelligence_v2.router,
+    candidate_platform.router,
+    semantic_matching.router,
+    employer_platform.router,
+    billing_platform.router,
 ):
     app.include_router(router, prefix="/api/v1")
 
@@ -157,6 +166,7 @@ for internal_router in (
     internal_job_discoveries.router,
     internal_job_quality.router,
     internal_ai_quality.router,
+    internal_platform_admin.router,
 ):
     app.include_router(
         internal_router,

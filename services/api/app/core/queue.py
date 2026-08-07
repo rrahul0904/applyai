@@ -11,6 +11,12 @@ from app.core.config import Settings, get_settings
 
 
 SOURCE_TASK_TYPES = {"SOURCE_DISCOVERY", "SOURCE_INGEST", "SOURCE_VERIFY"}
+AI_TASK_TYPES = {
+    "AI_DEEP_MATCH",
+    "AI_RESUME_TAILOR",
+    "AI_APPLICATION_COPILOT",
+    "AI_INTERVIEW_PREP",
+}
 
 
 @dataclass(frozen=True)
@@ -68,6 +74,7 @@ class SqsTaskQueue(TaskQueue):
 
 _development_queue = InMemoryTaskQueue()
 _source_development_queue = InMemoryTaskQueue()
+_ai_development_queue = InMemoryTaskQueue()
 
 
 def get_task_queue_for_type(
@@ -82,16 +89,22 @@ def get_task_queue_for_type(
     request parameters in OpenAPI.
     """
     is_source_task = task_type in SOURCE_TASK_TYPES
+    is_ai_task = task_type in AI_TASK_TYPES
     if settings.task_queue_provider == "sqs":
-        queue_url = (
-            settings.source_sqs_queue_url
-            if is_source_task and settings.source_sqs_queue_url
-            else settings.sqs_queue_url
-        )
+        if is_ai_task:
+            queue_url = settings.ai_sqs_queue_url or settings.sqs_queue_url
+        elif is_source_task:
+            queue_url = settings.source_sqs_queue_url or settings.sqs_queue_url
+        else:
+            queue_url = settings.sqs_queue_url
         if not queue_url:
             raise RuntimeError("A queue URL is required for the SQS task provider")
         return SqsTaskQueue(queue_url, settings.sqs_region)
-    return _source_development_queue if is_source_task else _development_queue
+    if is_ai_task:
+        return _ai_development_queue
+    if is_source_task:
+        return _source_development_queue
+    return _development_queue
 
 
 def get_task_queue(settings: Settings = Depends(get_settings)) -> TaskQueue:

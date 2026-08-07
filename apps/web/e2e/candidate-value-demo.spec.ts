@@ -4,81 +4,60 @@ import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 const demoCaptureDir = process.env.DEMO_CAPTURE_DIR;
+const candidate = "e2e.candidate@example.test";
+
+async function signIn(page: Page, email: string) {
+  await page.goto("/dev-login");
+  await page.getByLabel("Test candidate email").fill(email);
+  await page.getByRole("button", { name: "Sign in to development" }).click();
+  await page.waitForURL(/\/(onboarding|dashboard)$/);
+}
 
 async function captureDemo(page: Page, fileName: string) {
   if (!demoCaptureDir) return;
   mkdirSync(demoCaptureDir, { recursive: true });
   await page.screenshot({
     path: join(demoCaptureDir, `${fileName}.png`),
+    fullPage: true,
     animations: "disabled",
   });
 }
 
-test("functional candidate workspace persists preferences, saves, tailoring, and application stages", async ({ page }) => {
+test("canonical candidate product persists cross-workspace career state", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
+  await signIn(page, candidate);
+
   await page.goto("/demo");
+  await page.waitForURL(/\/dashboard$/);
+  await expect(page.getByRole("heading", { name: "Make your next move count." })).toBeVisible();
+  await captureDemo(page, "13-canonical-workspace-overview");
 
-  await expect(
-    page.getByRole("heading", { name: "Good afternoon, Alex." }),
-  ).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText("Real API + PostgreSQL")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Review match" }).first()).toBeVisible();
-  await captureDemo(page, "13-functional-workspace-overview");
+  await page.goto("/applications");
+  await expect(page.getByRole("heading", { name: /applications/i }).first()).toBeVisible();
+  await expect(page.getByText("E2E persistence note for the candidate application.")).toBeVisible();
+  await captureDemo(page, "14-application-command-center");
 
-  await page.getByRole("button", { name: "Edit preferences" }).click();
-  await expect(
-    page.getByRole("heading", { name: "What should ApplyAI optimize for?" }),
-  ).toBeVisible();
-  await page.getByLabel("Minimum compensation").fill("95000");
-  await page.getByRole("button", { name: "Save and re-rank jobs" }).click();
-  await expect(page.getByText("Matches re-ranked for your new goals")).toBeVisible();
-
-  await page.getByRole("button", { name: "Review match" }).first().click();
-  await expect(
-    page.getByRole("heading", { name: "This score comes from your saved profile." }),
-  ).toBeVisible();
-  await expect(page.getByText("Why you fit")).toBeVisible();
-  await expect(page.getByText("What to address")).toBeVisible();
-  await captureDemo(page, "14-functional-match-explanation");
-
-  const selectedTitle = await page.locator("h1").first().textContent();
-  expect(selectedTitle).toBeTruthy();
-
-  await page.getByRole("button", { name: "Save selected job" }).click();
-  await expect(page.getByText("Job saved")).toBeVisible();
-
-  await page.getByRole("button", { name: "Tailor resume truthfully" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Tailor your resume without inventing anything." }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Approve" }).first().click();
-  await page.getByRole("button", { name: "Save decisions" }).click();
-  await expect(page.getByText("Resume decisions saved to the application")).toBeVisible();
-  await captureDemo(page, "15-functional-resume-tailoring");
-
+  await page.goto("/resume/studio");
+  await expect(page.getByRole("heading", { name: "Resume Studio" })).toBeVisible();
+  await page.getByRole("button", { name: "New variant" }).click();
+  await page.getByLabel("Professional summary").fill("Verified E2E data engineer focused on reliable data platforms.");
+  await page.getByRole("button", { name: "Save revision" }).click();
+  await expect(page.getByText(/Version 2/)).toBeVisible();
   await page.reload();
-  await expect(
-    page.getByRole("heading", { name: "Good afternoon, Alex." }),
-  ).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: "Review match" }).first().click();
-  await page.getByRole("button", { name: "Tailor resume truthfully" }).click();
-  await expect(page.getByText("Edit 1 · approved")).toBeVisible();
+  await expect(page.getByDisplayValue("Verified E2E data engineer focused on reliable data platforms.")).toBeVisible();
+  await captureDemo(page, "15-resume-studio-persistence");
 
-  await page.getByRole("button", { name: /Use 1 approved edit/ }).click();
-  await expect(
-    page.getByRole("heading", { name: "Move every application forward." }),
-  ).toBeVisible();
-  await expect(page.getByText(selectedTitle as string).first()).toBeVisible();
-  await captureDemo(page, "16-functional-application-tracker");
-
-  await page.getByRole("button", { name: "Move forward →" }).first().click();
-  await expect(page.getByText("Application stage updated")).toBeVisible();
-
+  await page.goto("/network");
+  await page.getByLabel("Name").fill("E2E Hiring Manager");
+  await page.getByLabel("Company").fill("ApplyAI Demo Employer");
+  await page.getByRole("button", { name: "Add contact" }).click();
+  await expect(page.getByText("E2E Hiring Manager")).toBeVisible();
   await page.reload();
-  await expect(
-    page.getByRole("heading", { name: "Good afternoon, Alex." }),
-  ).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: "Applications" }).click();
-  await expect(page.getByText(selectedTitle as string).first()).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Applied" })).toBeVisible();
+  await expect(page.getByText("E2E Hiring Manager")).toBeVisible();
+
+  await page.goto("/analytics");
+  await expect(page.getByRole("heading", { name: "Candidate Analytics" })).toBeVisible();
+  await expect(page.getByText("Resume variants")).toBeVisible();
+  await expect(page.getByText("Network contacts")).toBeVisible();
+  await captureDemo(page, "16-candidate-analytics");
 });

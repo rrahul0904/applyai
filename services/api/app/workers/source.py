@@ -8,11 +8,11 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-import boto3
 from sqlalchemy import select
 
 from app.core.config import Settings, get_settings
 from app.core.database import SessionLocal
+from app.core.queue import sqs_client
 from app.durability_models import JobIngestionRun
 from app.job_quality_models import IngestionCostObservation
 from app.job_source_models import JobSourceRegistry
@@ -53,12 +53,7 @@ def process_source_ingest(payload: dict, settings: Settings) -> bool:
         if dispatched_at and source.last_success_at and source.last_success_at >= dispatched_at:
             return True
         now = utcnow()
-        if (
-            source.locked_by
-            and source.locked_by != lease_token
-            and source.lease_expires_at
-            and source.lease_expires_at >= now
-        ):
+        if source.locked_by and source.locked_by != lease_token and source.lease_expires_at and source.lease_expires_at >= now:
             return False
         source.locked_at = now
         source.locked_by = lease_token
@@ -67,52 +62,28 @@ def process_source_ingest(payload: dict, settings: Settings) -> bool:
 
     started = time.monotonic()
     try:
-        counts = run_registered_source(
-            source_id,
-            settings=settings,
-            expected_worker_id=lease_token,
-        )
+        counts = run_registered_source(source_id, settings=settings, expected_worker_id=lease_token)
     except Exception:
         logger.exception("source_ingest_failed", extra={"source_id": str(source_id)})
         return False
 
     worker_seconds = Decimal(str(round(time.monotonic() - started, 4)))
     with SessionLocal() as session:
-        run = session.scalar(
-            select(JobIngestionRun)
-            .where(JobIngestionRun.source_id == source_id)
-            .order_by(JobIngestionRun.started_at.desc(), JobIngestionRun.id.desc())
-            .limit(1)
-        )
+        run = session.scalar(select(JobIngestionRun).where(JobIngestionRun.source_id == source_id).order_by(JobIngestionRun.started_at.desc(), JobIngestionRun.id.desc()).limit(1))
         if run is not None:
-            existing = session.scalar(
-                select(IngestionCostObservation).where(
-                    IngestionCostObservation.run_id == run.id
-                )
-            )
+            existing = session.scalar(select(IngestionCostObservation).where(IngestionCostObservation.run_id == run.id))
             if existing is None:
-                session.add(
-                    IngestionCostObservation(
-                        run_id=run.id,
-                        source_id=source_id,
-                        worker_seconds=worker_seconds,
-                        network_bytes=0,
-                        source_postings=counts["fetched"],
-                        canonical_changes=(
-                            counts["created"] + counts["updated"] + counts["closed"]
-                        ),
-                        estimated_cost_usd=None,
-                    )
-                )
+                session.add(IngestionCostObservation(
+                    run_id=run.id,
+                    source_id=source_id,
+                    worker_seconds=worker_seconds,
+                    network_bytes=0,
+                    source_postings=counts["fetched"],
+                    canonical_changes=counts["created"] + counts["updated"] + counts["closed"],
+                    estimated_cost_usd=None,
+                ))
                 session.commit()
-    logger.info(
-        "source_ingest_completed",
-        extra={
-            "source_id": str(source_id),
-            "duration_seconds": float(worker_seconds),
-            "counts": counts,
-        },
-    )
+    logger.info("source_ingest_completed", extra={"source_id": str(source_id), "duration_seconds": float(worker_seconds), "counts": counts})
     return True
 
 
@@ -160,7 +131,7 @@ def run_worker(settings: Settings | None = None) -> None:
     queue_url = settings.source_sqs_queue_url or settings.sqs_queue_url
     if settings.task_queue_provider != "sqs" or not queue_url:
         raise RuntimeError("Source worker requires an SQS source queue")
-    client = boto3.client("sqs", region_name=settings.sqs_region)
+    client = sqs_client(region=settings.sqs_region)
     logger.info("source_worker_started")
     while True:
         response = client.receive_message(
@@ -173,11 +144,7 @@ def run_worker(settings: Settings | None = None) -> None:
         for message in response.get("Messages", []):
             receipt_handle = message["ReceiptHandle"]
             stop = threading.Event()
-            heartbeat = threading.Thread(
-                target=_heartbeat,
-                args=(client, queue_url, receipt_handle, settings, stop),
-                daemon=True,
-            )
+            heartbeat = threading.Thread(target=_heartbeat, args=(client, queue_url, receipt_handle, settings, stop), daemon=True)
             heartbeat.start()
             acknowledged = False
             try:

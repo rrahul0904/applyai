@@ -74,6 +74,96 @@ export type ApplicationNote = components["schemas"]["ApplicationNoteResponse"];
 export type ApplicationListItem = components["schemas"]["ApplicationListItem"];
 export type ApplicationListPage = components["schemas"]["ApplicationListPage"];
 
+export type CareerTaskPath =
+  | "deep-match"
+  | "resume-tailoring"
+  | "application-copilot"
+  | "interview-prep";
+
+export type AIJobRun = {
+  id: string;
+  task_type: string;
+  job_id: string | null;
+  application_id: string | null;
+  status: string;
+  provider: string;
+  model: string;
+  prompt_version: string;
+  schema_version: string;
+  input_hash: string;
+  output: Record<string, unknown> | null;
+  evidence_refs: string[];
+  attempt_count: number;
+  latency_ms: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  estimated_cost_usd: number | null;
+  error_code: string | null;
+  created_at: string;
+  completed_at: string | null;
+};
+
+export type AIArtifact = {
+  id: string;
+  run_id: string;
+  job_id: string | null;
+  application_id: string | null;
+  artifact_type: string;
+  status: string;
+  version: number;
+  content: Record<string, unknown>;
+  evidence: Record<string, unknown>;
+  candidate_verified: boolean;
+  created_at: string;
+};
+
+export type CareerMatchV2 = {
+  job_id: string;
+  deterministic_score: number;
+  ai_score: number | null;
+  final_score: number;
+  fit_band: string;
+  decision: string;
+  confidence: string;
+  engine_version: string;
+  factors: Array<Record<string, unknown>>;
+  evidence: Record<string, unknown>;
+  updated_at: string;
+};
+
+export type CareerFactCategory =
+  | "ACHIEVEMENT"
+  | "PROJECT"
+  | "METRIC"
+  | "RESPONSIBILITY"
+  | "CERTIFICATION"
+  | "LEADERSHIP_STORY"
+  | "INTERVIEW_FEEDBACK"
+  | "CAREER_GOAL";
+
+export type CareerFact = {
+  id: string;
+  category: CareerFactCategory;
+  title: string | null;
+  fact_text: string;
+  source_kind: string;
+  source_ref: string | null;
+  provenance: string;
+  user_verified: boolean;
+  tags: string[];
+  occurred_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CareerFactWrite = {
+  category: CareerFactCategory;
+  title?: string | null;
+  fact_text: string;
+  tags?: string[];
+  occurred_at?: string | null;
+};
+
 async function uploadResume(file: File): Promise<ResumeVersion> {
   const intent = await request<ResumeUploadIntent>("/resumes/upload-intents", {
     method: "POST",
@@ -209,5 +299,51 @@ export const api = {
       request<void>(`/applications/${id}/notes/${noteId}`, {
         method: "DELETE",
       }),
+  },
+  careerV2: {
+    start: (jobId: string, task: CareerTaskPath) =>
+      request<AIJobRun>(`/career-v2/jobs/${jobId}/${task}`, { method: "POST" }),
+    run: (runId: string, signal?: AbortSignal) =>
+      request<AIJobRun>(`/career-v2/runs/${runId}`, { signal }),
+    retry: (runId: string) =>
+      request<AIJobRun>(`/career-v2/runs/${runId}/retry`, { method: "POST" }),
+    artifacts: (jobId?: string, signal?: AbortSignal) => {
+      const params = new URLSearchParams();
+      if (jobId) params.set("job_id", jobId);
+      const suffix = params.size ? `?${params.toString()}` : "";
+      return request<{ items: AIArtifact[] }>(`/career-v2/artifacts${suffix}`, { signal });
+    },
+    artifact: (artifactId: string, signal?: AbortSignal) =>
+      request<AIArtifact>(`/career-v2/artifacts/${artifactId}`, { signal }),
+    matches: (signal?: AbortSignal) =>
+      request<{ items: CareerMatchV2[] }>("/career-v2/matches", { signal }),
+    match: (jobId: string, signal?: AbortSignal) =>
+      request<CareerMatchV2>(`/career-v2/matches/${jobId}`, { signal }),
+    feedback: (artifactId: string, action: string) =>
+      request<{ id: string; artifact_id: string; action: string }>(
+        `/career-v2/artifacts/${artifactId}/feedback`,
+        { method: "POST", body: JSON.stringify({ action, metadata: {} }) },
+      ),
+  },
+  careerMemory: {
+    list: (signal?: AbortSignal) =>
+      request<CareerFact[]>("/career-memory", { signal }),
+    summary: (signal?: AbortSignal) =>
+      request<{ verified_fact_count: number; by_category: Record<string, number> }>(
+        "/career-memory/summary",
+        { signal },
+      ),
+    create: (payload: CareerFactWrite) =>
+      request<CareerFact>("/career-memory", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    update: (factId: string, payload: Partial<CareerFactWrite> & { user_verified?: boolean }) =>
+      request<CareerFact>(`/career-memory/${factId}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      }),
+    remove: (factId: string) =>
+      request<void>(`/career-memory/${factId}`, { method: "DELETE" }),
   },
 };

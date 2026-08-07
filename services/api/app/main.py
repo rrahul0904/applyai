@@ -8,6 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.api import (
     applications,
     candidate_workspace,
+    career_intelligence_v2,
     career_product,
     career_product_contract,
     career_product_polish,
@@ -28,7 +29,7 @@ from app.core.database import engine
 settings = get_settings()
 app = FastAPI(
     title="ApplyAI API",
-    version="0.1.0",
+    version="0.2.0",
     openapi_url="/api/v1/openapi.json",
     docs_url="/api/docs",
 )
@@ -126,6 +127,7 @@ for router in (
     resumes.router,
     jobs.router,
     applications.router,
+    career_intelligence_v2.router,
 ):
     app.include_router(router, prefix="/api/v1")
 

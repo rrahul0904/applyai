@@ -49,18 +49,32 @@ class Settings(BaseSettings):
     sqs_dlq_url: str | None = None
     source_sqs_queue_url: str | None = None
     source_sqs_dlq_url: str | None = None
+    ai_sqs_queue_url: str | None = None
+    ai_sqs_dlq_url: str | None = None
     sqs_region: str = "us-east-1"
     sqs_visibility_timeout_seconds: int = Field(default=300, ge=30, le=43_200)
     sqs_visibility_heartbeat_seconds: int = Field(default=120, ge=10, le=3600)
     source_sqs_visibility_timeout_seconds: int = Field(default=900, ge=60, le=43_200)
     source_sqs_visibility_heartbeat_seconds: int = Field(default=300, ge=10, le=3600)
+    ai_sqs_visibility_timeout_seconds: int = Field(default=600, ge=60, le=43_200)
+    ai_sqs_visibility_heartbeat_seconds: int = Field(default=240, ge=10, le=3600)
     sqs_wait_time_seconds: int = Field(default=20, ge=1, le=20)
     sqs_max_receive_count: int = Field(default=5, ge=1, le=100)
     source_sqs_max_receive_count: int = Field(default=5, ge=1, le=100)
+    ai_sqs_max_receive_count: int = Field(default=5, ge=1, le=100)
     resume_processing_timeout_seconds: int = Field(default=900, ge=60, le=86_400)
     outbox_batch_size: int = Field(default=25, ge=1, le=100)
     outbox_retry_base_seconds: int = Field(default=5, ge=1, le=300)
     outbox_lock_timeout_seconds: int = Field(default=300, ge=30, le=3600)
+
+    ai_provider: str = "deterministic"
+    openai_api_key: str | None = None
+    openai_base_url: str = "https://api.openai.com"
+    openai_model: str = "gpt-5.6-luna"
+    openai_reasoning_effort: str = "low"
+    ai_request_timeout_seconds: float = Field(default=60.0, ge=5.0, le=300.0)
+    ai_input_cost_per_million_usd: float = Field(default=1.0, ge=0.0, le=1000.0)
+    ai_output_cost_per_million_usd: float = Field(default=6.0, ge=0.0, le=1000.0)
 
     web_origin: str = "http://localhost:3000"
     max_resume_bytes: int = 5 * 1024 * 1024
@@ -174,10 +188,28 @@ class Settings(BaseSettings):
             raise ValueError("SQS visibility heartbeat must be shorter than visibility timeout")
         if self.source_sqs_visibility_heartbeat_seconds >= self.source_sqs_visibility_timeout_seconds:
             raise ValueError("Source SQS heartbeat must be shorter than visibility timeout")
+        if self.ai_sqs_visibility_heartbeat_seconds >= self.ai_sqs_visibility_timeout_seconds:
+            raise ValueError("AI SQS heartbeat must be shorter than visibility timeout")
         if self.resume_processing_timeout_seconds < self.sqs_visibility_timeout_seconds:
             raise ValueError(
                 "RESUME_PROCESSING_TIMEOUT_SECONDS must be at least SQS visibility timeout"
             )
+
+        if self.ai_provider not in {"deterministic", "openai"}:
+            raise ValueError("AI_PROVIDER must be deterministic or openai")
+        if self.ai_provider == "openai":
+            if not self.openai_api_key:
+                raise ValueError("OPENAI_API_KEY is required when AI_PROVIDER=openai")
+            if not self.openai_base_url.startswith("https://"):
+                raise ValueError("OPENAI_BASE_URL must use HTTPS")
+            if durable_environment:
+                if not self.ai_sqs_queue_url or not self.ai_sqs_dlq_url:
+                    raise ValueError(
+                        f"{environment.title()} with AI_PROVIDER=openai requires AI_SQS_QUEUE_URL and AI_SQS_DLQ_URL"
+                    )
+        if self.openai_reasoning_effort not in {"none", "low", "medium", "high", "xhigh", "max"}:
+            raise ValueError("OPENAI_REASONING_EFFORT is invalid")
+
         if self.job_stale_after_misses <= self.job_unknown_after_misses:
             raise ValueError(
                 "JOB_STALE_AFTER_MISSES must be greater than JOB_UNKNOWN_AFTER_MISSES"

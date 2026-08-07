@@ -9,7 +9,14 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.core.database import SessionLocal
-from app.core.queue import Task, TaskQueue, get_task_queue_for_type
+from app.core.queue import (
+    AI_TASK_TYPES,
+    SOURCE_TASK_TYPES,
+    SPECIAL_TASK_TYPES,
+    Task,
+    TaskQueue,
+    get_task_queue_for_type,
+)
 from app.durability_models import TaskOutbox
 
 
@@ -39,6 +46,18 @@ def add_task_outbox_event(
     return event
 
 
+def _routing_filter(settings: Settings):
+    if settings.task_queue_provider != "sqs":
+        return None
+
+    supported = [TaskOutbox.event_type.notin_(SPECIAL_TASK_TYPES)]
+    if settings.source_sqs_queue_url:
+        supported.append(TaskOutbox.event_type.in_(SOURCE_TASK_TYPES))
+    if settings.ai_sqs_queue_url:
+        supported.append(TaskOutbox.event_type.in_(AI_TASK_TYPES))
+    return or_(*supported)
+
+
 def claim_outbox_batch(
     session: Session,
     *,
@@ -47,17 +66,23 @@ def claim_outbox_batch(
 ) -> list[uuid.UUID]:
     now = utcnow()
     stale_lock = now - timedelta(seconds=settings.outbox_lock_timeout_seconds)
+    filters = [
+        TaskOutbox.published_at.is_(None),
+        TaskOutbox.available_at <= now,
+        or_(
+            TaskOutbox.status == "PENDING",
+            (TaskOutbox.status == "CLAIMED")
+            & (TaskOutbox.locked_at < stale_lock),
+        ),
+    ]
+    routing = _routing_filter(settings)
+    if routing is not None:
+        filters.append(routing)
+
     rows = list(
         session.scalars(
             select(TaskOutbox)
-            .where(
-                TaskOutbox.published_at.is_(None),
-                TaskOutbox.available_at <= now,
-                or_(
-                    TaskOutbox.status == "PENDING",
-                    (TaskOutbox.status == "CLAIMED") & (TaskOutbox.locked_at < stale_lock),
-                ),
-            )
+            .where(*filters)
             .order_by(TaskOutbox.created_at, TaskOutbox.id)
             .with_for_update(skip_locked=True)
             .limit(settings.outbox_batch_size)
@@ -90,7 +115,10 @@ def publish_claimed_event(
         if event is None:
             return True
 
-        target_queue = queue or get_task_queue_for_type(settings, task_type=event.event_type)
+        target_queue = queue or get_task_queue_for_type(
+            settings,
+            task_type=event.event_type,
+        )
         try:
             target_queue.enqueue(
                 Task(
@@ -102,7 +130,8 @@ def publish_claimed_event(
         except Exception as exc:
             event.attempt_count += 1
             delay = min(
-                settings.outbox_retry_base_seconds * (2 ** max(0, event.attempt_count - 1)),
+                settings.outbox_retry_base_seconds
+                * (2 ** max(0, event.attempt_count - 1)),
                 3600,
             )
             event.status = "PENDING"
@@ -113,7 +142,10 @@ def publish_claimed_event(
             session.commit()
             logger.warning(
                 "task_outbox_publish_failed",
-                extra={"outbox_id": str(event.id), "event_type": event.event_type},
+                extra={
+                    "outbox_id": str(event.id),
+                    "event_type": event.event_type,
+                },
             )
             return False
 
@@ -139,7 +171,11 @@ def publish_outbox_once(
     settings = settings or get_settings()
     lock_owner = lock_owner or f"{socket.gethostname()}:{uuid.uuid4()}"
     with SessionLocal() as session:
-        event_ids = claim_outbox_batch(session, settings=settings, lock_owner=lock_owner)
+        event_ids = claim_outbox_batch(
+            session,
+            settings=settings,
+            lock_owner=lock_owner,
+        )
     for event_id in event_ids:
         publish_claimed_event(
             event_id,

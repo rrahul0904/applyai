@@ -3,6 +3,7 @@
 import { UserButton } from "@clerk/nextjs";
 import {
   Bookmark,
+  BrainCircuit,
   BriefcaseBusiness,
   CircleUserRound,
   FileText,
@@ -21,6 +22,7 @@ import { cn } from "@/lib/utils";
 const navigation = [
   { href: "/dashboard", label: "Home", icon: Home },
   { href: "/jobs", label: "Jobs", icon: Search },
+  { href: "/career", label: "Career AI", icon: BrainCircuit },
   { href: "/saved", label: "Saved", icon: Bookmark },
   { href: "/applications", label: "Applications", icon: BriefcaseBusiness },
   { href: "/resume", label: "Resume", icon: FileText },
@@ -29,7 +31,7 @@ const navigation = [
 ];
 
 const mobileNavigation = navigation.filter((item) =>
-  ["/dashboard", "/jobs", "/applications", "/profile", "/saved"].includes(item.href),
+  ["/dashboard", "/jobs", "/career", "/applications", "/profile"].includes(item.href),
 );
 
 function isActive(pathname: string, href: string) {

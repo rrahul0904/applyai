@@ -1,0 +1,166 @@
+.layout {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.65fr);
+}
+
+.stack {
+  display: grid;
+  gap: 18px;
+}
+
+.card {
+  padding: 22px;
+}
+
+.form {
+  display: grid;
+  gap: 14px;
+}
+
+.formGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 0.8fr 1.2fr;
+}
+
+.formActions {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.formActions p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 0;
+  max-width: 480px;
+}
+
+.factList,
+.artifactList {
+  display: grid;
+  gap: 10px;
+}
+
+.fact {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  display: grid;
+  gap: 9px;
+  padding: 15px;
+}
+
+.factHeader,
+.artifactHeader,
+.summaryRow {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.fact h3,
+.artifact h3 {
+  font-size: 15px;
+  margin: 0;
+}
+
+.fact p,
+.artifact p {
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.iconButton {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  height: 34px;
+  justify-content: center;
+  width: 34px;
+}
+
+.iconButton:hover {
+  background: #fff0ed;
+  color: var(--red);
+}
+
+.summaryGrid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 16px;
+}
+
+.summaryTile {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 13px;
+}
+
+.summaryTile strong,
+.summaryTile span {
+  display: block;
+}
+
+.summaryTile strong {
+  font-size: 22px;
+  letter-spacing: -0.04em;
+}
+
+.summaryTile span {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 3px;
+}
+
+.artifact {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 7px;
+  padding: 14px 0 4px;
+}
+
+.artifact:first-child {
+  border-top: 0;
+}
+
+.empty {
+  color: var(--muted);
+  line-height: 1.55;
+  margin: 0;
+}
+
+@media (max-width: 920px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .formGrid,
+  .summaryGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .formActions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

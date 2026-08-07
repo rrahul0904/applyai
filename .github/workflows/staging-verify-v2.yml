@@ -8,6 +8,11 @@ on:
         required: true
         default: false
         type: boolean
+      expect_ai_runtime_enabled:
+        description: Require Career Intelligence V2 worker and universal outbox to be running
+        required: true
+        default: true
+        type: boolean
 
 permissions:
   contents: read
@@ -19,7 +24,7 @@ concurrency:
 
 jobs:
   verify:
-    name: Verify API, ECS, queues, database, source platform
+    name: Verify API, ECS, queues, database, source and AI runtimes
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: staging
@@ -35,6 +40,10 @@ jobs:
       TF_VAR_greenhouse_board_tokens: ${{ vars.GREENHOUSE_BOARD_TOKENS || '[]' }}
       TF_VAR_lever_site_names: ${{ vars.LEVER_SITE_NAMES || '[]' }}
       TF_VAR_ashby_board_names: ${{ vars.ASHBY_BOARD_NAMES || '[]' }}
+      TF_VAR_ai_provider: ${{ vars.AI_PROVIDER || 'deterministic' }}
+      TF_VAR_openai_api_key_secret_arn: ${{ vars.OPENAI_API_KEY_SECRET_ARN || '' }}
+      TF_VAR_openai_model: ${{ vars.OPENAI_MODEL || 'gpt-5.6-luna' }}
+      TF_VAR_openai_reasoning_effort: ${{ vars.OPENAI_REASONING_EFFORT || 'low' }}
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -84,82 +93,75 @@ jobs:
           set -euo pipefail
           target_group="$(terraform -chdir=infra/staging output -raw api_target_group_arn)"
           aws elbv2 describe-target-health --target-group-arn "$target_group" >/tmp/target-health.json
-          jq -e '
-            [.TargetHealthDescriptions[] | select(.TargetHealth.State == "healthy")] | length > 0
-          ' /tmp/target-health.json >/dev/null
-          jq -e '
-            all(.TargetHealthDescriptions[]; .TargetHealth.State == "healthy")
-          ' /tmp/target-health.json >/dev/null
+          jq -e '[.TargetHealthDescriptions[] | select(.TargetHealth.State == "healthy")] | length > 0' /tmp/target-health.json >/dev/null
+          jq -e 'all(.TargetHealthDescriptions[]; .TargetHealth.State == "healthy")' /tmp/target-health.json >/dev/null
 
-      - name: Verify ECS long-lived services and immutable image consistency
+      - name: Verify required ECS services and immutable image consistency
         shell: bash
+        env:
+          EXPECT_AI_RUNTIME: ${{ inputs.expect_ai_runtime_enabled }}
         run: |
           set -euo pipefail
           cluster="$(terraform -chdir=infra/staging output -raw ecs_cluster_name)"
-          services=(
+          core_services=(
             "$(terraform -chdir=infra/staging output -raw api_service_name)"
             "$(terraform -chdir=infra/staging output -raw worker_service_name)"
             "$(terraform -chdir=infra/staging output -raw source_worker_service_name)"
             "$(terraform -chdir=infra/staging output -raw source_outbox_service_name)"
           )
-          aws ecs describe-services \
-            --cluster "$cluster" \
-            --services "${services[@]}" \
-            --output json >/tmp/services.json
+          ai_services=(
+            "$(terraform -chdir=infra/staging output -raw ai_worker_service_name)"
+            "$(terraform -chdir=infra/staging output -raw ai_outbox_service_name)"
+          )
+          services=("${core_services[@]}" "${ai_services[@]}")
+          aws ecs describe-services --cluster "$cluster" --services "${services[@]}" --output json >/tmp/services.json
           jq -e '.failures | length == 0' /tmp/services.json >/dev/null
-          jq -e '
-            all(.services[];
-              .desiredCount > 0 and
-              .runningCount == .desiredCount and
-              .pendingCount == 0 and
+
+          for service in "${core_services[@]}"; do
+            jq -e --arg service "$service" '
+              .services[] | select(.serviceName == $service) |
+              .desiredCount > 0 and .runningCount == .desiredCount and .pendingCount == 0 and
               (.deployments | any(.status == "PRIMARY" and .rolloutState == "COMPLETED"))
-            )
-          ' /tmp/services.json >/dev/null
+            ' /tmp/services.json >/dev/null
+          done
+          for service in "${ai_services[@]}"; do
+            if [ "$EXPECT_AI_RUNTIME" = "true" ]; then
+              jq -e --arg service "$service" '
+                .services[] | select(.serviceName == $service) |
+                .desiredCount > 0 and .runningCount == .desiredCount and .pendingCount == 0 and
+                (.deployments | any(.status == "PRIMARY" and .rolloutState == "COMPLETED"))
+              ' /tmp/services.json >/dev/null
+            else
+              jq -e --arg service "$service" '
+                .services[] | select(.serviceName == $service) |
+                .runningCount == .desiredCount and .pendingCount == 0
+              ' /tmp/services.json >/dev/null
+            fi
+          done
 
           : > /tmp/runtime-images.txt
-          for service in "${services[@]}"; do
-            task_definition="$(aws ecs describe-services \
-              --cluster "$cluster" \
-              --services "$service" \
-              --query 'services[0].taskDefinition' \
-              --output text)"
-            aws ecs describe-task-definition \
-              --task-definition "$task_definition" \
-              --query 'taskDefinition.containerDefinitions[].image' \
-              --output text >> /tmp/runtime-images.txt
-          done
+          jq -r '.services[] | select(.desiredCount > 0) | .serviceName' /tmp/services.json >/tmp/enabled-services.txt
+          while IFS= read -r service; do
+            task_definition="$(aws ecs describe-services --cluster "$cluster" --services "$service" --query 'services[0].taskDefinition' --output text)"
+            aws ecs describe-task-definition --task-definition "$task_definition" --query 'taskDefinition.containerDefinitions[].image' --output text >> /tmp/runtime-images.txt
+          done </tmp/enabled-services.txt
           test "$(tr '\t ' '\n' < /tmp/runtime-images.txt | sed '/^$/d' | sort -u | wc -l | tr -d ' ')" = "1"
 
-      - name: Verify ECS tasks use private application subnets
+      - name: Verify running ECS tasks use private application subnets
         shell: bash
         run: |
           set -euo pipefail
           cluster="$(terraform -chdir=infra/staging output -raw ecs_cluster_name)"
           app_subnets="$(terraform -chdir=infra/staging output -json app_subnet_ids)"
-          services=(
-            "$(terraform -chdir=infra/staging output -raw api_service_name)"
-            "$(terraform -chdir=infra/staging output -raw worker_service_name)"
-            "$(terraform -chdir=infra/staging output -raw source_worker_service_name)"
-            "$(terraform -chdir=infra/staging output -raw source_outbox_service_name)"
-          )
           : > /tmp/task-arns.txt
-          for service in "${services[@]}"; do
-            aws ecs list-tasks \
-              --cluster "$cluster" \
-              --service-name "$service" \
-              --desired-status RUNNING \
-              --query 'taskArns[]' \
-              --output text | tr '\t' '\n' >> /tmp/task-arns.txt
-          done
+          while IFS= read -r service; do
+            aws ecs list-tasks --cluster "$cluster" --service-name "$service" --desired-status RUNNING --query 'taskArns[]' --output text | tr '\t' '\n' >> /tmp/task-arns.txt
+          done </tmp/enabled-services.txt
           sed -i '/^$/d' /tmp/task-arns.txt
           test -s /tmp/task-arns.txt
           mapfile -t task_arns < /tmp/task-arns.txt
           aws ecs describe-tasks --cluster "$cluster" --tasks "${task_arns[@]}" >/tmp/tasks.json
-          jq -r '
-            .tasks[].attachments[]?.details[]? |
-            select(.name == "networkInterfaceId") |
-            .value
-          ' /tmp/tasks.json > /tmp/eni-ids.txt
+          jq -r '.tasks[].attachments[]?.details[]? | select(.name == "networkInterfaceId") | .value' /tmp/tasks.json > /tmp/eni-ids.txt
           test -s /tmp/eni-ids.txt
           mapfile -t eni_ids < /tmp/eni-ids.txt
           aws ec2 describe-network-interfaces --network-interface-ids "${eni_ids[@]}" >/tmp/enis.json
@@ -170,7 +172,7 @@ jobs:
             )
           ' /tmp/enis.json >/dev/null
 
-      - name: Verify resume and source queue encryption and redrive
+      - name: Verify resume, source and AI queue encryption and redrive
         shell: bash
         run: |
           set -euo pipefail
@@ -180,28 +182,26 @@ jobs:
           source_queue="$(terraform -chdir=infra/staging output -raw source_queue_url)"
           source_dlq="$(terraform -chdir=infra/staging output -raw source_dlq_url)"
           source_dlq_arn="$(terraform -chdir=infra/staging output -raw source_dlq_arn)"
+          ai_queue="$(terraform -chdir=infra/staging output -raw ai_queue_url)"
+          ai_dlq="$(terraform -chdir=infra/staging output -raw ai_dlq_url)"
 
-          for queue in "$resume_queue" "$resume_dlq" "$source_queue" "$source_dlq"; do
+          for queue in "$resume_queue" "$resume_dlq" "$source_queue" "$source_dlq" "$ai_queue" "$ai_dlq"; do
             attributes="$(aws sqs get-queue-attributes --queue-url "$queue" --attribute-names All --output json)"
             test "$(printf '%s' "$attributes" | jq -r '.Attributes.SqsManagedSseEnabled')" = "true"
           done
 
-          resume_policy="$(aws sqs get-queue-attributes \
-            --queue-url "$resume_queue" \
-            --attribute-names RedrivePolicy \
-            --query 'Attributes.RedrivePolicy' \
-            --output text)"
-          source_attributes="$(aws sqs get-queue-attributes \
-            --queue-url "$source_queue" \
-            --attribute-names RedrivePolicy VisibilityTimeout \
-            --output json)"
+          resume_policy="$(aws sqs get-queue-attributes --queue-url "$resume_queue" --attribute-names RedrivePolicy --query 'Attributes.RedrivePolicy' --output text)"
+          source_attributes="$(aws sqs get-queue-attributes --queue-url "$source_queue" --attribute-names RedrivePolicy VisibilityTimeout --output json)"
+          ai_attributes="$(aws sqs get-queue-attributes --queue-url "$ai_queue" --attribute-names RedrivePolicy VisibilityTimeout --output json)"
           source_policy="$(printf '%s' "$source_attributes" | jq -r '.Attributes.RedrivePolicy')"
-          source_visibility="$(printf '%s' "$source_attributes" | jq -r '.Attributes.VisibilityTimeout')"
+          ai_policy="$(printf '%s' "$ai_attributes" | jq -r '.Attributes.RedrivePolicy')"
           test "$(printf '%s' "$resume_policy" | jq -r '.deadLetterTargetArn')" = "$resume_dlq_arn"
           test "$(printf '%s' "$source_policy" | jq -r '.deadLetterTargetArn')" = "$source_dlq_arn"
           test "$(printf '%s' "$resume_policy" | jq -r '.maxReceiveCount | tonumber')" -gt 1
           test "$(printf '%s' "$source_policy" | jq -r '.maxReceiveCount | tonumber')" -gt 1
-          test "$source_visibility" -ge 60
+          test "$(printf '%s' "$ai_policy" | jq -r '.maxReceiveCount | tonumber')" -gt 1
+          test "$(printf '%s' "$source_attributes" | jq -r '.Attributes.VisibilityTimeout')" -ge 60
+          test "$(printf '%s' "$ai_attributes" | jq -r '.Attributes.VisibilityTimeout')" -ge 60
 
       - name: Verify private resume bucket controls
         shell: bash
@@ -227,15 +227,8 @@ jobs:
           secret_arn="$(terraform -chdir=infra/staging output -raw aurora_master_secret_arn)"
           aws rds describe-db-clusters --db-cluster-identifier "$cluster_id" >/tmp/cluster.json
           aws rds describe-db-instances --db-instance-identifier "$instance_id" >/tmp/instance.json
-          jq -e '
-            .DBClusters[0].Status == "available" and
-            .DBClusters[0].StorageEncrypted == true and
-            .DBClusters[0].BackupRetentionPeriod >= 7
-          ' /tmp/cluster.json >/dev/null
-          jq -e '
-            .DBInstances[0].DBInstanceStatus == "available" and
-            .DBInstances[0].PubliclyAccessible == false
-          ' /tmp/instance.json >/dev/null
+          jq -e '.DBClusters[0].Status == "available" and .DBClusters[0].StorageEncrypted == true and .DBClusters[0].BackupRetentionPeriod >= 7' /tmp/cluster.json >/dev/null
+          jq -e '.DBInstances[0].DBInstanceStatus == "available" and .DBInstances[0].PubliclyAccessible == false' /tmp/instance.json >/dev/null
           aws secretsmanager describe-secret --secret-id "$secret_arn" >/dev/null
 
       - name: Verify dispatcher state and task definition
@@ -249,12 +242,10 @@ jobs:
           rule_name="$(terraform -chdir=infra/staging output -raw source_dispatch_rule_name)"
           aws events describe-rule --name "$rule_name" >/tmp/source-rule.json
           expected_state="DISABLED"
-          if [ "$EXPECT_ENABLED" = "true" ]; then
-            expected_state="ENABLED"
-          fi
+          if [ "$EXPECT_ENABLED" = "true" ]; then expected_state="ENABLED"; fi
           test "$(jq -r '.State' /tmp/source-rule.json)" = "$expected_state"
 
-      - name: Verify CloudWatch logs and source alarms exist
+      - name: Verify CloudWatch logs and source/AI alarms exist
         shell: bash
         run: |
           set -euo pipefail
@@ -265,12 +256,11 @@ jobs:
             /applyai/staging/source-worker
             /applyai/staging/source-dispatcher
             /applyai/staging/outbox-v2
+            /applyai/staging/ai-worker
+            /applyai/staging/outbox-v3
           )
           for log_group in "${log_groups[@]}"; do
-            count="$(aws logs describe-log-groups \
-              --log-group-name-prefix "$log_group" \
-              --query "length(logGroups[?logGroupName=='${log_group}'])" \
-              --output text)"
+            count="$(aws logs describe-log-groups --log-group-name-prefix "$log_group" --query "length(logGroups[?logGroupName=='${log_group}'])" --output text)"
             test "$count" = "1"
           done
 
@@ -279,12 +269,12 @@ jobs:
             applyai-staging-source-oldest-message
             applyai-staging-source-dlq-not-empty
             applyai-staging-source-task-failures
+            applyai-staging-ai-queue-depth
+            applyai-staging-ai-oldest-message
+            applyai-staging-ai-dlq-nonempty
           )
           for alarm in "${alarms[@]}"; do
-            count="$(aws cloudwatch describe-alarms \
-              --alarm-names "$alarm" \
-              --query 'length(MetricAlarms)' \
-              --output text)"
+            count="$(aws cloudwatch describe-alarms --alarm-names "$alarm" --query 'length(MetricAlarms)' --output text)"
             test "$count" = "1"
           done
 
@@ -292,20 +282,22 @@ jobs:
         shell: bash
         env:
           EXPECT_SOURCE_DISPATCH: ${{ inputs.expect_source_dispatch_enabled }}
+          EXPECT_AI_RUNTIME: ${{ inputs.expect_ai_runtime_enabled }}
         run: |
           image="$(tr '\t ' '\n' < /tmp/runtime-images.txt | sed '/^$/d' | sort -u)"
           {
             echo "## ApplyAI staging infrastructure verification V2"
             echo
             echo "- API health/readiness and ALB target health: passed"
-            echo "- API, resume worker, source worker and source-aware outbox: nonzero and stable"
+            echo "- Candidate and source runtimes: nonzero and stable"
+            echo "- Career Intelligence runtime expected enabled: \`${EXPECT_AI_RUNTIME}\`"
             echo "- Runtime image consistency: \`${image}\`"
             echo "- ECS tasks: private application subnets with no public IP"
-            echo "- Resume and source SQS/DLQ encryption/redrive: passed"
+            echo "- Resume, source and AI SQS/DLQ encryption/redrive: passed"
             echo "- Private/versioned/encrypted resume S3: passed"
             echo "- Aurora: available, encrypted, backed up and private"
             echo "- Source dispatcher expected enabled: \`${EXPECT_SOURCE_DISPATCH}\`"
-            echo "- Required runtime log groups and source alarms: present"
+            echo "- Required runtime log groups and source/AI alarms: present"
             echo
-            echo "This verifies deployed infrastructure state only. Real provider ingestion, Candidate A/B acceptance, failure injection, restore drills and cost measurement remain separate staging evidence."
+            echo "This verifies deployed infrastructure state only. Real provider ingestion, real model invocation, Candidate A/B acceptance, failure injection, restore drills and cost measurement remain separate staging evidence."
           } >> "$GITHUB_STEP_SUMMARY"

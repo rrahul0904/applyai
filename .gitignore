@@ -64,3 +64,4 @@ crash.*.log
 
 # local application data
 **/.data/
+/.local/

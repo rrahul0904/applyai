@@ -9,6 +9,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_session
+from app.core.email import send_email
 from app.core.internal_auth import require_internal_api
 from app.models import Application, EmployerOrganization, Interview, Job, Notification, User
 from app.platform_models import (
@@ -16,6 +17,7 @@ from app.platform_models import (
     CandidateContact,
     EmployerApplicant,
     EmployerJob,
+    NotificationPreference,
     ResumeStudioDocument,
     SavedSearch,
     Subscription,
@@ -78,25 +80,61 @@ def _notification_exists(session: Session, user_id: uuid.UUID, notification_type
     ) is not None
 
 
+def _email_preference_allows(preference: NotificationPreference | None, notification_type: str) -> bool:
+    if preference is None:
+        return True
+    if not preference.email_enabled:
+        return False
+    if notification_type == "JOB_ALERT":
+        return preference.job_match_enabled
+    if notification_type == "INTERVIEW_REMINDER":
+        return preference.interview_reminder_enabled
+    if notification_type == "RECRUITER_FOLLOWUP":
+        return preference.recruiter_followup_enabled
+    return True
+
+
+def _deliver_engagement_emails(session: Session, pending: list[tuple[uuid.UUID, str, str, str]]) -> int:
+    delivered = 0
+    for user_id, notification_type, title, body in pending:
+        user = session.get(User, user_id)
+        if user is None or not user.email:
+            continue
+        preference = session.get(NotificationPreference, user_id)
+        if not _email_preference_allows(preference, notification_type):
+            continue
+        result = send_email(to_address=user.email, subject=title, text_body=body)
+        if result.delivered:
+            delivered += 1
+    return delivered
+
+
 @router.post("/dispatch-engagement")
 def dispatch_engagement(
     saved_search_job_limit: int = Query(default=3, ge=1, le=10),
     session: Session = Depends(get_session),
 ) -> dict[str, int]:
-    now = utcnow(); created = {"recruiter_followups": 0, "interviews": 0, "job_alerts": 0}
+    now = utcnow(); created = {"recruiter_followups": 0, "interviews": 0, "job_alerts": 0, "emails_delivered": 0}
+    pending_email: list[tuple[uuid.UUID, str, str, str]] = []
 
     due_contacts = list(session.scalars(select(CandidateContact).where(CandidateContact.followup_at.is_not(None), CandidateContact.followup_at <= now).limit(500)))
     for contact in due_contacts:
         key = str(contact.id)
         if _notification_exists(session, contact.user_id, "RECRUITER_FOLLOWUP", "contact_id", key): continue
-        session.add(Notification(user_id=contact.user_id, notification_type="RECRUITER_FOLLOWUP", payload={"title": f"Follow up with {contact.name}", "body": f"Your planned networking follow-up with {contact.name} is due.", "action_url": "/network", "contact_id": key}))
+        title = f"Follow up with {contact.name}"
+        body = f"Your planned networking follow-up with {contact.name} is due."
+        session.add(Notification(user_id=contact.user_id, notification_type="RECRUITER_FOLLOWUP", payload={"title": title, "body": body, "action_url": "/network", "contact_id": key}))
+        pending_email.append((contact.user_id, "RECRUITER_FOLLOWUP", title, body))
         created["recruiter_followups"] += 1
 
     upcoming = list(session.execute(select(Interview, Application).join(Application, Application.id == Interview.application_id).where(Interview.scheduled_at.is_not(None), Interview.scheduled_at >= now, Interview.scheduled_at <= now + timedelta(hours=48)).limit(500)))
     for interview, application in upcoming:
         key = str(interview.id)
         if _notification_exists(session, interview.user_id, "INTERVIEW_REMINDER", "interview_id", key): continue
-        session.add(Notification(user_id=interview.user_id, notification_type="INTERVIEW_REMINDER", payload={"title": "Interview coming up", "body": f"Your {interview.interview_type.lower()} interview is scheduled soon.", "action_url": f"/interview/{application.job_id}", "interview_id": key}))
+        title = "Interview coming up"
+        body = f"Your {interview.interview_type.lower()} interview is scheduled soon."
+        session.add(Notification(user_id=interview.user_id, notification_type="INTERVIEW_REMINDER", payload={"title": title, "body": body, "action_url": f"/interview/{application.job_id}", "interview_id": key}))
+        pending_email.append((interview.user_id, "INTERVIEW_REMINDER", title, body))
         created["interviews"] += 1
 
     saved_searches = list(session.scalars(select(SavedSearch).where(SavedSearch.alerts_enabled.is_(True)).limit(500)))
@@ -112,8 +150,12 @@ def dispatch_engagement(
         for job in jobs:
             alert_key = f"{saved.id}:{job.id}"
             if _notification_exists(session, saved.user_id, "JOB_ALERT", "alert_key", alert_key): continue
-            session.add(Notification(user_id=saved.user_id, notification_type="JOB_ALERT", payload={"title": f"New match: {job.title}", "body": "A role matching one of your saved searches is available.", "action_url": f"/jobs/{job.id}", "saved_search_id": str(saved.id), "job_id": str(job.id), "alert_key": alert_key}))
+            title = f"New match: {job.title}"
+            body = "A role matching one of your saved searches is available."
+            session.add(Notification(user_id=saved.user_id, notification_type="JOB_ALERT", payload={"title": title, "body": body, "action_url": f"/jobs/{job.id}", "saved_search_id": str(saved.id), "job_id": str(job.id), "alert_key": alert_key}))
+            pending_email.append((saved.user_id, "JOB_ALERT", title, body))
             created["job_alerts"] += 1
 
     session.commit()
+    created["emails_delivered"] = _deliver_engagement_emails(session, pending_email)
     return created

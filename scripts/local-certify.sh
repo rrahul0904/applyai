@@ -43,7 +43,7 @@ echo "==> Installing locked dependencies"
 pnpm install --frozen-lockfile
 uv sync --project services/api --group dev --locked
 
-echo "==> Starting PostgreSQL, LocalStack, Mailpit and stripe-mock"
+echo "==> Starting PostgreSQL, LocalStack, Mailpit and Stripe schema mock"
 docker compose up -d --wait postgres localstack mailpit
 docker compose up -d stripe-mock
 
@@ -100,7 +100,7 @@ source .local/runtime.env
 export LOCAL_CLEANROOM=1
 export LOCAL_PROVIDER_MOCK_URL="http://127.0.0.1:8099"
 
-echo "==> Starting local Clerk/JWKS and OpenAI protocol mock"
+echo "==> Starting local Clerk/JWKS, OpenAI and Stripe behavioral protocol mock"
 (cd services/api && uv run python -m scripts.local_provider_mock >"$ROOT/.local/provider-mock.log" 2>&1) & PIDS+=("$!")
 for _ in $(seq 1 40); do
   if curl -fsS "$LOCAL_PROVIDER_MOCK_URL/health" >/dev/null 2>&1; then break; fi
@@ -151,7 +151,7 @@ printf '%s\n' \
   "  - LocalStack S3 direct/presigned object operations" \
   "  - LocalStack SQS + outbox + background workers" \
   "  - Mailpit SMTP delivery" \
-  "  - stripe-mock checkout + signed webhook + portal" \
+  "  - Stripe schema mock health plus checkout/portal protocol + signed webhook persistence" \
   "  - deterministic local AI provider" \
   "  - Clerk RS256 JWT/JWKS protocol through the real ClerkAuthProvider" \
   "  - OpenAI Responses + embeddings HTTP protocol through the real provider clients" \

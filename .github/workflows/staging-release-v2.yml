@@ -23,6 +23,16 @@ on:
           - "1"
           - "2"
           - "3"
+      ai_worker_count:
+        description: Dedicated Career Intelligence V2 worker count; use 0 to leave AI runtime dormant
+        required: true
+        default: "1"
+        type: choice
+        options:
+          - "0"
+          - "1"
+          - "2"
+          - "3"
 
 permissions:
   contents: read
@@ -50,6 +60,10 @@ jobs:
       TF_VAR_greenhouse_board_tokens: ${{ vars.GREENHOUSE_BOARD_TOKENS || '[]' }}
       TF_VAR_lever_site_names: ${{ vars.LEVER_SITE_NAMES || '[]' }}
       TF_VAR_ashby_board_names: ${{ vars.ASHBY_BOARD_NAMES || '[]' }}
+      TF_VAR_ai_provider: ${{ vars.AI_PROVIDER || 'deterministic' }}
+      TF_VAR_openai_api_key_secret_arn: ${{ vars.OPENAI_API_KEY_SECRET_ARN || '' }}
+      TF_VAR_openai_model: ${{ vars.OPENAI_MODEL || 'gpt-5.6-luna' }}
+      TF_VAR_openai_reasoning_effort: ${{ vars.OPENAI_REASONING_EFFORT || 'low' }}
 
     steps:
       - name: Checkout exact release source
@@ -63,6 +77,7 @@ jobs:
         shell: bash
         env:
           AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          AI_WORKER_COUNT: ${{ inputs.ai_worker_count }}
         run: |
           set -euo pipefail
           : "${AWS_DEPLOY_ROLE_ARN:?Set AWS_DEPLOY_ROLE_ARN in the GitHub staging environment}"
@@ -85,6 +100,16 @@ jobs:
               all(.[]; type == "string" and length > 0)
             ' >/dev/null
           done
+
+          case "$TF_VAR_ai_provider" in
+            deterministic) ;;
+            openai)
+              if [ "$AI_WORKER_COUNT" != "0" ]; then
+                : "${TF_VAR_openai_api_key_secret_arn:?Set OPENAI_API_KEY_SECRET_ARN when AI_PROVIDER=openai and AI workers are enabled}"
+              fi
+              ;;
+            *) echo "AI_PROVIDER must be deterministic or openai" >&2; exit 1 ;;
+          esac
 
           source_sha="$(git rev-parse HEAD)"
           test "${#source_sha}" = "40"
@@ -240,11 +265,13 @@ jobs:
           TF_VAR_outbox_desired_count: '0'
           TF_VAR_source_worker_desired_count: ${{ inputs.source_worker_count }}
           TF_VAR_source_outbox_desired_count: '1'
+          TF_VAR_ai_worker_desired_count: ${{ inputs.ai_worker_count }}
+          TF_VAR_ai_outbox_desired_count: ${{ inputs.ai_worker_count == '0' && '0' || '1' }}
           TF_VAR_ingestion_schedule_enabled: 'false'
           TF_VAR_source_dispatch_schedule_enabled: ${{ inputs.enable_source_dispatch }}
         run: terraform -chdir=infra/staging plan -input=false -out=release-v2.tfplan
 
-      - name: Activate API, resume worker, source worker and source-aware outbox
+      - name: Activate candidate, source and Career Intelligence runtimes
         env:
           TF_VAR_image_tag: ${{ steps.release.outputs.image_tag }}
           TF_VAR_api_desired_count: '1'
@@ -252,6 +279,8 @@ jobs:
           TF_VAR_outbox_desired_count: '0'
           TF_VAR_source_worker_desired_count: ${{ inputs.source_worker_count }}
           TF_VAR_source_outbox_desired_count: '1'
+          TF_VAR_ai_worker_desired_count: ${{ inputs.ai_worker_count }}
+          TF_VAR_ai_outbox_desired_count: ${{ inputs.ai_worker_count == '0' && '0' || '1' }}
           TF_VAR_ingestion_schedule_enabled: 'false'
           TF_VAR_source_dispatch_schedule_enabled: ${{ inputs.enable_source_dispatch }}
         run: terraform -chdir=infra/staging apply -input=false -auto-approve release-v2.tfplan
@@ -267,6 +296,8 @@ jobs:
             "$(terraform -chdir=infra/staging output -raw worker_service_name)"
             "$(terraform -chdir=infra/staging output -raw source_worker_service_name)"
             "$(terraform -chdir=infra/staging output -raw source_outbox_service_name)"
+            "$(terraform -chdir=infra/staging output -raw ai_worker_service_name)"
+            "$(terraform -chdir=infra/staging output -raw ai_outbox_service_name)"
           )
           aws ecs wait services-stable --cluster "$CLUSTER" --services "${services[@]}"
 
@@ -279,21 +310,26 @@ jobs:
           curl --fail --silent --show-error --retry 12 --retry-delay 5 "${API_BASE_URL%/}/ready"
           echo
 
-      - name: Verify queue and service state
+      - name: Verify queues and service state
         shell: bash
         env:
           CLUSTER: ${{ steps.release.outputs.cluster }}
         run: |
           set -euo pipefail
-          source_queue="$(terraform -chdir=infra/staging output -raw source_queue_url)"
-          source_dlq="$(terraform -chdir=infra/staging output -raw source_dlq_url)"
-          aws sqs get-queue-attributes --queue-url "$source_queue" --attribute-names All >/tmp/source-queue.json
-          aws sqs get-queue-attributes --queue-url "$source_dlq" --attribute-names All >/tmp/source-dlq.json
+          for queue in \
+            "$(terraform -chdir=infra/staging output -raw source_queue_url)" \
+            "$(terraform -chdir=infra/staging output -raw source_dlq_url)" \
+            "$(terraform -chdir=infra/staging output -raw ai_queue_url)" \
+            "$(terraform -chdir=infra/staging output -raw ai_dlq_url)"; do
+            aws sqs get-queue-attributes --queue-url "$queue" --attribute-names All >/dev/null
+          done
           services=(
             "$(terraform -chdir=infra/staging output -raw api_service_name)"
             "$(terraform -chdir=infra/staging output -raw worker_service_name)"
             "$(terraform -chdir=infra/staging output -raw source_worker_service_name)"
             "$(terraform -chdir=infra/staging output -raw source_outbox_service_name)"
+            "$(terraform -chdir=infra/staging output -raw ai_worker_service_name)"
+            "$(terraform -chdir=infra/staging output -raw ai_outbox_service_name)"
           )
           aws ecs describe-services \
             --cluster "$CLUSTER" \
@@ -314,6 +350,7 @@ jobs:
           MIGRATION_STOPPED_AT: ${{ steps.migration.outputs.stopped_at }}
           SOURCE_WORKER_COUNT: ${{ inputs.source_worker_count }}
           SOURCE_DISPATCH: ${{ inputs.enable_source_dispatch }}
+          AI_WORKER_COUNT: ${{ inputs.ai_worker_count }}
         run: |
           {
             echo "## ApplyAI staging release V2"
@@ -325,10 +362,13 @@ jobs:
             echo "- Migration task ARN: \`${MIGRATION_TASK_ARN}\`"
             echo "- Migration execution: \`${MIGRATION_STARTED_AT}\` → \`${MIGRATION_STOPPED_AT}\`"
             echo "- Alembic migration gate: passed"
-            echo "- API, resume worker, source worker and source-aware outbox: stable"
+            echo "- API, resume worker, source runtime and Career Intelligence runtime: stable"
             echo "- Source worker count: \`${SOURCE_WORKER_COUNT}\`"
             echo "- Source dispatcher enabled: \`${SOURCE_DISPATCH}\`"
+            echo "- AI provider: \`${TF_VAR_ai_provider}\`"
+            echo "- AI model: \`${TF_VAR_openai_model}\`"
+            echo "- AI worker count: \`${AI_WORKER_COUNT}\`"
             echo "- Legacy direct-ingestion schedule and resume-only outbox: disabled"
-            echo "- Source queue and DLQ: reachable"
+            echo "- Source and AI queues/DLQs: reachable"
             echo "- \`/health\` and \`/ready\`: passed"
           } >> "$GITHUB_STEP_SUMMARY"

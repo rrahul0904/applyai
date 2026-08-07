@@ -1,6 +1,6 @@
 # ApplyAI Job Data Platform Scale & Quality Report
 
-Updated: 2026-07-31
+Updated: 2026-08-06
 
 ## Reporting rule
 
@@ -11,7 +11,9 @@ This document separates:
 - **synthetic PostgreSQL measurements**;
 - **real AWS/provider staging evidence**.
 
-No job count, throughput, deduplication rate, cloud cost, or supported scale is reported as measured until an executable run produced the value.
+No job count, throughput, deduplication rate, cloud cost, or supported scale is reported as measured
+until an executable run produced the value. Career Intelligence status is tracked separately from
+job-data scale so an AI feature does not manufacture evidence about provider/job scale.
 
 ## Architecture implemented
 
@@ -43,7 +45,8 @@ bounded source dispatcher Fargate task
             +-- measured run/cost observations
 ```
 
-The existing resume queue remains separate. The application still uses one immutable FastAPI image with different ECS commands rather than a microservice split.
+The resume and Career Intelligence queues remain separate. The application still uses one immutable
+FastAPI image with role-specific commands rather than a premature microservice split.
 
 ## Implemented quality controls
 
@@ -65,6 +68,10 @@ The existing resume queue remains separate. The application still uses one immut
 - SQS redrive owns retry-to-DLQ behavior;
 - source worker extends visibility during long runs.
 
+Career Intelligence V2 adds a queue-aware publisher. Source events remain routed only to the source
+queue and AI events only to the AI queue; specialized task families fail closed when their dedicated
+queue is absent.
+
 ### Source authority and conflict resolution
 
 Source priority currently ranks:
@@ -79,7 +86,9 @@ THIRD_PARTY_SOURCE
 UNVERIFIED
 ```
 
-All legitimate source postings remain linked. Only the selected highest-authority fresh source may mutate canonical candidate-facing fields. A recently fetched lower-authority copy does not automatically overwrite an employer/official ATS source.
+All legitimate source postings remain linked. Only the selected highest-authority fresh source may
+mutate canonical candidate-facing fields. A recently fetched lower-authority copy does not
+automatically overwrite an employer/official ATS source.
 
 Field provenance records the selected source link and a value hash for:
 
@@ -104,11 +113,14 @@ ERROR
 UNKNOWN
 ```
 
-One transient error never closes a job. Repeated configured 404/410 evidence may confirm one source closed. The canonical job closes only when the existing multi-source lifecycle determines that all linked sources support closure. A valid link reactivates the source/job.
+One transient error never closes a job. Repeated configured 404/410 evidence may confirm one source
+closed. The canonical job closes only when the existing multi-source lifecycle determines that all
+linked sources support closure. A valid link reactivates the source/job.
 
 ### Raw payload retention
 
-The cleanup task removes only old duplicate raw payloads and always retains the newest payload for every posting source.
+The cleanup task removes only old duplicate raw payloads and always retains the newest payload for
+every posting source.
 
 Current policy default:
 
@@ -116,7 +128,8 @@ Current policy default:
 90 days
 ```
 
-Compressed S3 archival is deferred until measured PostgreSQL storage growth justifies the additional lifecycle and retrieval complexity.
+Compressed S3 archival remains deferred until measured PostgreSQL storage growth justifies the
+additional lifecycle and retrieval complexity.
 
 ## Quality KPI service
 
@@ -144,9 +157,14 @@ Available metrics include:
 
 A missing cost value is returned as `null`, not guessed.
 
+Career Intelligence V2 has a separate protected `/api/v1/internal/ai-quality/metrics` surface for
+model/task quality and configured model-cost observations. Those AI metrics do not substitute for
+job ingestion/source-scale measurements.
+
 ## PostgreSQL benchmark methodology
 
-`services/api/scripts/benchmark_job_search.py` creates synthetic non-production rows at one explicit size:
+`services/api/scripts/benchmark_job_search.py` creates synthetic non-production rows at one explicit
+size:
 
 ```text
 10,000
@@ -170,33 +188,37 @@ Workflow:
 .github/workflows/job-search-benchmark.yml
 ```
 
-Pull requests run the 10K benchmark. The 50K and 250K sizes are manual gates and must not be described as passing until those exact workflows complete.
+Pull requests run the 10K benchmark. The 50K and 250K sizes are manual gates and must not be
+described as passing until those exact workflows complete.
 
 ## Executed benchmark evidence
 
 ### 10,000 synthetic jobs
 
-Status: **NOT YET RECORDED**
+Status: **NOT YET RECORDED IN THIS REPORT**
 
-The first exact-head benchmark artifact will be summarized here after GitHub Actions completes.
+The source workflow exists. Record the exact run/artifact only after the final source-changing head
+has completed; do not reuse a superseded PR run as the final scale claim.
 
 ### 50,000 synthetic jobs
 
-Status: **NOT STARTED**
+Status: **NOT STARTED / NOT RECORDED**
 
 ### 250,000 synthetic jobs
 
-Status: **NOT STARTED**
+Status: **NOT STARTED / NOT RECORDED**
 
 ## Partitioning decision
 
 Status: **DEFERRED**
 
-No current measured query requires table partitioning. The likely future candidates are raw payload history, ingestion runs, and job versions, but partitioning will not be added merely because million-row scale is planned.
+No current measured query requires table partitioning. The likely future candidates are raw payload
+history, ingestion runs and job versions, but partitioning will not be added merely because
+million-row scale is planned.
 
 ## AWS staging configuration
 
-Terraform now includes:
+Terraform includes:
 
 - dedicated source queue + source DLQ;
 - source visibility/redrive controls;
@@ -204,8 +226,11 @@ Terraform now includes:
 - bounded dispatcher EventBridge task;
 - source queue depth/age/DLQ alarms;
 - source-worker failure metric/alarm;
-- release/rollback/verification V2 workflows;
+- V2 release/rollback/verification workflows;
 - zero desired-count dormant foundation by default.
+
+Career Intelligence V2 additionally introduces a separate AI queue/DLQ and worker; it does not
+share source-worker throughput or source quality metrics.
 
 ## Real staging rollout gate
 
@@ -245,12 +270,19 @@ Only then increase gradually:
 
 | Area | Status | Evidence / limitation |
 |---|---|---|
-| Prompt 1 multi-source platform | COMPLETE | Exact-head automated CI; real provider staging remains external |
-| Prompt 2 career discovery | COMPLETE | Exact-head automated CI; live web staging remains external |
-| Prompt 3 source/quality code | PARTIAL | Awaiting exact-head migration/backend/OpenAPI/Terraform/Playwright/benchmark gates |
-| 10K PostgreSQL benchmark | NOT STARTED | Workflow source committed; no artifact yet |
-| 50K PostgreSQL benchmark | NOT STARTED | Manual gate |
-| 250K PostgreSQL benchmark | NOT STARTED | Manual gate |
-| Real AWS multi-source staging | BLOCKED | AWS/Clerk/Vercel staging resources and reviewed provider list required |
-| Million verified canonical jobs | NOT STARTED | No manufactured job counts |
-| AI matching | NOT STARTED | Blocked until real multi-source staging quality gate passes |
+| Multi-source platform source | COMPLETE | Source registry/dispatcher/workers/authority/provenance/freshness/quality architecture is implemented; exact final PR head must retain green CI. |
+| Career discovery source | COMPLETE | Public career-site discovery/ATS detection/import architecture exists; live provider staging remains external. |
+| Source/quality infrastructure | COMPLETE | Dedicated source queue/DLQ/worker/dispatcher and quality controls are source controlled; real AWS execution remains external. |
+| 10K PostgreSQL benchmark | NOT YET RECORDED | PR workflow exists; final exact-head result/artifact must be recorded before claiming pass here. |
+| 50K PostgreSQL benchmark | NOT STARTED | Manual evidence gate. |
+| 250K PostgreSQL benchmark | NOT STARTED | Manual evidence gate. |
+| Real AWS multi-source staging | BLOCKED | Requires AWS/Clerk/Vercel staging resources and a reviewed provider list. |
+| Million verified canonical jobs | NOT STARTED | No manufactured job counts. |
+| Career Intelligence V1 | COMPLETE | Merged deterministic explainable matching/tailoring/application-assistant baseline. |
+| Career Intelligence V2 | PARTIAL | Active PR #12 implements durable model runtime, verified Career Memory, hybrid matching and candidate copilots. Exact-head CI and real provider staging acceptance remain separate gates. |
+
+## Reporting boundary
+
+Do not use this job-data report to claim that Career Intelligence has validated source scale, and do
+not use AI source completion to claim that 50K/250K job-search benchmarks or real provider staging
+have run. Each evidence category must remain independently reproducible.

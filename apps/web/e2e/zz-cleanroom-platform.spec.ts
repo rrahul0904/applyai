@@ -6,14 +6,20 @@ async function signIn(page: Page) {
   await page.goto("/dev-login");
   await page.getByLabel("Test candidate email").fill(candidate);
   await page.getByRole("button", { name: "Sign in to development" }).click();
+  // The development sign-in action intentionally lands on /onboarding first for every
+  // identity. Candidate A was fully onboarded by the canonical MVP journey earlier in this
+  // same clean-room database, so navigating to the real workspace must now succeed.
   await page.waitForURL(/\/(onboarding|dashboard)$/);
-  expect(new URL(page.url()).pathname).toBe("/dashboard");
+  await page.goto("/dashboard");
+  await page.waitForURL(/\/dashboard$/);
+  await expect(page.getByRole("heading", { name: "Make your next move count." })).toBeVisible();
 }
 
 async function assertHealthy(page: Page, path: string) {
   const response = await page.goto(path, { waitUntil: "domcontentloaded" });
   expect(response, `No navigation response for ${path}`).not.toBeNull();
   expect(response!.status(), `${path} returned ${response!.status()}`).toBeLessThan(500);
+  expect(new URL(page.url()).pathname, `${path} redirected away from the requested surface`).toBe(path);
   await expect(page.locator("body")).not.toContainText("Something went wrong. Please try again.");
 }
 

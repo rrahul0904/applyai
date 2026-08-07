@@ -1,0 +1,43 @@
+name: Platform Completion OpenAPI Sync
+
+on:
+  push:
+    branches:
+      - agent/platform-completion
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.actor != 'github-actions[bot]' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/platform-completion
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.13.0'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '10.13.1'
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.8.14'
+      - run: uv sync --project services/api --frozen
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm openapi:generate
+      - name: Commit generated client contract
+        run: |
+          if git diff --quiet -- apps/web/lib/api/schema.d.ts; then
+            echo "OpenAPI client already synchronized"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/web/lib/api/schema.d.ts
+          git commit -m "Regenerate platform OpenAPI client"
+          git push origin HEAD:agent/platform-completion

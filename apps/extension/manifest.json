@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "ApplyAI Job Importer",
+  "version": "1.0.0",
+  "description": "Save the current public job page to ApplyAI for matching, resume tailoring and application tracking.",
+  "permissions": ["activeTab", "storage"],
+  "action": {
+    "default_title": "Save to ApplyAI",
+    "default_popup": "popup.html"
+  }
+}

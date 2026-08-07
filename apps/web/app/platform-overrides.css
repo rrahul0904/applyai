@@ -1,0 +1,12 @@
+.app-sidebar nav {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: 10px;
+  scrollbar-width: thin;
+}
+
+.sidebar-user {
+  flex: 0 0 auto;
+}

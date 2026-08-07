@@ -2,15 +2,21 @@
 
 import { UserButton } from "@clerk/nextjs";
 import {
+  BarChart3,
+  Bell,
   Bookmark,
   BrainCircuit,
   BriefcaseBusiness,
+  Building2,
   CircleUserRound,
+  CreditCard,
   FileText,
   Home,
   LogOut,
   Search,
   Settings,
+  Sparkles,
+  UsersRound,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -21,17 +27,23 @@ import { cn } from "@/lib/utils";
 
 const navigation = [
   { href: "/dashboard", label: "Home", icon: Home },
+  { href: "/matches", label: "AI Matches", icon: Sparkles },
   { href: "/jobs", label: "Jobs", icon: Search },
   { href: "/career", label: "Career AI", icon: BrainCircuit },
   { href: "/saved", label: "Saved", icon: Bookmark },
   { href: "/applications", label: "Applications", icon: BriefcaseBusiness },
-  { href: "/resume", label: "Resume", icon: FileText },
+  { href: "/resume/studio", label: "Resume Studio", icon: FileText },
+  { href: "/network", label: "Network", icon: UsersRound },
+  { href: "/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/alerts", label: "Alerts", icon: Bell },
   { href: "/profile", label: "Profile", icon: CircleUserRound },
+  { href: "/billing", label: "Billing", icon: CreditCard },
   { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/employer", label: "Employer workspace", icon: Building2 },
 ];
 
 const mobileNavigation = navigation.filter((item) =>
-  ["/dashboard", "/jobs", "/career", "/applications", "/profile"].includes(item.href),
+  ["/dashboard", "/matches", "/jobs", "/applications", "/profile"].includes(item.href),
 );
 
 function isActive(pathname: string, href: string) {

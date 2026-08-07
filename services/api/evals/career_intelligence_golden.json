@@ -1,0 +1,27 @@
+{
+  "version": "career-intelligence-golden-v1",
+  "ranking_cases": [
+    {
+      "name": "data-engineering-leadership",
+      "relevant_ids": ["director-data", "manager-platform", "head-data"],
+      "ranked_ids": ["director-data", "manager-platform", "backend-engineer", "head-data", "analyst"]
+    },
+    {
+      "name": "ai-platform-leadership",
+      "relevant_ids": ["ai-platform-director", "ml-platform-manager"],
+      "ranked_ids": ["ai-platform-director", "ml-platform-manager", "ml-engineer", "data-scientist", "product-manager"]
+    }
+  ],
+  "evidence_cases": [
+    {
+      "name": "resume-evidence-lock",
+      "allowed_refs": ["fact:leadership", "fact:snowflake", "fact:python"],
+      "emitted_refs": ["fact:leadership", "fact:snowflake", "fact:python"]
+    },
+    {
+      "name": "interview-evidence-lock",
+      "allowed_refs": ["fact:architecture", "fact:team", "fact:delivery"],
+      "emitted_refs": ["fact:architecture", "fact:delivery"]
+    }
+  ]
+}

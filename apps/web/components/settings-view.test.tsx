@@ -48,7 +48,7 @@ describe("SettingsView", () => {
     });
   });
 
-  it("shows only settings backed by persisted account and profile state", async () => {
+  it("shows persisted account and profile state alongside platform controls", async () => {
     renderSettings();
     expect(await screen.findByText("candidate@example.test")).toBeDefined();
     expect(screen.getByText("ACTIVE")).toBeDefined();
@@ -56,17 +56,22 @@ describe("SettingsView", () => {
     expect(screen.getByText("Staff Data Engineer, Data Platform Lead")).toBeDefined();
     expect(screen.getByText("Boston, MA")).toBeDefined();
     expect(screen.getByText("REMOTE, HYBRID")).toBeDefined();
-    expect(screen.queryByText(/notification/i)).toBeNull();
+    expect(screen.getByRole("heading", { name: "Notifications" })).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Subscription" })).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Privacy and data" })).toBeDefined();
   });
 
-  it("links preference editing back to the canonical profile", async () => {
+  it("links preference editing and completed platform controls to canonical workspaces", async () => {
     renderSettings();
-    const link = await screen.findByRole("link", { name: "Edit profile and preferences" });
-    expect(link.getAttribute("href")).toBe("/profile");
+    expect((await screen.findByRole("link", { name: "Edit profile and preferences" })).getAttribute("href")).toBe("/profile");
+    expect(screen.getByRole("link", { name: "Manage alerts" }).getAttribute("href")).toBe("/alerts");
+    expect(screen.getByRole("link", { name: "Manage billing" }).getAttribute("href")).toBe("/billing");
   });
 
-  it("states the account-scoped privacy boundary", async () => {
+  it("exposes real privacy export and deletion controls", async () => {
     renderSettings();
-    expect(await screen.findByText(/Resumes, application notes, compensation preferences/)).toBeDefined();
+    expect(await screen.findByText(/Download a machine-readable copy/)).toBeDefined();
+    expect(screen.getByRole("button", { name: "Export my data" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Delete ApplyAI data" })).toBeDefined();
   });
 });

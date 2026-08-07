@@ -1,13 +1,5 @@
-import type { Metadata } from "next";
-
-import { FunctionalCandidateDemo } from "./functional-candidate-demo";
-
-export const metadata: Metadata = {
-  title: "ApplyAI Functional Candidate Workspace",
-  description:
-    "An end-to-end ApplyAI workspace backed by the real profile, jobs, recommendation, resume tailoring, and application APIs.",
-};
+import { redirect } from "next/navigation";
 
 export default function DemoPage() {
-  return <FunctionalCandidateDemo />;
+  redirect("/dashboard");
 }

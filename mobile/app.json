@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "ApplyAI",
+    "slug": "applyai",
+    "version": "1.0.0",
+    "scheme": "applyai",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.applyai.mobile"
+    },
+    "android": {
+      "package": "com.applyai.mobile"
+    },
+    "plugins": ["expo-router", "expo-secure-store", "@clerk/expo"],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

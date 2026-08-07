@@ -4,95 +4,58 @@ import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 const demoCaptureDir = process.env.DEMO_CAPTURE_DIR;
+const candidate = "e2e.platform@example.test";
+
+async function signIn(page: Page, email: string) {
+  await page.goto("/dev-login");
+  await page.getByLabel("Test candidate email").fill(email);
+  await page.getByRole("button", { name: "Sign in to development" }).click();
+  await page.waitForURL(/\/(onboarding|dashboard)$/);
+}
 
 async function captureDemo(page: Page, fileName: string) {
   if (!demoCaptureDir) return;
   mkdirSync(demoCaptureDir, { recursive: true });
   await page.screenshot({
     path: join(demoCaptureDir, `${fileName}.png`),
+    fullPage: true,
     animations: "disabled",
   });
 }
 
-async function completeCandidateReview(page: Page) {
-  await page.getByRole("button", { name: "Tailor my resume" }).click();
-  await expect(
-    page.getByRole("heading", {
-      name: /Make your verified experience clearer for/,
-    }),
-  ).toBeVisible();
-  await captureDemo(page, "18-evidence-locked-resume-tailoring");
-
-  const approveButtons = page.getByRole("button", { name: "Approve" });
-  await approveButtons.nth(0).click();
-  await approveButtons.nth(1).click();
-  await page.getByRole("button", { name: "Reject" }).nth(2).click();
-  await page
-    .getByRole("button", { name: "Finalize approved resume edits" })
-    .click();
-
-  await expect(
-    page.getByRole("heading", {
-      name: "Review every word before the package is marked ready.",
-    }),
-  ).toBeVisible();
-  await captureDemo(page, "19-application-assistant-review");
-
-  const verificationBoxes = page.getByRole("checkbox");
-  await expect(verificationBoxes).toHaveCount(4);
-  for (let index = 0; index < 4; index += 1) {
-    if (!(await verificationBoxes.nth(index).isChecked())) {
-      await verificationBoxes.nth(index).check();
-    }
-  }
-
-  await page.getByRole("button", { name: "Finalize reviewed package" }).click();
-  await expect(
-    page.getByRole("heading", {
-      name: "Your reviewed materials are organized and ready to use.",
-    }),
-  ).toBeVisible();
-  await expect(page.getByText("100%", { exact: true })).toBeVisible();
-  await expect(page.getByText("READY", { exact: true })).toBeVisible();
-  await expect(page.getByText("External submission", { exact: true })).toBeVisible();
-  await captureDemo(page, "20-ready-application-package");
-}
-
-test("realistic candidate beta journey persists the reviewed application package", async ({
-  page,
-}) => {
+test("retired beta entry resolves into the canonical candidate platform", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.goto("/beta");
+  await signIn(page, candidate);
 
-  await expect(
-    page.getByRole("heading", {
-      name: "Apply to the right role with evidence you can defend.",
-    }),
-  ).toBeVisible();
-  await expect(page.getByText(/confidence · .* fit/i).first()).toBeVisible();
-  await expect(page.getByText("ROLE ALIGNMENT", { exact: true })).toBeVisible();
-  await expect(page.getByText("VERIFIED SKILLS", { exact: true })).toBeVisible();
+  await page.goto("/beta");
+  await page.waitForURL(/\/matches$/);
+  await expect(page.getByRole("heading", { name: "AI Matches" })).toBeVisible();
+  await expect(page.getByText(/Scores prioritize your search/i)).toBeVisible();
   await captureDemo(page, "17-ai-match-prioritization");
 
-  await completeCandidateReview(page);
+  await page.goto("/resume/studio");
+  await expect(page.getByRole("heading", { name: "Resume Studio" })).toBeVisible();
+  await page.getByRole("button", { name: "New variant" }).click();
+  await expect(page.getByRole("heading", { name: "New resume variant" })).toBeVisible();
+  await page.getByLabel("Professional summary").fill("Evidence-backed platform leadership summary.");
+  await page.getByRole("button", { name: "Save revision" }).click();
+  await expect(page.getByText(/Version 2/)).toBeVisible();
+  await captureDemo(page, "18-evidence-locked-resume-studio");
 
-  await page.reload();
-  await expect(
-    page.getByRole("heading", {
-      name: "Apply to the right role with evidence you can defend.",
-    }),
-  ).toBeVisible();
+  await page.goto("/alerts");
+  await expect(page.getByRole("heading", { name: "Alerts & Follow-ups" })).toBeVisible();
+  await page.getByLabel("Alert name").fill("Data platform leadership");
+  await page.getByLabel("Keyword").fill("Data");
+  await page.getByRole("button", { name: "Create alert" }).click();
+  await expect(page.getByText("Data platform leadership")).toBeVisible();
+  await captureDemo(page, "19-alerts-and-followups");
 
-  await page.getByRole("button", { name: "Tailor my resume" }).click();
-  await expect(page.getByText("APPROVED", { exact: true }).first()).toBeVisible();
-  await page
-    .getByRole("button", { name: "Finalize approved resume edits" })
-    .click();
-
-  await expect(page.getByText("100% ready", { exact: true })).toBeVisible();
-  await expect(page.getByRole("checkbox").first()).toBeChecked();
-  await expect(page.getByRole("checkbox").nth(3)).toBeChecked();
-
-  await page.getByRole("button", { name: "Finalize reviewed package" }).click();
-  await expect(page.getByText("READY", { exact: true })).toBeVisible();
+  await page.goto("/network");
+  await expect(page.getByRole("heading", { name: "Network" })).toBeVisible();
+  await page.getByLabel("Name").fill("Recruiter Example");
+  await page.getByLabel("Company").fill("ApplyAI Example");
+  await page.getByLabel("Email").fill("recruiter@example.test");
+  await page.getByRole("button", { name: "Add contact" }).click();
+  await expect(page.getByText("Recruiter Example")).toBeVisible();
+  await captureDemo(page, "20-network-workspace");
 });

@@ -101,7 +101,7 @@ export LOCAL_CLEANROOM=1
 export LOCAL_PROVIDER_MOCK_URL="http://127.0.0.1:8099"
 
 echo "==> Starting local Clerk/JWKS and OpenAI protocol mock"
-(cd services/api && uv run python scripts/local_provider_mock.py >"$ROOT/.local/provider-mock.log" 2>&1) & PIDS+=("$!")
+(cd services/api && uv run python -m scripts.local_provider_mock >"$ROOT/.local/provider-mock.log" 2>&1) & PIDS+=("$!")
 for _ in $(seq 1 40); do
   if curl -fsS "$LOCAL_PROVIDER_MOCK_URL/health" >/dev/null 2>&1; then break; fi
   sleep 0.25
@@ -114,7 +114,7 @@ curl -fsS "$LOCAL_PROVIDER_MOCK_URL/health" >/dev/null
   uv run alembic check
   uv run python -m app.jobs.seed
   uv run python scripts/create_e2e_resume.py "$E2E_RESUME_PATH"
-  uv run python scripts/local_integration_smoke.py
+  uv run python -m scripts.local_integration_smoke
 )
 
 echo "==> Launching local outbox and background workers"

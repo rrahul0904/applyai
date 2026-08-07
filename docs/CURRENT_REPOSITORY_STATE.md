@@ -1,84 +1,77 @@
 # Current Repository State
 
-Updated: 2026-08-06
+Updated: 2026-08-07
 
 ## Source control
 
 - Repository: `rrahul0904/applyai`
 - Default branch: `main`
-- Active implementation branch: `agent/career-intelligence-v2-foundation`
-- Pull request: #12, draft while exact-head validation completes
-- Architecture: Next.js App Router + Clerk; FastAPI modular monolith; PostgreSQL/Alembic; private S3; dedicated resume/source/AI SQS queues; Vercel web + AWS ECS/Aurora backend
-- No destructive repository cleanup/reset was used.
-- No Redis, OpenSearch, Kafka, Kubernetes or premature microservice split was introduced.
+- Platform-completion branch: `agent/platform-completion`
+- Pull request: #14
+- Architecture: Next.js App Router + Clerk web; Expo/React Native mobile; FastAPI modular monolith; PostgreSQL/Alembic; private S3; dedicated resume/source/AI SQS queues; Vercel web + AWS ECS/Aurora target.
+- Browser extension: Manifest V3 public-job URL handoff into the same safe server-side import pipeline.
+- No Redis, Kafka, Kubernetes, or premature microservice split was introduced solely to satisfy platform breadth.
 
-This document describes source-controlled state. It does **not** claim external AWS, Vercel, Clerk,
-DNS, ATS-provider or model-provider staging acceptance until those services are actually exercised.
+This repository now has a source-complete platform boundary. Real external deployment, provider credentials, cloud measurements, signing and store publication are tracked separately and are never inferred from source code.
 
-## Candidate platform
+## Candidate product
 
-Implemented:
-
-- Clerk authentication boundary and internal user mapping;
-- owner-scoped candidate APIs;
-- persisted onboarding;
-- profile, experience, education, skills and preferences;
-- direct private-S3 resume upload design;
-- deterministic PDF/DOCX extraction/review/confirmation;
-- one master resume plus version history;
-- transactional task outbox;
-- resume SQS worker with visibility heartbeat, timeout, retry and DLQ behavior;
-- PostgreSQL job search/filter/relevance/cursor pagination;
-- job detail, saved jobs and applications;
-- application status history and notes;
-- deterministic Candidate A/B isolation coverage;
-- real candidate workspace routes for dashboard, jobs, resume, profile, applications, saved jobs,
-  settings and Career Intelligence.
-
-## Job-data platform
-
-Implemented source includes:
-
-- Greenhouse, Lever, Ashby and generic structured-page adapter architecture;
-- career-site discovery and ATS detection;
-- source registry and canonical authority;
-- durable dispatcher/outbox/source SQS/source workers;
-- source leasing with `FOR UPDATE SKIP LOCKED`;
-- raw payload/provenance retention;
-- canonicalization and deterministic deduplication;
-- field-level source authority/conflict rules;
-- repeat-fetch idempotency and material-change propagation;
-- source freshness and closure evidence;
-- apply-URL verification;
-- protected quality metrics;
-- PostgreSQL benchmark workflow for 10K/50K/250K synthetic corpus sizes;
-- dedicated source queue/DLQ and CloudWatch alarms.
-
-Synthetic/load results and real provider throughput are evidence only after the exact workflows run.
-
-## Career Intelligence V1
-
-Merged on `main` and retained as the deterministic baseline/compatibility layer:
-
-- six-factor explainable 100-point opportunity prioritization;
-- strengths, gaps and realistic fit risks;
-- evidence-locked resume wording;
-- candidate approve/reject behavior;
-- cover-letter and common application-answer preparation;
-- application readiness state;
-- persisted browser reload journey;
-- explicit boundary that ApplyAI prepares but does not externally submit an application.
-
-## Career Intelligence V2
-
-Implemented on PR #12:
+Canonical authenticated candidate routes include:
 
 ```text
-Verified profile/resume/Career Memory
+/dashboard
+/matches
+/jobs
+/jobs/[id]
+/saved
+/applications
+/applications/[id]
+/resume
+/resume/studio
+/career
+/interview/[jobId]
+/network
+/analytics
+/alerts
+/profile
+/billing
+/settings
+/import-job
+```
+
+Historical `/demo` and `/beta` routes redirect into the canonical candidate product instead of maintaining parallel state or APIs.
+
+Implemented candidate capabilities:
+
+- identity mapping and owner-scoped APIs;
+- onboarding, profile, experience, education, skills, goals and preferences;
+- durable private resume upload/processing/version history;
+- Resume Studio with job-specific editable variants and export;
+- PostgreSQL job search/filter/cursor pagination;
+- saved jobs and saved-search alerts;
+- application command center with status/events/notes;
+- candidate-approved first-party submission and third-party external handoff;
+- Career Memory;
+- AI Matches;
+- Career Intelligence resume/application/interview copilots;
+- interview practice sessions and feedback;
+- recruiter/hiring-manager/referral contacts and follow-ups;
+- notifications and reminder inbox;
+- candidate analytics;
+- company intelligence derived from known posting evidence;
+- subscription/entitlement visibility;
+- account export and application-side deletion.
+
+## Career Intelligence
+
+Career Intelligence V1 remains the deterministic explainable baseline. Career Intelligence V2 is the first-class durable AI domain.
+
+```text
+verified profile/resume/Career Memory
           +
 canonical job/source evidence
           +
-deterministic V1 factors
+deterministic match factors
           |
           v
 server evidence catalog
@@ -93,187 +86,218 @@ AI SQS -> AI worker -> provider
 strict schema + evidence validation
           |
           v
-versioned AIArtifact/domain rows
+versioned domain artifacts
           |
           v
 candidate review + quality feedback
 ```
 
-First-class persistence:
+Implemented task families:
 
-- `AIJobRun`;
-- `AIArtifact`;
-- `CareerMatch`;
-- `ResumeTailoring` / `ResumeTailoringRevision`;
-- `CoverLetter`;
-- `ApplicationQuestionDraft`;
-- `CandidateAIArtifactFeedback`;
-- `CandidateCareerFact`.
+- deep job match;
+- resume tailoring;
+- application copilot;
+- interview preparation.
 
-Current V2 task types:
-
-- `AI_DEEP_MATCH`;
-- `AI_RESUME_TAILOR`;
-- `AI_APPLICATION_COPILOT`;
-- `AI_INTERVIEW_PREP`.
-
-Candidate product integration:
-
-- Career Intelligence V2 actions are on real `/jobs/[id]` pages;
-- durable queued work is polled until completion/failure;
-- `/career` provides verified Career Memory and recent AI artifact visibility;
-- `/beta` remains compatibility/demo evidence rather than the architectural product surface.
-
-Provider architecture:
+Provider boundary:
 
 - deterministic evidence-safe provider for local/CI;
-- server-side structured Responses provider for reviewed staging/production use;
-- strict JSON/Pydantic output validation;
-- exact evidence-reference validation;
-- transient provider errors remain retryable; terminal/schema/evidence failures fail closed;
-- provider/model/prompt/schema/latency/token/configured-cost/outcome telemetry is persisted when
-  available.
+- structured OpenAI provider for reviewed deployment environments;
+- deterministic local semantic embedding provider for CI;
+- optional server-side OpenAI embedding provider;
+- strict JSON/Pydantic validation;
+- exact evidence-reference checks;
+- versioned prompt/model/schema metadata;
+- latency/token/configured-cost telemetry;
+- transient retry vs terminal schema/evidence failure behavior.
 
-See `docs/CAREER_INTELLIGENCE_V2.md`.
+Evaluation includes a source-controlled golden dataset, Precision@5/10, reciprocal rank, evidence support rate, unsupported-reference count and operator baseline-vs-candidate comparison.
 
-## Queue architecture
+## Resume and application workflow
 
-Task families are separated:
+Resume processing remains evidence/provenance driven. Resume Studio adds candidate-owned editable variants without replacing the durable master-resume/version history.
+
+Application submission has an explicit safety boundary:
+
+- the candidate must approve a submission request;
+- verified first-party ApplyAI employer jobs can receive the approved application directly;
+- third-party jobs produce an external handoff to the employer's public application page;
+- ApplyAI does not bypass employer login, CAPTCHA, anti-bot controls or private application endpoints.
+
+## Employer/recruiter platform
+
+Implemented:
+
+- employer organizations;
+- role-based organization membership;
+- operator trust verification/suspension;
+- job draft/edit/publish/close;
+- published first-party roles enter the same canonical candidate job index;
+- first-party ApplyAI submissions create employer applicants;
+- candidate pipeline stages, ratings and notes;
+- employer dashboard metrics.
+
+The employer and candidate products share the same canonical jobs/applications rather than maintaining demo-only copies.
+
+## Billing and entitlements
+
+Implemented source:
+
+- Free / Pro / Team entitlement definitions;
+- subscription and usage persistence;
+- Stripe Checkout adapter;
+- Stripe Billing Portal adapter;
+- signed Stripe webhook verification and lifecycle updates;
+- billing ledger;
+- public pricing and authenticated billing UI.
+
+Live Stripe account values are deployment configuration.
+
+## Job-data platform
+
+Implemented:
+
+- Greenhouse, Lever and Ashby dedicated adapters;
+- generic structured public-career-page import;
+- ATS detection for Greenhouse, Lever, Ashby, Workday, SmartRecruiters, Workable, iCIMS, Oracle and SuccessFactors;
+- robots/redirect/SSRF/response-size constrained discovery;
+- source registry, leasing, durable dispatch and workers;
+- raw provenance retention;
+- canonical authority/dedup/conflict resolution;
+- freshness and closure evidence;
+- apply-URL verification;
+- protected source quality metrics;
+- 10K/50K/250K synthetic PostgreSQL benchmark gate.
+
+No login bypass, proxy rotation, CAPTCHA solving or private endpoint access is used to claim source coverage.
+
+## Notifications and engagement
+
+Implemented durable state includes:
+
+- saved searches;
+- job alerts;
+- notification preferences;
+- notification inbox/read state;
+- interview reminders;
+- recruiter follow-ups;
+- engagement dispatcher.
+
+A real email/push provider remains an external deployment integration.
+
+## Privacy/account lifecycle
+
+Implemented:
+
+- machine-readable candidate data export;
+- application-side personal-data deletion;
+- anonymized user tombstone when an immutable/audit foreign key must remain valid;
+- hashed deleted-identity record preventing the same external identity from silently recreating the deleted ApplyAI account.
+
+Deleting the external Clerk identity itself is an identity-provider operation.
+
+## Operator platform
+
+The internal platform has protected endpoints and a server-only web console for:
+
+- platform counters;
+- employer verification/suspension;
+- engagement dispatch;
+- source quality/health;
+- AI runtime quality;
+- golden AI evaluation.
+
+The internal token is never exposed as a browser/public environment variable.
+
+## Native mobile
+
+`/mobile` contains the Expo/React Native candidate client using Clerk authentication and the same FastAPI contract as web.
+
+Native source includes:
+
+- AI Matches;
+- Jobs;
+- Applications;
+- Alerts;
+- Profile/Career Memory summary.
+
+Repository tests transpile the native TS/TSX source. Signing credentials, native release builds and store publication are external distribution/deployment work.
+
+## Browser extension
+
+`/apps/extension` contains a Manifest V3 extension with only:
 
 ```text
-resume task_outbox -> resume SQS -> resume worker
-source task_outbox -> source SQS -> source worker
-AI task_outbox     -> AI SQS     -> AI worker
+activeTab
+storage
 ```
 
-The queue-aware outbox publisher claims only task families it can route. Specialized source/AI
-routing fails closed when the dedicated queue is absent, preventing accidental delivery onto the
-resume queue.
+It hands the active public job URL to `/import-job`. The existing server-side safe importer remains authoritative. Repository tests validate extension permissions and JavaScript syntax.
 
-## Verification source
+## Infrastructure source
 
-The repository CI surface includes:
-
-```text
-Web lint
-Web typecheck
-Web Vitest
-Next.js production build
-OpenAPI contract drift
-API migration validation
-API tests
-API production Docker build
-Staging Terraform validation
-Candidate MVP Playwright
-AWS bootstrap CloudFormation lint
-GitHub workflow static validation
-Job-search PostgreSQL benchmark workflow
-```
-
-Exact-head results must be taken from the current PR/head; older green results are not reused as
-proof after source changes.
-
-## Staging AWS package
-
-Terraform now contains:
+AWS staging source contains:
 
 ```text
 VPC / two AZs
-public ALB subnets
-private ECS/Fargate subnets
-isolated Aurora subnets
-single staging NAT gateway
 HTTPS ALB
-ECS cluster
-FastAPI service
-resume worker
-source worker
-AI worker
-queue-aware outbox services
-migration task
-source dispatcher task/EventBridge schedule
-immutable ECR repository
+private ECS/Fargate
 Aurora PostgreSQL Serverless v2
-RDS-managed database secret
+ECR
 private encrypted/versioned resume S3
 resume SQS + DLQ
 source SQS + DLQ
 AI SQS + DLQ
-IAM roles/policies
+resume/source/AI workers
+queue-aware outbox publishers
+source dispatcher / EventBridge
+migration task
+least-privilege IAM
 CloudWatch logs and alarms
 ```
 
-The same immutable API image is reused with role-specific commands. The external model API key is
-injected only into the AI worker through Secrets Manager when the reviewed provider is enabled.
+Bootstrap, preflight, infrastructure, release, rollback and verification workflows are source controlled. The reviewed model secret is scoped to the AI runtime rather than broadly exposed to the API/web.
 
-## V2 deployment workflows
+## Repository validation
 
-`ApplyAI Staging Release V2` performs:
-
-1. exact source/immutable image resolution;
-2. Alembic migration gate;
-3. candidate/source/AI runtime activation;
-4. ECS stability checks;
-5. HTTPS health/readiness;
-6. source/AI queue reachability and service-state verification.
-
-`ApplyAI Staging Verification V2` verifies:
-
-- healthy ALB/API;
-- private ECS networking;
-- candidate/source/AI service desired state;
-- immutable-image consistency;
-- resume/source/AI SQS encryption and redrive;
-- private/versioned/encrypted resume S3;
-- encrypted/private/backed-up Aurora;
-- source dispatcher state;
-- source/AI log groups and alarms.
-
-## External staging blockers
-
-Real staging remains **BLOCKED** until the actual environment values/resources exist:
+The platform completion gate covers:
 
 ```text
-AWS staging account
-GitHub staging environment + OIDC bootstrap outputs
-ACM certificate + API DNS
-Clerk staging application
-Vercel staging project/domain
-reviewed public ATS provider set
-reviewed model provider credential/model
+Web lint
+Web typecheck
+Web unit tests
+native-mobile source transpilation
+browser-extension source checks
+Next.js production build
+API tests
+Alembic zero-to-head and metadata drift
+OpenAPI generated-client drift
+API Docker image build
+Terraform validation
+Candidate Playwright browser journey
+Demo capture
+CloudFormation bootstrap validation
+GitHub workflow validation
+10K / 50K / 250K PostgreSQL job-search benchmarks
 ```
 
-Templates now include Career Intelligence values without committing credentials:
+Exact-head evidence is required after every source-changing commit.
 
-- `services/api/.env.example`;
-- `infra/staging/github.environment.example`;
-- `infra/staging/terraform.tfvars.example`;
-- `apps/web/.env.staging.example`.
+## External environment gates
 
-## Required real-service acceptance
+The remaining work is exclusively real deployment/runtime/distribution evidence:
 
-Real staging must still prove:
+```text
+AWS/Vercel/Clerk staging activation
+real S3/SQS/ECS/Aurora candidate acceptance
+real ATS/provider throughput/freshness/cost acceptance
+live OpenAI model and embedding acceptance
+live Stripe checkout/webhook acceptance
+real email/push provider delivery
+production promotion and measured backup/restore/failure drills
+Apple/Google signing + App Store/Play Store publication
+browser-extension store publication
+external Clerk identity deletion/revocation
+```
 
-- Clerk -> Vercel -> FastAPI/ECS -> Aurora candidate authentication;
-- direct browser S3 upload -> outbox -> resume SQS -> resume worker;
-- source dispatcher -> source SQS -> provider adapters -> freshness/dedup/closure recovery;
-- AI outbox -> AI SQS -> AI worker -> reviewed provider -> validated artifact;
-- all four V2 task types through the durable AI path;
-- Candidate A/B isolation for Career Memory, runs, matches and artifacts;
-- worker/provider failure retry and DLQ/redrive;
-- model schema/evidence failure behavior;
-- CloudWatch logs without resume bodies, API keys, auth tokens or unsafe model payloads;
-- measured latency/token/cost observations;
-- rollback and backup/restore drills.
-
-No repository-only change can honestly mark those external gates complete.
-
-## Production boundary
-
-Production infrastructure remains intentionally gated by staging evidence. Do not mechanically copy
-staging Terraform into production. Production must explicitly choose account/state/trust boundary,
-delete protection, final snapshots/PITR, HA/capacity, alert routing, model/cost budgets, approvals,
-rollback and privacy/security requirements based on measured staging behavior.
-
-Native mobile, employer platform, billing, autonomous messaging and auto-apply remain separate future
-product milestones.
+These remain `BLOCKED` until real accounts, credentials and infrastructure exist. No repository-only change can honestly mark them complete.

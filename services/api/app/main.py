@@ -15,7 +15,9 @@ from app.api import (
     career_product,
     career_product_contract,
     career_product_polish,
+    company_intelligence,
     employer_platform,
+    internal_ai_evaluation,
     internal_ai_quality,
     internal_job_discoveries,
     internal_job_quality,
@@ -25,6 +27,7 @@ from app.api import (
     jobs,
     me,
     onboarding,
+    privacy,
     profiles,
     resumes,
     semantic_matching,
@@ -36,7 +39,7 @@ from app.core.database import engine
 settings = get_settings()
 app = FastAPI(
     title="ApplyAI API",
-    version="0.3.0",
+    version="0.4.0",
     openapi_url="/api/v1/openapi.json",
     docs_url="/api/docs",
 )
@@ -59,6 +62,7 @@ async def http_error(_request: Request, exc: HTTPException) -> JSONResponse:
             403: "FORBIDDEN",
             404: "NOT_FOUND",
             409: "CONFLICT",
+            410: "GONE",
             422: "INVALID_REQUEST",
             429: "RATE_LIMITED",
             503: "NOT_READY",
@@ -71,25 +75,14 @@ async def http_error(_request: Request, exc: HTTPException) -> JSONResponse:
 
 
 @app.exception_handler(RequestValidationError)
-async def validation_error(
-    _request: Request, exc: RequestValidationError
-) -> JSONResponse:
+async def validation_error(_request: Request, exc: RequestValidationError) -> JSONResponse:
     fields = [
-        {
-            "field": ".".join(str(part) for part in error["loc"][1:]),
-            "message": error["msg"],
-        }
+        {"field": ".".join(str(part) for part in error["loc"][1:]), "message": error["msg"]}
         for error in exc.errors()
     ]
     return JSONResponse(
         status_code=422,
-        content={
-            "error": {
-                "code": "VALIDATION_ERROR",
-                "message": "Please check the highlighted fields",
-                "fields": fields,
-            }
-        },
+        content={"error": {"code": "VALIDATION_ERROR", "message": "Please check the highlighted fields", "fields": fields}},
     )
 
 
@@ -97,12 +90,7 @@ async def validation_error(
 async def unexpected_error(_request: Request, _exc: Exception) -> JSONResponse:
     return JSONResponse(
         status_code=500,
-        content={
-            "error": {
-                "code": "INTERNAL_ERROR",
-                "message": "Something went wrong. Please try again.",
-            }
-        },
+        content={"error": {"code": "INTERNAL_ERROR", "message": "Something went wrong. Please try again."}},
     )
 
 
@@ -117,13 +105,7 @@ def ready() -> dict[str, str]:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
     except SQLAlchemyError as exc:
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "code": "NOT_READY",
-                "message": "A required service is unavailable",
-            },
-        ) from exc
+        raise HTTPException(status_code=503, detail={"code": "NOT_READY", "message": "A required service is unavailable"}) from exc
     return {"status": "ready"}
 
 
@@ -138,8 +120,10 @@ for router in (
     career_intelligence_v2.router,
     candidate_platform.router,
     semantic_matching.router,
+    company_intelligence.router,
     employer_platform.router,
     billing_platform.router,
+    privacy.router,
 ):
     app.include_router(router, prefix="/api/v1")
 
@@ -149,27 +133,16 @@ for product_router in (
     career_product_polish.router,
     career_product.router,
 ):
-    app.include_router(
-        product_router,
-        prefix="/api/v1",
-        include_in_schema=False,
-    )
+    app.include_router(product_router, prefix="/api/v1", include_in_schema=False)
 
-app.include_router(
-    job_imports.router,
-    prefix="/api/v1",
-    include_in_schema=False,
-)
+app.include_router(job_imports.router, prefix="/api/v1", include_in_schema=False)
 
 for internal_router in (
     internal_job_sources.router,
     internal_job_discoveries.router,
     internal_job_quality.router,
     internal_ai_quality.router,
+    internal_ai_evaluation.router,
     internal_platform_admin.router,
 ):
-    app.include_router(
-        internal_router,
-        prefix="/api/v1",
-        include_in_schema=False,
-    )
+    app.include_router(internal_router, prefix="/api/v1", include_in_schema=False)

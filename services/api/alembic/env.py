@@ -13,6 +13,7 @@ from app import (  # noqa: F401
     job_source_models,
     models,
     platform_models,
+    privacy_models,
 )
 
 

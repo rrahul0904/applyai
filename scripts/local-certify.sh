@@ -13,7 +13,7 @@ cleanup() {
   done
   wait >/dev/null 2>&1 || true
   if [[ "${KEEP_LOCAL_CERT_ENV:-0}" != "1" ]]; then
-    docker compose stop localstack mailpit stripe-mock >/dev/null 2>&1 || true
+    docker compose stop postgres localstack mailpit stripe-mock >/dev/null 2>&1 || true
   fi
   exit "$exit_code"
 }
@@ -28,6 +28,7 @@ require node
 require pnpm
 require python3
 require uv
+require curl
 
 docker info >/dev/null 2>&1 || { echo "ERROR: Docker daemon is not running" >&2; exit 1; }
 
@@ -60,19 +61,24 @@ CREATE DATABASE applyai_cleanroom OWNER applyai;
 SQL
 }
 
+CLEAN_DATABASE_URL="postgresql+psycopg://applyai:applyai@127.0.0.1:55432/applyai_cleanroom"
+export E2E_RESUME_PATH="${E2E_RESUME_PATH:-/tmp/applyai-cleanroom-resume.docx}"
+
 reset_database
 
 echo "==> Bootstrapping production-shaped local S3/SQS resources"
 AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1 \
   uv run --project services/api python services/api/scripts/bootstrap_local_services.py
-# shellcheck disable=SC1091
-source .local/runtime.env
-export LOCAL_CLEANROOM=1
-export E2E_RESUME_PATH="${E2E_RESUME_PATH:-/tmp/applyai-cleanroom-resume.docx}"
 
+# Repository tests must run in their normal deterministic test configuration. Do not source
+# LocalStack/dev-auth/Stripe settings until those tests are complete; otherwise their explicit
+# fail-closed configuration tests would be contaminated by clean-room runtime environment values.
 echo "==> Validating migrations and API tests from a clean database"
 (
   cd services/api
+  export DATABASE_URL="$CLEAN_DATABASE_URL"
+  export TEST_DATABASE_URL="$CLEAN_DATABASE_URL"
+  export E2E_DATABASE_URL="$CLEAN_DATABASE_URL"
   uv run alembic upgrade head
   uv run alembic current
   uv run alembic check
@@ -86,9 +92,22 @@ pnpm test:web
 pnpm build
 pnpm openapi:check
 
-# API tests deliberately exercise database rollback/reset behavior. Recreate the clean-room
-# application database before deterministic seed + real local-service acceptance.
+# Repository tests exercise rollback/reset behavior. Recreate the application database before
+# switching to production-shaped local service providers and deterministic application data.
 reset_database
+# shellcheck disable=SC1091
+source .local/runtime.env
+export LOCAL_CLEANROOM=1
+export LOCAL_PROVIDER_MOCK_URL="http://127.0.0.1:8099"
+
+echo "==> Starting local Clerk/JWKS and OpenAI protocol mock"
+(cd services/api && uv run python scripts/local_provider_mock.py >"$ROOT/.local/provider-mock.log" 2>&1) & PIDS+=("$!")
+for _ in $(seq 1 40); do
+  if curl -fsS "$LOCAL_PROVIDER_MOCK_URL/health" >/dev/null 2>&1; then break; fi
+  sleep 0.25
+done
+curl -fsS "$LOCAL_PROVIDER_MOCK_URL/health" >/dev/null
+
 (
   cd services/api
   uv run alembic upgrade head
@@ -105,7 +124,7 @@ echo "==> Launching local outbox and background workers"
 (cd services/api && uv run python -m app.workers.ai >"$ROOT/.local/ai-worker.log" 2>&1) & PIDS+=("$!")
 sleep 2
 for pid in "${PIDS[@]}"; do
-  kill -0 "$pid" >/dev/null 2>&1 || { echo "ERROR: a background worker failed to start; inspect .local/*.log" >&2; exit 1; }
+  kill -0 "$pid" >/dev/null 2>&1 || { echo "ERROR: a local provider/worker process failed to start; inspect .local/*.log" >&2; exit 1; }
 done
 
 echo "==> Installing Chromium for browser acceptance"
@@ -118,9 +137,9 @@ fi
 echo "==> Running browser -> Next.js -> FastAPI -> PostgreSQL -> LocalStack clean-room journey"
 pnpm --dir apps/web exec playwright test --config=playwright.cleanroom.config.ts
 
-echo "==> Checking worker health after browser execution"
+echo "==> Checking local provider/worker health after browser execution"
 for pid in "${PIDS[@]}"; do
-  kill -0 "$pid" >/dev/null 2>&1 || { echo "ERROR: a background worker exited during certification; inspect .local/*.log" >&2; exit 1; }
+  kill -0 "$pid" >/dev/null 2>&1 || { echo "ERROR: a local provider/worker process exited during certification; inspect .local/*.log" >&2; exit 1; }
 done
 
 echo
@@ -128,12 +147,14 @@ printf '%s\n' \
   "PASS ApplyAI local clean-room certification" \
   "  - fresh locked dependency install" \
   "  - clean PostgreSQL database + Alembic zero-to-head/drift" \
-  "  - API/web/OpenAPI validation" \
+  "  - API/web/OpenAPI validation in isolated test configuration" \
   "  - LocalStack S3 direct/presigned object operations" \
   "  - LocalStack SQS + outbox + background workers" \
   "  - Mailpit SMTP delivery" \
   "  - stripe-mock checkout + signed webhook + portal" \
   "  - deterministic local AI provider" \
-  "  - dev-test local auth boundary" \
+  "  - Clerk RS256 JWT/JWKS protocol through the real ClerkAuthProvider" \
+  "  - OpenAI Responses + embeddings HTTP protocol through the real provider clients" \
+  "  - dev-test local browser authentication" \
   "  - canonical browser workflows and route sweep" \
-  "Live Clerk/OpenAI/Stripe/AWS/email-provider acceptance remains a separate credential-backed gate."
+  "Live Clerk/OpenAI/Stripe/AWS/email-provider accounts remain a separate credential-backed acceptance gate."

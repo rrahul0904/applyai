@@ -1,4 +1,5 @@
 import json
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from threading import Lock
@@ -18,6 +19,16 @@ AI_TASK_TYPES = {
     "AI_INTERVIEW_PREP",
 }
 SPECIAL_TASK_TYPES = SOURCE_TASK_TYPES | AI_TASK_TYPES
+
+
+def sqs_client(*, region: str):
+    """Create the SQS client, honoring a local/emulator endpoint when explicitly set.
+
+    Production does not set SQS_ENDPOINT_URL, so normal AWS endpoint resolution is preserved.
+    Local clean-room runs set it to LocalStack and use disposable development credentials.
+    """
+    endpoint_url = os.getenv("SQS_ENDPOINT_URL") or None
+    return boto3.client("sqs", region_name=region, endpoint_url=endpoint_url)
 
 
 @dataclass(frozen=True)
@@ -50,7 +61,7 @@ class InMemoryTaskQueue(TaskQueue):
 class SqsTaskQueue(TaskQueue):
     def __init__(self, queue_url: str, region: str) -> None:
         self.queue_url = queue_url
-        self.client = boto3.client("sqs", region_name=region)
+        self.client = sqs_client(region=region)
 
     def enqueue(self, task: Task) -> None:
         kwargs: dict[str, Any] = {
@@ -100,7 +111,7 @@ def get_task_queue_for_type(
 
     Dedicated source and AI task families fail closed when their queue is absent. This
     prevents an incorrectly configured publisher from routing specialized work onto the
-    resume/default queue.
+    resume queue.
     """
     is_source_task = task_type in SOURCE_TASK_TYPES
     is_ai_task = task_type in AI_TASK_TYPES

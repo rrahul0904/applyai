@@ -162,6 +162,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/career-v2/artifacts/{artifact_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Artifact */
+        get: operations["get_artifact_api_v1_career_v2_artifacts__artifact_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/career-v2/artifacts/{artifact_id}/feedback": {
         parameters: {
             query?: never;
@@ -207,6 +224,40 @@ export interface paths {
         put?: never;
         /** Create Ai Task */
         post: operations["create_ai_task_api_v1_career_v2_jobs__job_id___task_path__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/career-v2/matches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Career Matches */
+        get: operations["list_career_matches_api_v1_career_v2_matches_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/career-v2/matches/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Career Match */
+        get: operations["get_career_match_api_v1_career_v2_matches__job_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -544,6 +595,100 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AIArtifactListResponse */
+        AIArtifactListResponse: {
+            /** Items */
+            items: components["schemas"]["AIArtifactResponse"][];
+        };
+        /** AIArtifactResponse */
+        AIArtifactResponse: {
+            /** Application Id */
+            application_id: string | null;
+            /** Artifact Type */
+            artifact_type: string;
+            /** Candidate Verified */
+            candidate_verified: boolean;
+            /** Content */
+            content: {
+                [key: string]: unknown;
+            };
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Evidence */
+            evidence: {
+                [key: string]: unknown;
+            };
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Job Id */
+            job_id: string | null;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /** Status */
+            status: string;
+            /** Version */
+            version: number;
+        };
+        /** AIJobRunResponse */
+        AIJobRunResponse: {
+            /** Application Id */
+            application_id: string | null;
+            /** Attempt Count */
+            attempt_count: number;
+            /** Completed At */
+            completed_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Error Code */
+            error_code: string | null;
+            /** Estimated Cost Usd */
+            estimated_cost_usd: number | null;
+            /** Evidence Refs */
+            evidence_refs: string[];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Input Hash */
+            input_hash: string;
+            /** Input Tokens */
+            input_tokens: number | null;
+            /** Job Id */
+            job_id: string | null;
+            /** Latency Ms */
+            latency_ms: number | null;
+            /** Model */
+            model: string;
+            /** Output */
+            output: {
+                [key: string]: unknown;
+            } | null;
+            /** Output Tokens */
+            output_tokens: number | null;
+            /** Prompt Version */
+            prompt_version: string;
+            /** Provider */
+            provider: string;
+            /** Schema Version */
+            schema_version: string;
+            /** Status */
+            status: string;
+            /** Task Type */
+            task_type: string;
+        };
         /** ApplicationCreate */
         ApplicationCreate: {
             /**
@@ -677,6 +822,21 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** ArtifactFeedbackResponse */
+        ArtifactFeedbackResponse: {
+            /** Action */
+            action: string;
+            /**
+             * Artifact Id
+             * Format: uuid
+             */
+            artifact_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
         /** Body_upload_resume_api_v1_resumes_post */
         Body_upload_resume_api_v1_resumes_post: {
             /** File */
@@ -749,6 +909,46 @@ export interface components {
             /** Title */
             title?: string | null;
         };
+        /** CareerMatchV2ListResponse */
+        CareerMatchV2ListResponse: {
+            /** Items */
+            items: components["schemas"]["CareerMatchV2Response"][];
+        };
+        /** CareerMatchV2Response */
+        CareerMatchV2Response: {
+            /** Ai Score */
+            ai_score?: number | null;
+            /** Confidence */
+            confidence: string;
+            /** Decision */
+            decision: string;
+            /** Deterministic Score */
+            deterministic_score: number;
+            /** Engine Version */
+            engine_version: string;
+            /** Evidence */
+            evidence: {
+                [key: string]: unknown;
+            };
+            /** Factors */
+            factors: {
+                [key: string]: unknown;
+            }[];
+            /** Final Score */
+            final_score: number;
+            /** Fit Band */
+            fit_band: string;
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /** CareerMemorySummaryResponse */
         CareerMemorySummaryResponse: {
             /** By Category */
@@ -757,6 +957,18 @@ export interface components {
             };
             /** Verified Fact Count */
             verified_fact_count: number;
+        };
+        /** CoverLetterReviewResponse */
+        CoverLetterReviewResponse: {
+            /** Body */
+            body: string;
+            /** Candidate Verified */
+            candidate_verified: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
         };
         /** CoverLetterReviewWrite */
         CoverLetterReviewWrite: {
@@ -992,6 +1204,20 @@ export interface components {
             /** Years Experience */
             years_experience?: number | null;
         };
+        /** QuestionDraftReviewResponse */
+        QuestionDraftReviewResponse: {
+            /** Answer */
+            answer: string | null;
+            /** Candidate Verified */
+            candidate_verified: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Question */
+            question: string;
+        };
         /** QuestionReviewWrite */
         QuestionReviewWrite: {
             /** Answer */
@@ -1027,6 +1253,22 @@ export interface components {
             structured_data: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** ResumeRevisionReviewResponse */
+        ResumeRevisionReviewResponse: {
+            /** Decision */
+            decision: string;
+            /** Position */
+            position: number;
+            /** Status */
+            status: string;
+            /**
+             * Tailoring Id
+             * Format: uuid
+             */
+            tailoring_id: string;
+            /** Text */
+            text: string | null;
         };
         /** ResumeUploadIntentResponse */
         ResumeUploadIntentResponse: {
@@ -1564,6 +1806,7 @@ export interface operations {
             query?: {
                 job_id?: string | null;
                 artifact_type?: string | null;
+                include_superseded?: boolean;
                 limit?: number;
             };
             header?: never;
@@ -1578,9 +1821,38 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["AIArtifactListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_artifact_api_v1_career_v2_artifacts__artifact_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artifact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AIArtifactResponse"];
                 };
             };
             /** @description Validation Error */
@@ -1615,9 +1887,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ArtifactFeedbackResponse"];
                 };
             };
             /** @description Validation Error */
@@ -1652,9 +1922,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["CoverLetterReviewResponse"];
                 };
             };
             /** @description Validation Error */
@@ -1686,9 +1954,69 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["AIJobRunResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_career_matches_api_v1_career_v2_matches_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CareerMatchV2ListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_career_match_api_v1_career_v2_matches__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CareerMatchV2Response"];
                 };
             };
             /** @description Validation Error */
@@ -1723,9 +2051,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["QuestionDraftReviewResponse"];
                 };
             };
             /** @description Validation Error */
@@ -1756,9 +2082,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["AIJobRunResponse"];
                 };
             };
             /** @description Validation Error */
@@ -1789,9 +2113,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["AIJobRunResponse"];
                 };
             };
             /** @description Validation Error */
@@ -1827,9 +2149,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ResumeRevisionReviewResponse"];
                 };
             };
             /** @description Validation Error */

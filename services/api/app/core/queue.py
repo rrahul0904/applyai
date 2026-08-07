@@ -17,6 +17,7 @@ AI_TASK_TYPES = {
     "AI_APPLICATION_COPILOT",
     "AI_INTERVIEW_PREP",
 }
+SPECIAL_TASK_TYPES = SOURCE_TASK_TYPES | AI_TASK_TYPES
 
 
 @dataclass(frozen=True)
@@ -63,7 +64,10 @@ class SqsTaskQueue(TaskQueue):
             ),
             "MessageAttributes": {
                 "task_type": {"DataType": "String", "StringValue": task.task_type},
-                "idempotency_key": {"DataType": "String", "StringValue": task.idempotency_key},
+                "idempotency_key": {
+                    "DataType": "String",
+                    "StringValue": task.idempotency_key,
+                },
             },
         }
         if self.queue_url.endswith(".fifo"):
@@ -77,6 +81,16 @@ _source_development_queue = InMemoryTaskQueue()
 _ai_development_queue = InMemoryTaskQueue()
 
 
+def supports_task_type(settings: Settings, task_type: str) -> bool:
+    if settings.task_queue_provider != "sqs":
+        return True
+    if task_type in AI_TASK_TYPES:
+        return bool(settings.ai_sqs_queue_url)
+    if task_type in SOURCE_TASK_TYPES:
+        return bool(settings.source_sqs_queue_url)
+    return bool(settings.sqs_queue_url)
+
+
 def get_task_queue_for_type(
     settings: Settings,
     *,
@@ -84,21 +98,24 @@ def get_task_queue_for_type(
 ) -> TaskQueue:
     """Resolve a queue for a server-owned task type.
 
-    This function is intentionally not a FastAPI dependency. Keeping task_type out of
-    dependency signatures prevents internal worker-routing details from becoming public
-    request parameters in OpenAPI.
+    Dedicated source and AI task families fail closed when their queue is absent. This
+    prevents an incorrectly configured publisher from routing specialized work onto the
+    resume/default queue.
     """
     is_source_task = task_type in SOURCE_TASK_TYPES
     is_ai_task = task_type in AI_TASK_TYPES
     if settings.task_queue_provider == "sqs":
         if is_ai_task:
-            queue_url = settings.ai_sqs_queue_url or settings.sqs_queue_url
+            queue_url = settings.ai_sqs_queue_url
+            family = "AI"
         elif is_source_task:
-            queue_url = settings.source_sqs_queue_url or settings.sqs_queue_url
+            queue_url = settings.source_sqs_queue_url
+            family = "source"
         else:
             queue_url = settings.sqs_queue_url
+            family = "default"
         if not queue_url:
-            raise RuntimeError("A queue URL is required for the SQS task provider")
+            raise RuntimeError(f"A dedicated {family} queue URL is required")
         return SqsTaskQueue(queue_url, settings.sqs_region)
     if is_ai_task:
         return _ai_development_queue

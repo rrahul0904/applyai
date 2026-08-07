@@ -12,7 +12,7 @@ variable "ai_provider" {
 variable "openai_api_key_secret_arn" {
   description = "Optional Secrets Manager ARN containing the OpenAI API key for the AI worker."
   type        = string
-  default     = null
+  default     = ""
 }
 
 variable "openai_model" {
@@ -101,6 +101,19 @@ variable "ai_queue_depth_alarm_threshold" {
 variable "ai_queue_age_alarm_seconds" {
   type    = number
   default = 600
+}
+
+resource "terraform_data" "ai_runtime_guardrails" {
+  lifecycle {
+    precondition {
+      condition = !(
+        var.ai_worker_desired_count > 0 &&
+        var.ai_provider == "openai" &&
+        trimspace(var.openai_api_key_secret_arn) == ""
+      )
+      error_message = "OpenAI AI workers require openai_api_key_secret_arn."
+    }
+  }
 }
 
 resource "aws_sqs_queue" "ai_dlq" {
@@ -200,7 +213,7 @@ resource "aws_iam_role_policy" "universal_outbox_queues" {
 }
 
 resource "aws_iam_role_policy" "ecs_execution_openai_secret" {
-  count = var.openai_api_key_secret_arn == null ? 0 : 1
+  count = trimspace(var.openai_api_key_secret_arn) == "" ? 0 : 1
 
   name = "openai-api-key-secret"
   role = aws_iam_role.ecs_execution.id
@@ -245,7 +258,7 @@ locals {
 
   ai_worker_secrets = concat(
     local.database_secrets,
-    var.openai_api_key_secret_arn == null ? [] : [
+    trimspace(var.openai_api_key_secret_arn) == "" ? [] : [
       {
         name      = "OPENAI_API_KEY"
         valueFrom = var.openai_api_key_secret_arn
@@ -286,6 +299,8 @@ resource "aws_ecs_task_definition" "ai_worker" {
       }
     }
   ])
+
+  depends_on = [terraform_data.ai_runtime_guardrails]
 }
 
 resource "aws_ecs_service" "ai_worker" {

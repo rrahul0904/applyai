@@ -38,6 +38,16 @@ def billing_provider() -> str:
     return os.getenv("BILLING_PROVIDER", "internal").strip().lower()
 
 
+def stripe_api_base_url() -> str:
+    """Return the Stripe API origin.
+
+    Production leaves STRIPE_API_BASE_URL unset and therefore uses Stripe directly. Local
+    clean-room certification points this at stripe-mock so checkout/portal HTTP integration is
+    exercised without a live account or secret.
+    """
+    return os.getenv("STRIPE_API_BASE_URL", "https://api.stripe.com").rstrip("/")
+
+
 def _subscription(session: Session, user: User) -> Subscription:
     item = session.scalar(select(Subscription).where(Subscription.user_id == user.id))
     if item is None:
@@ -87,7 +97,7 @@ def create_checkout(payload: CheckoutWrite, user: User = Depends(get_current_use
     }
     try:
         with httpx.Client(timeout=20.0) as client:
-            response = client.post("https://api.stripe.com/v1/checkout/sessions", headers={"Authorization": f"Bearer {secret}"}, data=data)
+            response = client.post(f"{stripe_api_base_url()}/v1/checkout/sessions", headers={"Authorization": f"Bearer {secret}"}, data=data)
         response.raise_for_status()
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=503, detail="Billing provider is unavailable") from exc
@@ -105,7 +115,7 @@ def create_portal(user: User = Depends(get_current_user), session: Session = Dep
     settings = get_settings()
     try:
         with httpx.Client(timeout=20.0) as client:
-            response = client.post("https://api.stripe.com/v1/billing_portal/sessions", headers={"Authorization": f"Bearer {secret}"}, data={"customer": item.provider_customer_id, "return_url": f"{settings.web_origin}/settings"})
+            response = client.post(f"{stripe_api_base_url()}/v1/billing_portal/sessions", headers={"Authorization": f"Bearer {secret}"}, data={"customer": item.provider_customer_id, "return_url": f"{settings.web_origin}/settings"})
         response.raise_for_status()
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=503, detail="Billing provider is unavailable") from exc

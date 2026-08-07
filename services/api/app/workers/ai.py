@@ -5,10 +5,9 @@ import logging
 import threading
 import uuid
 
-import boto3
-
 from app.ai.runtime import execute_ai_run
 from app.core.config import Settings, get_settings
+from app.core.queue import sqs_client
 
 
 logger = logging.getLogger("applyai.ai_worker")
@@ -33,14 +32,7 @@ def process_message(body: str, settings: Settings) -> bool:
     return execute_ai_run(run_id, settings)
 
 
-def _visibility_heartbeat(
-    *,
-    client,
-    queue_url: str,
-    receipt_handle: str,
-    settings: Settings,
-    stop: threading.Event,
-) -> None:
+def _visibility_heartbeat(*, client, queue_url: str, receipt_handle: str, settings: Settings, stop: threading.Event) -> None:
     while not stop.wait(settings.ai_sqs_visibility_heartbeat_seconds):
         try:
             client.change_message_visibility(
@@ -59,11 +51,8 @@ def run_worker(settings: Settings | None = None) -> None:
     queue_url = settings.ai_sqs_queue_url or settings.sqs_queue_url
     if settings.task_queue_provider != "sqs" or not queue_url:
         raise RuntimeError("AI worker requires TASK_QUEUE_PROVIDER=sqs and an AI/default queue URL")
-    client = boto3.client("sqs", region_name=settings.sqs_region)
-    logger.info(
-        "ai_worker_started",
-        extra={"visibility_timeout": settings.ai_sqs_visibility_timeout_seconds},
-    )
+    client = sqs_client(region=settings.sqs_region)
+    logger.info("ai_worker_started", extra={"visibility_timeout": settings.ai_sqs_visibility_timeout_seconds})
     while True:
         response = client.receive_message(
             QueueUrl=queue_url,

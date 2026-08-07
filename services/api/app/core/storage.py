@@ -1,9 +1,11 @@
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO
 
 import boto3
+from botocore.config import Config
 from fastapi import Depends
 
 from app.core.config import Settings, get_settings
@@ -82,10 +84,14 @@ class S3ObjectStorageProvider(ObjectStorageProvider):
         if not settings.s3_bucket:
             raise RuntimeError("S3_BUCKET is required for the S3 storage provider")
         self.bucket = settings.s3_bucket
+        addressing_style = os.getenv("S3_ADDRESSING_STYLE", "auto").strip().lower()
+        if addressing_style not in {"auto", "path", "virtual"}:
+            raise RuntimeError("S3_ADDRESSING_STYLE must be auto, path, or virtual")
         self.client = boto3.client(
             "s3",
             region_name=settings.s3_region,
             endpoint_url=settings.s3_endpoint_url,
+            config=Config(s3={"addressing_style": addressing_style}),
         )
 
     @property

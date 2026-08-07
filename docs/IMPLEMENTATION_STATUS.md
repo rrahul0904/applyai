@@ -26,6 +26,9 @@ Statuses are intentionally restricted to:
 | OpenAPI contract discipline | COMPLETE | Public APIs are typed, generated client contract is committed, the temporary generation workflow is removed, and exact-head drift validation passes. |
 | Database migrations | COMPLETE | Alembic revisions cover Career Intelligence, Career Memory and platform-completion domains; zero-to-head and metadata drift validation pass. |
 | Canonical browser acceptance | COMPLETE | Browser -> Next.js -> FastAPI -> PostgreSQL journey covers onboarding, resume review, search, save, application persistence, canonical platform workspaces, relogin and ownership isolation. |
+| Fresh local clean-room reproducibility | COMPLETE | `pnpm local:certify` is executed by a dedicated fresh-checkout workflow and has passed from a pristine GitHub-hosted Ubuntu runner: locked install, clean DB recreation, migrations, isolated API/web/OpenAPI gates, deterministic seed, local integrations, workers and browser acceptance. This does not guarantee every host-specific workstation configuration. |
+| Production-shaped local S3/SQS/SMTP integration | COMPLETE | LocalStack exercises the real boto3 S3/SQS code paths including presigned resume PUTs, separate queue families/DLQs and live outbox/workers; Mailpit exercises the real SMTP provider and captured delivery. |
+| Local Clerk/OpenAI/Stripe protocol integration | COMPLETE | A controlled local provider server exercises the real Clerk RS256/JWKS verifier, real OpenAI Responses and embeddings clients, and Stripe checkout/portal request handling; ApplyAI separately verifies signed Stripe webhook persistence. These are local protocol tests, not live vendor-account acceptance. |
 | Career Intelligence V1 baseline | COMPLETE | Deterministic six-factor explainable prioritization, evidence-locked tailoring and application-readiness baseline remain supported. |
 | Career Intelligence V2 domain | COMPLETE | `AIJobRun`, versioned `AIArtifact`, `CareerMatch`, tailoring/revisions, cover letters, application-question drafts, feedback and durable persistence are implemented. |
 | Verified Career Memory | COMPLETE | Candidate-owned verified achievements, projects, metrics, responsibilities, certifications, leadership stories, interview feedback and goals have CRUD/summary/archive/provenance behavior and AI evidence inclusion. |
@@ -52,7 +55,7 @@ Statuses are intentionally restricted to:
 | Native mobile source | COMPLETE | Expo/React Native candidate client with Clerk secure token handling and native Matches, Jobs, Applications, Alerts and Profile/Career Memory screens is source controlled; mobile TS/TSX source is compiled in repository tests. |
 | Candidate web product consolidation | COMPLETE | Historical `/demo` and `/beta` entry points redirect to canonical `/dashboard` and `/matches`; the real candidate navigation exposes Matches, Resume Studio, Network, Analytics, Alerts, Billing and Career Intelligence. |
 | Public pricing/settings | COMPLETE | Pricing surface, subscription controls, alert settings and privacy export/deletion controls are implemented. |
-| CI and repository quality gates | COMPLETE | Web lint/typecheck/tests/build, mobile/extension source validation, API tests, Docker, Alembic, OpenAPI, Terraform, Playwright, CloudFormation/workflow validation, demo capture and scale benchmarks are source controlled. |
+| CI and repository quality gates | COMPLETE | Web lint/typecheck/tests/build, mobile/extension source validation, API tests, Docker, Alembic, OpenAPI, Terraform, Playwright, CloudFormation/workflow validation, demo capture, clean-room certification and scale benchmarks are source controlled. |
 | AWS staging infrastructure source | COMPLETE | VPC/ALB/ECS/Aurora/S3/ECR, resume/source/AI queues and DLQs, IAM, EventBridge, logs/alarms, migrations and worker services are source controlled and Terraform-validated. |
 | AWS bootstrap source | COMPLETE | CloudFormation bootstrap creates/reuses GitHub OIDC trust, encrypted/versioned state and staging deployment role without long-lived normal deployment keys. |
 | Staging release/rollback/verification automation | COMPLETE | Immutable-image release, migration gate, runtime activation, rollback and candidate/source/AI verification workflows are implemented and statically validated. |
@@ -66,9 +69,10 @@ Statuses are intentionally restricted to:
 | AWS/Vercel/Clerk staging deployment | BLOCKED | Create the real staging environment, OIDC outputs, ACM/DNS, Clerk app and Vercel project/domain, then run the release/verification workflows. |
 | Real-service candidate acceptance | BLOCKED | Prove Clerk -> Vercel -> ECS -> Aurora and browser -> S3 -> outbox -> resume SQS -> worker, including candidate isolation and recovery drills. |
 | Real ATS/provider acceptance | BLOCKED | Run reviewed public providers in staging and measure freshness, dedup, closure recovery, throughput and cost. |
-| Live OpenAI acceptance | BLOCKED | Inject the reviewed secret/model, execute AI/embedding paths, measure latency/tokens/cost, and prove retry/DLQ/schema/evidence-failure behavior. |
-| Live Stripe acceptance | BLOCKED | Configure the real Stripe account, price IDs and webhook secret, then exercise checkout, portal and signed webhook lifecycle. |
-| Real email/push delivery | BLOCKED | Select/configure delivery providers and prove notification delivery, opt-out and failure handling. Durable notification state already exists. |
+| Live Clerk account acceptance | BLOCKED | Exercise real Clerk sign-up/sign-in/sign-out, issuer/JWKS rotation behavior and account lifecycle against a configured Clerk tenant. Local RS256/JWKS protocol verification is already certified separately. |
+| Live OpenAI acceptance | BLOCKED | Inject the reviewed secret/model, execute AI/embedding paths, measure latency/tokens/cost, and prove retry/DLQ/schema/evidence-failure behavior. Local Responses/embedding protocol integration is already certified separately. |
+| Live Stripe acceptance | BLOCKED | Configure the real Stripe account, price IDs and webhook secret, then exercise checkout, portal and signed webhook lifecycle. Local request/response/webhook integration is already certified separately. |
+| Real email/push delivery | BLOCKED | Select/configure delivery providers and prove notification delivery, opt-out and failure handling. Local SMTP delivery through Mailpit is already certified. |
 | Production cloud deployment | BLOCKED | Promote only after staging evidence and measured capacity/security/recovery decisions. |
 | Production backup/restore and failure drills | BLOCKED | Execute PITR/restore, rollback, queue recovery and incident drills against real infrastructure. |
 | Native mobile signing/store release | BLOCKED | Configure Apple/Google developer identities, signing/EAS credentials, native builds and App Store/Play Store publication. |
@@ -93,6 +97,7 @@ API production Docker build
 Terraform validation
 Candidate browser journey
 Demo capture
+Fresh local clean-room certification
 GitHub workflow validation
 AWS bootstrap validation
 10K / 50K / 250K PostgreSQL search benchmark

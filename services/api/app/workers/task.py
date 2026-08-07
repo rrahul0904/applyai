@@ -4,9 +4,8 @@ import json
 import logging
 import threading
 
-import boto3
-
 from app.core.config import Settings, get_settings
+from app.core.queue import sqs_client
 from app.workers.discovery import process_message as process_discovery_message
 from app.workers.resume import process_message as process_resume_message
 
@@ -26,19 +25,10 @@ def process_message(body: str, settings: Settings) -> bool:
     if task_type in {"JOB_URL_IMPORT", "SOURCE_DISCOVERY"}:
         return process_discovery_message(body, settings)
     logger.warning("task_worker_unsupported_task", extra={"task_type": task_type})
-    # Unknown task types are acknowledged so one malformed producer cannot poison
-    # this queue indefinitely. Supported domain tasks remain idempotent/retryable.
     return True
 
 
-def _visibility_heartbeat(
-    *,
-    client,
-    queue_url: str,
-    receipt_handle: str,
-    settings: Settings,
-    stop: threading.Event,
-) -> None:
+def _visibility_heartbeat(*, client, queue_url: str, receipt_handle: str, settings: Settings, stop: threading.Event) -> None:
     while not stop.wait(settings.sqs_visibility_heartbeat_seconds):
         try:
             client.change_message_visibility(
@@ -57,11 +47,8 @@ def run_worker(settings: Settings | None = None) -> None:
     if settings.task_queue_provider != "sqs" or not settings.sqs_queue_url:
         raise RuntimeError("Task worker requires TASK_QUEUE_PROVIDER=sqs and SQS_QUEUE_URL")
 
-    client = boto3.client("sqs", region_name=settings.sqs_region)
-    logger.info(
-        "task_worker_started",
-        extra={"visibility_timeout": settings.sqs_visibility_timeout_seconds},
-    )
+    client = sqs_client(region=settings.sqs_region)
+    logger.info("task_worker_started", extra={"visibility_timeout": settings.sqs_visibility_timeout_seconds})
     while True:
         response = client.receive_message(
             QueueUrl=settings.sqs_queue_url,
@@ -95,10 +82,7 @@ def run_worker(settings: Settings | None = None) -> None:
                 heartbeat.join(timeout=1)
 
             if acknowledged:
-                client.delete_message(
-                    QueueUrl=settings.sqs_queue_url,
-                    ReceiptHandle=receipt_handle,
-                )
+                client.delete_message(QueueUrl=settings.sqs_queue_url, ReceiptHandle=receipt_handle)
 
 
 if __name__ == "__main__":

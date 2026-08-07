@@ -23,9 +23,7 @@ def upgrade() -> None:
         sa.Column("subject_hash", sa.String(64), nullable=False, unique=True),
         sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
     )
-    op.create_index("ix_deleted_identities_subject_hash", "deleted_identities", ["subject_hash"], unique=True)
 
 
 def downgrade() -> None:
-    op.drop_index("ix_deleted_identities_subject_hash", table_name="deleted_identities")
     op.drop_table("deleted_identities")

@@ -1,0 +1,13 @@
+import { useEffect, useState } from "react";
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { type MobileMatch, useApplyAIApi } from "@/lib/api";
+
+export default function MatchesScreen() {
+  const { request } = useApplyAIApi();
+  const [items, setItems] = useState<MobileMatch[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState<string | null>(null);
+  const load = async () => { try { setError(null); const data = await request<{ items: MobileMatch[] }>("/semantic-matches?limit=30"); setItems(data.items); } catch (e) { setError(e instanceof Error ? e.message : "Could not load matches"); } finally { setLoading(false); } };
+  useEffect(() => { void load(); }, [request]);
+  if (loading) return <View style={styles.center}><ActivityIndicator /></View>;
+  return <ScrollView style={styles.screen} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading} onRefresh={() => { setLoading(true); void load(); }} />}><Text style={styles.eyebrow}>OPPORTUNITY INTELLIGENCE</Text><Text style={styles.title}>AI Matches</Text><Text style={styles.subtitle}>Semantic ranking against your verified goals and skills. Scores prioritize your search; they are not hiring probabilities.</Text>{error ? <Text style={styles.error}>{error}</Text> : null}{items.map((item) => <View key={item.job_id} style={styles.card}><View style={styles.row}><View style={{ flex: 1 }}><Text style={styles.cardTitle}>{item.title}</Text><Text style={styles.company}>{item.company}</Text></View><Text style={styles.score}>{Math.max(0, Math.round(item.semantic_score))}</Text></View><Text style={styles.explanation}>{item.explanation}</Text></View>)}{!items.length ? <Text style={styles.subtitle}>Complete your profile and Career Memory to generate matches.</Text> : null}</ScrollView>;
+}
+const styles = StyleSheet.create({ screen:{flex:1,backgroundColor:"#f6f8fb"},content:{padding:18,gap:12},center:{flex:1,alignItems:"center",justifyContent:"center"},eyebrow:{fontSize:11,fontWeight:"800",color:"#155eef"},title:{fontSize:30,fontWeight:"800",color:"#10233f"},subtitle:{fontSize:15,lineHeight:22,color:"#53657d",marginBottom:6},card:{padding:16,borderRadius:14,backgroundColor:"white",borderWidth:1,borderColor:"#e2e8f0",gap:8},row:{flexDirection:"row",gap:12,alignItems:"center"},cardTitle:{fontSize:18,fontWeight:"750",color:"#10233f"},company:{color:"#53657d",marginTop:4},score:{fontSize:22,fontWeight:"800",color:"#155eef"},explanation:{fontSize:13,lineHeight:19,color:"#66758a"},error:{color:"#b42318"} });

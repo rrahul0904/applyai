@@ -6,6 +6,7 @@ from sqlalchemy import engine_from_config, pool
 from app.core.config import get_settings
 from app.core.database import Base
 from app import (  # noqa: F401
+    career_memory_models,
     career_models,
     durability_models,
     job_quality_models,

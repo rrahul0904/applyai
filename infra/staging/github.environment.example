@@ -20,3 +20,14 @@ CLERK_AUDIENCE=applyai-staging-api
 GREENHOUSE_BOARD_TOKENS=["example-board"]
 LEVER_SITE_NAMES=["example-site"]
 ASHBY_BOARD_NAMES=["example-board"]
+
+# Career Intelligence V2 runtime. `deterministic` is the safe infrastructure smoke-test
+# provider. Switch to `openai` only after the model and credential have been reviewed.
+AI_PROVIDER=deterministic
+OPENAI_MODEL=gpt-5.6-luna
+OPENAI_REASONING_EFFORT=low
+
+# This is a Secrets Manager ARN, not the API key itself. It may remain blank while
+# AI_PROVIDER=deterministic or AI workers are intentionally dormant. When AI_PROVIDER=openai
+# and workers are enabled, the staging release workflow fails closed unless this is set.
+OPENAI_API_KEY_SECRET_ARN=

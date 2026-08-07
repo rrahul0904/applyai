@@ -198,8 +198,6 @@ class Settings(BaseSettings):
         if self.ai_provider not in {"deterministic", "openai"}:
             raise ValueError("AI_PROVIDER must be deterministic or openai")
         if self.ai_provider == "openai":
-            if not self.openai_api_key:
-                raise ValueError("OPENAI_API_KEY is required when AI_PROVIDER=openai")
             if not self.openai_base_url.startswith("https://"):
                 raise ValueError("OPENAI_BASE_URL must use HTTPS")
             if durable_environment:

@@ -27,7 +27,7 @@ export function CompanyIntelligenceCard({ jobId }: { jobId: string }) {
   if (query.isError || !query.data) return <ErrorState message={query.error?.message} retry={() => query.refetch()} />;
   const data = query.data;
   return <Card className="detail-section">
-    <div className="section-header"><div><h2>Company intelligence</h2><p>Evidence from ApplyAI's currently known job postings.</p></div><Badge tone="info">{data.active_job_count} active roles</Badge></div>
+    <div className="section-header"><div><h2>Company intelligence</h2><p>Evidence from ApplyAI&apos;s currently known job postings.</p></div><Badge tone="info">{data.active_job_count} active roles</Badge></div>
     <div className="dashboard-grid"><div><strong>{data.known_job_count}</strong><p className="muted">known roles</p></div><div><strong>{data.compensation.postings_with_compensation}</strong><p className="muted">pay-transparent roles</p></div><div><strong>{data.signals.visa_sponsorship.replaceAll("_", " ")}</strong><p className="muted">sponsorship signal</p></div></div>
     {data.top_skills.length ? <div className="chips">{data.top_skills.slice(0,10).map((skill)=><Badge key={skill.name}>{skill.name} · {skill.job_mentions}</Badge>)}</div> : null}
     <div className="button-row">{Object.entries(data.work_modes).map(([mode,count])=><Badge tone="info" key={mode}>{mode} {count}</Badge>)}{data.signals.ai_language_present ? <Badge tone="success">AI hiring signal</Badge> : null}{data.signals.leadership_hiring_present ? <Badge tone="success">Leadership hiring</Badge> : null}</div>

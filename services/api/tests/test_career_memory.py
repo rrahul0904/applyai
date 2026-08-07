@@ -1,6 +1,9 @@
+import uuid
+
 from sqlalchemy import select
 
 from app.career_memory_models import CandidateCareerFact
+from app.career_models import AIJobRun
 from app.core.database import SessionLocal
 from app.jobs.seed import seed_development_jobs
 
@@ -88,7 +91,7 @@ def test_verified_career_memory_is_available_to_ai_context(client):
         },
     )
     assert created.status_code == 201
-    fact_id = created.json()["id"]
+    fact_id = uuid.UUID(created.json()["id"])
 
     matches = client.get("/api/v1/career-v1/matches?limit=1")
     assert matches.status_code == 200
@@ -101,7 +104,6 @@ def test_verified_career_memory_is_available_to_ai_context(client):
         fact = session.get(CandidateCareerFact, fact_id)
         assert fact is not None
         evidence_key = f"candidate.career_fact.{fact.id}"
-        run_row = session.execute(
-            select(__import__("app.career_models", fromlist=["AIJobRun"]).AIJobRun)
-        ).scalar_one()
+        run_row = session.scalar(select(AIJobRun))
+        assert run_row is not None
         assert evidence_key in run_row.input_json["evidence_catalog"]

@@ -10,7 +10,7 @@ from typing import Any
 import jwt
 import uvicorn
 from cryptography.hazmat.primitives.asymmetric import rsa
-from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 from pydantic import BaseModel
 
 
@@ -18,6 +18,7 @@ HOST = "127.0.0.1"
 PORT = 8099
 ISSUER = f"http://{HOST}:{PORT}/clerk"
 OPENAI_KEY = "local-openai-protocol-key"
+STRIPE_KEY = "sk_test_applyai_local"
 KID = "applyai-local-clerk"
 
 _private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -78,6 +79,11 @@ def clerk_token(
 def _require_openai_auth(authorization: str | None) -> None:
     if authorization != f"Bearer {OPENAI_KEY}":
         raise HTTPException(status_code=401, detail="Invalid local OpenAI protocol key")
+
+
+def _require_stripe_auth(authorization: str | None) -> None:
+    if authorization != f"Bearer {STRIPE_KEY}":
+        raise HTTPException(status_code=401, detail="Invalid local Stripe protocol key")
 
 
 def _example_for_schema(schema: dict[str, Any]) -> Any:
@@ -165,6 +171,62 @@ def embeddings(
             for index, text in enumerate(texts)
         ],
         "usage": {"prompt_tokens": len(texts), "total_tokens": len(texts)},
+    }
+
+
+@app.post("/v1/checkout/sessions")
+async def stripe_checkout_session(
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    """Behavioral test double for the checkout fields ApplyAI consumes locally."""
+    _require_stripe_auth(authorization)
+    form = await request.form()
+    required = (
+        "mode",
+        "success_url",
+        "cancel_url",
+        "line_items[0][price]",
+        "line_items[0][quantity]",
+    )
+    missing = [key for key in required if not form.get(key)]
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Missing Stripe checkout fields: {', '.join(missing)}",
+        )
+    if form.get("mode") != "subscription":
+        raise HTTPException(
+            status_code=400,
+            detail="ApplyAI local Stripe checkout expects subscription mode",
+        )
+    session_id = f"cs_test_local_{uuid.uuid4().hex}"
+    return {
+        "id": session_id,
+        "object": "checkout.session",
+        "mode": "subscription",
+        "status": "open",
+        "url": f"http://{HOST}:{PORT}/stripe/checkout/{session_id}",
+    }
+
+
+@app.post("/v1/billing_portal/sessions")
+async def stripe_billing_portal_session(
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    _require_stripe_auth(authorization)
+    form = await request.form()
+    if not form.get("customer") or not form.get("return_url"):
+        raise HTTPException(
+            status_code=400,
+            detail="Stripe portal requires customer and return_url",
+        )
+    session_id = f"bps_local_{uuid.uuid4().hex}"
+    return {
+        "id": session_id,
+        "object": "billing_portal.session",
+        "url": f"http://{HOST}:{PORT}/stripe/portal/{session_id}",
     }
 
 

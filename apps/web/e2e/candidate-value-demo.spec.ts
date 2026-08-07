@@ -33,7 +33,10 @@ test("canonical candidate product persists cross-workspace career state", async 
   await captureDemo(page, "13-canonical-workspace-overview");
 
   await page.goto("/applications");
-  await expect(page.getByRole("heading", { name: /applications/i }).first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Track every opportunity in one place." })).toBeVisible();
+  const firstApplication = page.locator("a.application-row").first();
+  await expect(firstApplication).toBeVisible();
+  await firstApplication.click();
   await expect(page.getByText("E2E persistence note for the candidate application.")).toBeVisible();
   await captureDemo(page, "14-application-command-center");
 

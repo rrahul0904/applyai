@@ -89,7 +89,12 @@ def test_career_v2_materializes_evidence_locked_artifacts(client):
     artifacts = client.get(f"/api/v1/career-v2/artifacts?job_id={job_id}")
     assert artifacts.status_code == 200
     artifact_types = {item["artifact_type"] for item in artifacts.json()["items"]}
-    assert {"DEEP_MATCH", "RESUME_TAILORING", "APPLICATION_COPILOT", "INTERVIEW_PREP"} <= artifact_types
+    assert {
+        "DEEP_MATCH",
+        "RESUME_TAILORING",
+        "APPLICATION_COPILOT",
+        "INTERVIEW_PREP",
+    } <= artifact_types
 
     with SessionLocal() as session:
         runs = list(session.scalars(select(AIJobRun)))
@@ -110,24 +115,31 @@ def test_career_v2_materializes_evidence_locked_artifacts(client):
         assert cover is not None
         question = session.scalar(select(ApplicationQuestionDraft))
         assert question is not None
+        tailoring_id = tailoring.id
+        revision_position = revision.position
+        revision_text = revision.suggested_text
+        cover_id = cover.id
+        cover_body = cover.body
+        question_id = question.id
+        question_draft = question.draft
 
     review = client.patch(
-        f"/api/v1/career-v2/tailorings/{tailoring.id}/revisions/{revision.position}",
-        json={"decision": "APPROVED", "text": revision.suggested_text},
+        f"/api/v1/career-v2/tailorings/{tailoring_id}/revisions/{revision_position}",
+        json={"decision": "APPROVED", "text": revision_text},
     )
     assert review.status_code == 200
     assert review.json()["decision"] == "APPROVED"
 
     cover_review = client.patch(
-        f"/api/v1/career-v2/cover-letters/{cover.id}",
-        json={"body": cover.body, "candidate_verified": True},
+        f"/api/v1/career-v2/cover-letters/{cover_id}",
+        json={"body": cover_body, "candidate_verified": True},
     )
     assert cover_review.status_code == 200
     assert cover_review.json()["candidate_verified"] is True
 
     question_review = client.patch(
-        f"/api/v1/career-v2/question-drafts/{question.id}",
-        json={"answer": question.draft, "candidate_verified": True},
+        f"/api/v1/career-v2/question-drafts/{question_id}",
+        json={"answer": question_draft, "candidate_verified": True},
     )
     assert question_review.status_code == 200
     assert question_review.json()["candidate_verified"] is True

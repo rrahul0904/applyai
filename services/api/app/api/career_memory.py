@@ -63,11 +63,20 @@ class CareerFactResponse(BaseModel):
     updated_at: datetime
 
 
+class CareerMemorySummaryResponse(BaseModel):
+    verified_fact_count: int
+    by_category: dict[str, int]
+
+
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _owned_fact(session: Session, user: User, fact_id: uuid.UUID) -> CandidateCareerFact:
+def _owned_fact(
+    session: Session,
+    user: User,
+    fact_id: uuid.UUID,
+) -> CandidateCareerFact:
     fact = session.scalar(
         select(CandidateCareerFact).where(
             CandidateCareerFact.id == fact_id,
@@ -106,7 +115,11 @@ def list_career_facts(
     )
 
 
-@router.post("", response_model=CareerFactResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=CareerFactResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 def create_career_fact(
     payload: CareerFactWrite,
     user: User = Depends(get_current_user),
@@ -129,45 +142,7 @@ def create_career_fact(
     return fact
 
 
-@router.patch("/{fact_id}", response_model=CareerFactResponse)
-def update_career_fact(
-    fact_id: uuid.UUID,
-    payload: CareerFactUpdate,
-    user: User = Depends(get_current_user),
-    session: Session = Depends(get_session),
-):
-    fact = _owned_fact(session, user, fact_id)
-    changes = payload.model_dump(exclude_unset=True)
-    if "category" in changes:
-        fact.category = changes["category"]
-    if "title" in changes:
-        fact.title = changes["title"]
-    if "fact_text" in changes:
-        fact.fact_text = changes["fact_text"].strip()
-    if "tags" in changes:
-        fact.tags = sorted({tag.strip() for tag in changes["tags"] if tag.strip()})
-    if "occurred_at" in changes:
-        fact.occurred_at = changes["occurred_at"]
-    if "user_verified" in changes:
-        fact.user_verified = changes["user_verified"]
-        fact.provenance = "USER_VERIFIED" if fact.user_verified else "USER_REVIEW_REQUIRED"
-    session.commit()
-    session.refresh(fact)
-    return fact
-
-
-@router.delete("/{fact_id}", status_code=status.HTTP_204_NO_CONTENT)
-def archive_career_fact(
-    fact_id: uuid.UUID,
-    user: User = Depends(get_current_user),
-    session: Session = Depends(get_session),
-) -> None:
-    fact = _owned_fact(session, user, fact_id)
-    fact.archived_at = utcnow()
-    session.commit()
-
-
-@router.get("/summary")
+@router.get("/summary", response_model=CareerMemorySummaryResponse)
 def career_memory_summary(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
@@ -192,3 +167,60 @@ def career_memory_summary(
         "verified_fact_count": sum(counts.values()),
         "by_category": counts,
     }
+
+
+@router.get("/{fact_id}", response_model=CareerFactResponse)
+def get_career_fact(
+    fact_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    return _owned_fact(session, user, fact_id)
+
+
+@router.patch("/{fact_id}", response_model=CareerFactResponse)
+def update_career_fact(
+    fact_id: uuid.UUID,
+    payload: CareerFactUpdate,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    fact = _owned_fact(session, user, fact_id)
+    changes = payload.model_dump(exclude_unset=True)
+    if "category" in changes and changes["category"] is not None:
+        fact.category = changes["category"]
+    if "title" in changes:
+        fact.title = changes["title"]
+    if "fact_text" in changes and changes["fact_text"] is not None:
+        fact.fact_text = changes["fact_text"].strip()
+    if "tags" in changes:
+        fact.tags = sorted(
+            {
+                tag.strip()
+                for tag in (changes["tags"] or [])
+                if tag.strip()
+            }
+        )
+    if "occurred_at" in changes:
+        fact.occurred_at = changes["occurred_at"]
+    if "user_verified" in changes and changes["user_verified"] is not None:
+        fact.user_verified = changes["user_verified"]
+        fact.provenance = (
+            "USER_VERIFIED"
+            if fact.user_verified
+            else "USER_REVIEW_REQUIRED"
+        )
+    session.commit()
+    session.refresh(fact)
+    return fact
+
+
+@router.delete("/{fact_id}", status_code=status.HTTP_204_NO_CONTENT)
+def archive_career_fact(
+    fact_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> None:
+    fact = _owned_fact(session, user, fact_id)
+    fact.archived_at = utcnow()
+    session.commit()

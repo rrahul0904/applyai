@@ -1,0 +1,58 @@
+name: ApplyAI OpenAPI Sync Temporary
+
+on:
+  push:
+    branches:
+      - agent/career-intelligence-v2-foundation
+    paths:
+      - "services/api/**"
+      - ".github/workflows/openapi-sync-temp.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: applyai-openapi-sync-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.13.1
+          run_install: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.13.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12.11"
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          enable-cache: true
+      - name: Install dependencies
+        run: |
+          pnpm install --frozen-lockfile
+          uv sync --project services/api --group dev --locked
+      - name: Generate OpenAPI types
+        run: pnpm openapi:generate
+      - name: Commit generated contract when changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- apps/web/lib/api/schema.d.ts; then
+            echo "OpenAPI contract already synchronized."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/web/lib/api/schema.d.ts
+          git commit -m "Regenerate Career V2 OpenAPI client types"
+          git push origin HEAD:agent/career-intelligence-v2-foundation

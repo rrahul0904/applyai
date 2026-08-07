@@ -23,6 +23,10 @@ class AIProviderError(RuntimeError):
     pass
 
 
+class TransientAIProviderError(AIProviderError):
+    pass
+
+
 class BaseAIProvider:
     def generate_json(
         self,
@@ -31,6 +35,7 @@ class BaseAIProvider:
         user_payload: dict[str, Any],
         task_type: str,
         safety_identifier: str,
+        output_schema: dict[str, Any],
     ) -> ProviderResult:
         raise NotImplementedError
 
@@ -52,39 +57,60 @@ class DeterministicAIProvider(BaseAIProvider):
         user_payload: dict[str, Any],
         task_type: str,
         safety_identifier: str,
+        output_schema: dict[str, Any],
     ) -> ProviderResult:
-        del system_prompt, safety_identifier
+        del system_prompt, safety_identifier, output_schema
         evidence = user_payload.get("evidence_catalog") or {}
         refs = list(evidence)[:12] or ["job.description"]
         deterministic = user_payload.get("deterministic_match") or {}
         profile = user_payload.get("candidate") or {}
         job = user_payload.get("job") or {}
         experience = (profile.get("experiences") or [{}])[0]
-        source_text = experience.get("description") or profile.get("summary") or "Verified candidate experience"
+        source_text = (
+            experience.get("description")
+            or profile.get("summary")
+            or "Verified candidate experience"
+        )
         title = job.get("title") or "this role"
         company = job.get("company_name") or "the company"
         score = int(deterministic.get("match_score") or 50)
-        priority = deterministic.get("decision") or ("CONSIDER" if score >= 65 else "STRETCH")
+        priority = deterministic.get("decision") or (
+            "CONSIDER" if score >= 65 else "STRETCH"
+        )
 
         if task_type == "AI_DEEP_MATCH":
             output = {
                 "ai_score": score,
                 "priority": priority,
-                "summary": f"The verified profile has meaningful evidence for {title}; use the deterministic factors as the baseline and validate the remaining gaps before applying.",
-                "strengths": deterministic.get("strengths") or ["Verified candidate evidence is available."],
+                "summary": (
+                    f"The verified profile has meaningful evidence for {title}; use "
+                    "the deterministic factors as the baseline and validate the "
+                    "remaining gaps before applying."
+                ),
+                "strengths": deterministic.get("strengths")
+                or ["Verified candidate evidence is available."],
                 "gaps": deterministic.get("risks") or [],
-                "interview_risks": deterministic.get("risks") or ["Confirm scope and expectations in interview."],
-                "recommended_actions": ["Review the evidence-backed gaps before finalizing application materials."],
+                "interview_risks": deterministic.get("risks")
+                or ["Confirm scope and expectations in interview."],
+                "recommended_actions": [
+                    "Review the evidence-backed gaps before finalizing application materials."
+                ],
                 "evidence_refs": refs,
             }
         elif task_type == "AI_RESUME_TAILOR":
             output = {
-                "strategy_summary": f"Keep the resume factual while emphasizing verified experience most relevant to {title}.",
+                "strategy_summary": (
+                    "Keep the resume factual while emphasizing verified experience "
+                    f"most relevant to {title}."
+                ),
                 "edits": [
                     {
                         "source_text": source_text,
                         "suggested_text": source_text,
-                        "reason": "Preserve verified wording as the safe baseline; candidate review can refine emphasis without adding unsupported claims.",
+                        "reason": (
+                            "Preserve verified wording as the safe baseline; candidate "
+                            "review can refine emphasis without adding unsupported claims."
+                        ),
                         "evidence_refs": refs[:3],
                         "risk_flags": [],
                         "confidence": 1.0,
@@ -94,16 +120,29 @@ class DeterministicAIProvider(BaseAIProvider):
             }
         elif task_type == "AI_APPLICATION_COPILOT":
             output = {
-                "cover_letter": f"Dear {company} Hiring Team,\n\nI am interested in the {title} opportunity. My verified background aligns with the role through the experience and skills documented in my ApplyAI profile. I would welcome the opportunity to discuss the team's priorities and where my experience can contribute.\n\nThank you for your consideration.",
+                "cover_letter": (
+                    f"Dear {company} Hiring Team,\n\nI am interested in the {title} "
+                    "opportunity. My verified background aligns with the role through "
+                    "the experience and skills documented in my ApplyAI profile. I would "
+                    "welcome the opportunity to discuss the team's priorities and where "
+                    "my experience can contribute.\n\nThank you for your consideration."
+                ),
                 "cover_letter_evidence_refs": refs,
                 "questions": [
                     {
                         "question": "Why are you interested in this role?",
-                        "answer": f"I am interested in the {title} role because it aligns with the verified experience and target direction in my profile.",
+                        "answer": (
+                            f"I am interested in the {title} role because it aligns with "
+                            "the verified experience and target direction in my profile."
+                        ),
                         "evidence_refs": refs[:4],
                     }
                 ],
-                "recruiter_message": f"I am interested in the {title} opportunity at {company}. My verified background appears relevant, and I would appreciate the chance to learn more about the role and team priorities.",
+                "recruiter_message": (
+                    f"I am interested in the {title} opportunity at {company}. My verified "
+                    "background appears relevant, and I would appreciate the chance to "
+                    "learn more about the role and team priorities."
+                ),
                 "recruiter_message_evidence_refs": refs,
                 "strategy_notes": ["Candidate review is required before use."],
                 "evidence_refs": refs,
@@ -113,14 +152,24 @@ class DeterministicAIProvider(BaseAIProvider):
             for index in range(3):
                 questions.append(
                     {
-                        "question": f"Tell me about verified experience relevant to {title}." if index == 0 else f"How would you approach priority {index} in this role?",
-                        "why_it_matters": "This tests whether the candidate can connect verified experience to the role without overstating evidence.",
+                        "question": (
+                            f"Tell me about verified experience relevant to {title}."
+                            if index == 0
+                            else f"How would you approach priority {index} in this role?"
+                        ),
+                        "why_it_matters": (
+                            "This tests whether the candidate can connect verified "
+                            "experience to the role without overstating evidence."
+                        ),
                         "answer_outline": source_text,
                         "evidence_refs": refs[:4],
                     }
                 )
             output = {
-                "strategy_summary": "Anchor every answer in verified experience, acknowledge gaps directly, and use the interview to clarify scope and first-year expectations.",
+                "strategy_summary": (
+                    "Anchor every answer in verified experience, acknowledge gaps directly, "
+                    "and use the interview to clarify scope and first-year expectations."
+                ),
                 "likely_questions": questions,
                 "questions_to_ask": [
                     "What are the most important outcomes in the first six months?",
@@ -136,11 +185,11 @@ class DeterministicAIProvider(BaseAIProvider):
 
 
 class OpenAIResponsesProvider(BaseAIProvider):
-    """Minimal Responses API client using the existing httpx dependency."""
+    """Responses API client with strict JSON-schema output and no stored response."""
 
     def __init__(self, settings: Settings) -> None:
         if not settings.openai_api_key:
-            raise AIProviderError("OPENAI_API_KEY is required when AI_PROVIDER=openai")
+            raise AIProviderError("OPENAI_API_KEY_MISSING")
         self.api_key = settings.openai_api_key
         self.model = settings.openai_model
         self.timeout_seconds = settings.ai_request_timeout_seconds
@@ -157,10 +206,13 @@ class OpenAIResponsesProvider(BaseAIProvider):
             if item.get("type") != "message":
                 continue
             for content in item.get("content") or []:
-                if content.get("type") in {"output_text", "text"} and content.get("text"):
+                if (
+                    content.get("type") in {"output_text", "text"}
+                    and content.get("text")
+                ):
                     texts.append(str(content["text"]))
         if not texts:
-            raise AIProviderError("OpenAI response contained no output text")
+            raise AIProviderError("MODEL_OUTPUT_MISSING")
         return "\n".join(texts)
 
     def generate_json(
@@ -170,14 +222,27 @@ class OpenAIResponsesProvider(BaseAIProvider):
         user_payload: dict[str, Any],
         task_type: str,
         safety_identifier: str,
+        output_schema: dict[str, Any],
     ) -> ProviderResult:
         started = time.perf_counter()
         request_body = {
             "model": self.model,
             "instructions": system_prompt,
-            "input": json.dumps({"task_type": task_type, "context": user_payload}, separators=(",", ":"), ensure_ascii=False),
+            "input": json.dumps(
+                {"task_type": task_type, "context": user_payload},
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ),
             "reasoning": {"effort": self.reasoning_effort},
-            "text": {"verbosity": "low"},
+            "text": {
+                "verbosity": "low",
+                "format": {
+                    "type": "json_schema",
+                    "name": task_type.lower(),
+                    "schema": output_schema,
+                    "strict": True,
+                },
+            },
             "store": False,
             "safety_identifier": safety_identifier,
         }
@@ -193,14 +258,19 @@ class OpenAIResponsesProvider(BaseAIProvider):
                 )
                 response.raise_for_status()
                 payload = response.json()
-        except (httpx.HTTPError, ValueError) as exc:
-            raise AIProviderError(type(exc).__name__) from exc
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code
+            if status_code == 429 or status_code >= 500:
+                raise TransientAIProviderError(
+                    f"OPENAI_HTTP_{status_code}"
+                ) from exc
+            raise AIProviderError(f"OPENAI_HTTP_{status_code}") from exc
+        except httpx.RequestError as exc:
+            raise TransientAIProviderError("OPENAI_TRANSPORT_ERROR") from exc
+        except ValueError as exc:
+            raise AIProviderError("OPENAI_INVALID_RESPONSE") from exc
 
         raw_text = self._output_text(payload).strip()
-        if raw_text.startswith("```"):
-            raw_text = raw_text.strip("`")
-            if raw_text.startswith("json"):
-                raw_text = raw_text[4:].lstrip()
         try:
             output = json.loads(raw_text)
         except json.JSONDecodeError as exc:

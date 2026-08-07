@@ -12,6 +12,7 @@ from app import (  # noqa: F401
     job_quality_models,
     job_source_models,
     models,
+    platform_models,
 )
 
 

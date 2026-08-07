@@ -1,0 +1,11 @@
+import { useEffect, useState } from "react";
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
+import { type MobileApplication, useApplyAIApi } from "@/lib/api";
+
+export default function ApplicationsScreen() {
+  const { request } = useApplyAIApi(); const [items,setItems]=useState<MobileApplication[]>([]); const [loading,setLoading]=useState(true); const [error,setError]=useState<string|null>(null);
+  useEffect(()=>{ void (async()=>{try{const data=await request<{items:MobileApplication[]}>("/applications?limit=50");setItems(data.items);}catch(e){setError(e instanceof Error?e.message:"Could not load applications");}finally{setLoading(false);}})();},[request]);
+  if(loading)return <View style={styles.center}><ActivityIndicator/></View>;
+  return <ScrollView style={styles.screen} contentContainerStyle={styles.content}><Text style={styles.eyebrow}>APPLICATION COMMAND CENTER</Text><Text style={styles.title}>Applications</Text><Text style={styles.subtitle}>Track every role from preparation through interview and offer.</Text>{error?<Text style={styles.error}>{error}</Text>:null}{items.map(item=><View style={styles.card} key={item.id}><View style={styles.row}><Text style={styles.job}>Application</Text><Text style={styles.status}>{item.current_status.replaceAll("_"," ")}</Text></View><Text style={styles.meta}>Job {item.job_id}</Text><Text style={styles.meta}>Updated {new Date(item.updated_at).toLocaleDateString()}</Text></View>)}{!items.length?<Text style={styles.subtitle}>No applications yet. Start from a job or AI Match.</Text>:null}</ScrollView>;
+}
+const styles=StyleSheet.create({screen:{flex:1,backgroundColor:"#f6f8fb"},content:{padding:18,gap:12},center:{flex:1,alignItems:"center",justifyContent:"center"},eyebrow:{fontSize:11,fontWeight:"800",color:"#155eef"},title:{fontSize:30,fontWeight:"800",color:"#10233f"},subtitle:{fontSize:15,lineHeight:22,color:"#53657d"},card:{padding:16,borderRadius:14,backgroundColor:"white",borderWidth:1,borderColor:"#e2e8f0",gap:5},row:{flexDirection:"row",justifyContent:"space-between",gap:10},job:{fontSize:17,fontWeight:"700",color:"#10233f"},status:{fontSize:12,fontWeight:"800",color:"#155eef"},meta:{fontSize:13,color:"#66758a"},error:{color:"#b42318"}});

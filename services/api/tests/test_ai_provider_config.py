@@ -20,7 +20,7 @@ def test_api_can_describe_openai_intent_without_holding_model_secret():
 def test_staging_openai_requires_dedicated_ai_queues():
     with pytest.raises(ValueError, match="AI_SQS_QUEUE_URL and AI_SQS_DLQ_URL"):
         Settings(
-            environment="staging",
+            app_env="staging",
             auth_provider="clerk",
             clerk_issuer="https://example.clerk.accounts.dev",
             clerk_jwks_url="https://example.clerk.accounts.dev/.well-known/jwks.json",

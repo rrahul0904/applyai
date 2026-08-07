@@ -42,6 +42,17 @@ variable "ai_worker_desired_count" {
   }
 }
 
+variable "ai_outbox_desired_count" {
+  description = "Queue-aware universal outbox publisher. Keep zero in dormant foundation."
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.ai_outbox_desired_count >= 0 && var.ai_outbox_desired_count <= 3
+    error_message = "ai_outbox_desired_count must be between 0 and 3."
+  }
+}
+
 variable "ai_worker_cpu" {
   type    = number
   default = 512
@@ -50,6 +61,16 @@ variable "ai_worker_cpu" {
 variable "ai_worker_memory" {
   type    = number
   default = 1024
+}
+
+variable "ai_outbox_cpu" {
+  type    = number
+  default = 256
+}
+
+variable "ai_outbox_memory" {
+  type    = number
+  default = 512
 }
 
 variable "ai_sqs_visibility_timeout_seconds" {
@@ -115,8 +136,10 @@ resource "aws_sqs_queue_redrive_allow_policy" "ai_dlq" {
   })
 }
 
-resource "aws_cloudwatch_log_group" "ai_worker" {
-  name              = "/applyai/${var.environment}/ai-worker"
+resource "aws_cloudwatch_log_group" "ai_runtime" {
+  for_each = toset(["ai-worker", "outbox-v3"])
+
+  name              = "/applyai/${var.environment}/${each.key}"
   retention_in_days = var.log_retention_days
 }
 
@@ -147,6 +170,35 @@ resource "aws_iam_role_policy" "ai_worker_queue" {
   })
 }
 
+resource "aws_iam_role" "universal_outbox_task" {
+  name               = "${local.name}-outbox-v3-task"
+  assume_role_policy = local.ecs_task_assume_role_policy
+}
+
+resource "aws_iam_role_policy" "universal_outbox_queues" {
+  name = "all-task-queue-publish"
+  role = aws_iam_role.universal_outbox_task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "sqs:GetQueueAttributes",
+          "sqs:GetQueueUrl",
+          "sqs:SendMessage"
+        ]
+        Resource = [
+          aws_sqs_queue.resume.arn,
+          aws_sqs_queue.source.arn,
+          aws_sqs_queue.ai.arn
+        ]
+      }
+    ]
+  })
+}
+
 resource "aws_iam_role_policy" "ecs_execution_openai_secret" {
   count = var.openai_api_key_secret_arn == null ? 0 : 1
 
@@ -166,6 +218,31 @@ resource "aws_iam_role_policy" "ecs_execution_openai_secret" {
 }
 
 locals {
+  all_queue_environment = concat(
+    local.common_environment,
+    [
+      { name = "SOURCE_SQS_QUEUE_URL", value = aws_sqs_queue.source.id },
+      { name = "SOURCE_SQS_DLQ_URL", value = aws_sqs_queue.source_dlq.id },
+      { name = "SOURCE_SQS_VISIBILITY_TIMEOUT_SECONDS", value = tostring(var.source_sqs_visibility_timeout_seconds) },
+      { name = "SOURCE_SQS_VISIBILITY_HEARTBEAT_SECONDS", value = tostring(var.source_sqs_visibility_heartbeat_seconds) },
+      { name = "SOURCE_SQS_MAX_RECEIVE_COUNT", value = tostring(var.source_sqs_max_receive_count) },
+      { name = "AI_SQS_QUEUE_URL", value = aws_sqs_queue.ai.id },
+      { name = "AI_SQS_DLQ_URL", value = aws_sqs_queue.ai_dlq.id },
+      { name = "AI_SQS_VISIBILITY_TIMEOUT_SECONDS", value = tostring(var.ai_sqs_visibility_timeout_seconds) },
+      { name = "AI_SQS_VISIBILITY_HEARTBEAT_SECONDS", value = tostring(var.ai_sqs_visibility_heartbeat_seconds) },
+      { name = "AI_SQS_MAX_RECEIVE_COUNT", value = tostring(var.ai_sqs_max_receive_count) },
+    ]
+  )
+
+  ai_worker_environment = concat(
+    local.all_queue_environment,
+    [
+      { name = "AI_PROVIDER", value = var.ai_provider },
+      { name = "OPENAI_MODEL", value = var.openai_model },
+      { name = "OPENAI_REASONING_EFFORT", value = var.openai_reasoning_effort },
+    ]
+  )
+
   ai_worker_secrets = concat(
     local.database_secrets,
     var.openai_api_key_secret_arn == null ? [] : [
@@ -197,12 +274,12 @@ resource "aws_ecs_task_definition" "ai_worker" {
       image       = local.image_uri
       essential   = true
       command     = ["python", "-m", "app.workers.ai"]
-      environment = local.common_environment
+      environment = local.ai_worker_environment
       secrets     = local.ai_worker_secrets
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          awslogs-group         = aws_cloudwatch_log_group.ai_worker.name
+          awslogs-group         = aws_cloudwatch_log_group.ai_runtime["ai-worker"].name
           awslogs-region        = var.aws_region
           awslogs-stream-prefix = "ai-worker"
         }
@@ -216,6 +293,54 @@ resource "aws_ecs_service" "ai_worker" {
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.ai_worker.arn
   desired_count   = var.ai_worker_desired_count
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = aws_subnet.app[*].id
+    security_groups  = [aws_security_group.ecs.id]
+    assign_public_ip = false
+  }
+}
+
+resource "aws_ecs_task_definition" "universal_outbox" {
+  family                   = "${local.name}-outbox-v3"
+  cpu                      = tostring(var.ai_outbox_cpu)
+  memory                   = tostring(var.ai_outbox_memory)
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  execution_role_arn       = aws_iam_role.ecs_execution.arn
+  task_role_arn            = aws_iam_role.universal_outbox_task.arn
+
+  runtime_platform {
+    operating_system_family = "LINUX"
+    cpu_architecture        = "X86_64"
+  }
+
+  container_definitions = jsonencode([
+    {
+      name        = "outbox-v3"
+      image       = local.image_uri
+      essential   = true
+      command     = ["python", "-m", "app.core.outbox"]
+      environment = local.all_queue_environment
+      secrets     = local.database_secrets
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.ai_runtime["outbox-v3"].name
+          awslogs-region        = var.aws_region
+          awslogs-stream-prefix = "outbox-v3"
+        }
+      }
+    }
+  ])
+}
+
+resource "aws_ecs_service" "universal_outbox" {
+  name            = "${local.name}-outbox-v3"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.universal_outbox.arn
+  desired_count   = var.ai_outbox_desired_count
   launch_type     = "FARGATE"
 
   network_configuration {

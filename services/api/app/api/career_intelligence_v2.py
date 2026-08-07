@@ -11,6 +11,17 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.ai.api_models import (
+    AIArtifactListResponse,
+    AIArtifactResponse,
+    AIJobRunResponse,
+    ArtifactFeedbackResponse,
+    CareerMatchV2ListResponse,
+    CareerMatchV2Response,
+    CoverLetterReviewResponse,
+    QuestionDraftReviewResponse,
+    ResumeRevisionReviewResponse,
+)
 from app.ai.context import build_career_ai_context, get_owned_active_job
 from app.ai.prompts import PROMPT_VERSION, SCHEMA_VERSION
 from app.ai.runtime import execute_ai_run
@@ -20,6 +31,7 @@ from app.career_models import (
     AIJobRun,
     ApplicationQuestionDraft,
     CandidateAIArtifactFeedback,
+    CareerMatch,
     CoverLetter,
     ResumeTailoring,
     ResumeTailoringRevision,
@@ -93,6 +105,38 @@ def _run_payload(run: AIJobRun) -> dict:
         "error_code": run.error_code,
         "created_at": run.created_at,
         "completed_at": run.completed_at,
+    }
+
+
+def _artifact_payload(row: AIArtifact) -> dict:
+    return {
+        "id": row.id,
+        "run_id": row.run_id,
+        "job_id": row.job_id,
+        "application_id": row.application_id,
+        "artifact_type": row.artifact_type,
+        "status": row.status,
+        "version": row.version,
+        "content": row.content_json,
+        "evidence": row.evidence_json,
+        "candidate_verified": row.candidate_verified,
+        "created_at": row.created_at,
+    }
+
+
+def _match_payload(row: CareerMatch) -> dict:
+    return {
+        "job_id": row.job_id,
+        "deterministic_score": row.deterministic_score,
+        "ai_score": row.ai_score,
+        "final_score": row.final_score,
+        "fit_band": row.fit_band,
+        "decision": row.decision,
+        "confidence": row.confidence,
+        "engine_version": row.engine_version,
+        "factors": row.factors_json,
+        "evidence": row.evidence_json,
+        "updated_at": row.updated_at,
     }
 
 
@@ -170,7 +214,10 @@ def _queue_run(
     return run
 
 
-@router.post("/jobs/{job_id}/{task_path}")
+@router.post(
+    "/jobs/{job_id}/{task_path}",
+    response_model=AIJobRunResponse,
+)
 def create_ai_task(
     job_id: uuid.UUID,
     task_path: Literal[
@@ -193,7 +240,7 @@ def create_ai_task(
     return _run_payload(run)
 
 
-@router.get("/runs/{run_id}")
+@router.get("/runs/{run_id}", response_model=AIJobRunResponse)
 def get_run(
     run_id: uuid.UUID,
     user: User = Depends(get_current_user),
@@ -210,7 +257,7 @@ def get_run(
     return _run_payload(run)
 
 
-@router.post("/runs/{run_id}/retry")
+@router.post("/runs/{run_id}/retry", response_model=AIJobRunResponse)
 def retry_run(
     run_id: uuid.UUID,
     user: User = Depends(get_current_user),
@@ -253,10 +300,49 @@ def retry_run(
     return _run_payload(run)
 
 
-@router.get("/artifacts")
+@router.get("/matches", response_model=CareerMatchV2ListResponse)
+def list_career_matches(
+    limit: int = Query(default=50, ge=1, le=100),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> dict:
+    rows = list(
+        session.scalars(
+            select(CareerMatch)
+            .where(
+                CareerMatch.user_id == user.id,
+                CareerMatch.engine_version == "applyai-hybrid-fit-v2",
+            )
+            .order_by(CareerMatch.final_score.desc(), CareerMatch.updated_at.desc())
+            .limit(limit)
+        )
+    )
+    return {"items": [_match_payload(row) for row in rows]}
+
+
+@router.get("/matches/{job_id}", response_model=CareerMatchV2Response)
+def get_career_match(
+    job_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> dict:
+    row = session.scalar(
+        select(CareerMatch).where(
+            CareerMatch.user_id == user.id,
+            CareerMatch.job_id == job_id,
+            CareerMatch.engine_version == "applyai-hybrid-fit-v2",
+        )
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Career match not found")
+    return _match_payload(row)
+
+
+@router.get("/artifacts", response_model=AIArtifactListResponse)
 def list_artifacts(
     job_id: uuid.UUID | None = Query(default=None),
     artifact_type: str | None = Query(default=None, max_length=64),
+    include_superseded: bool = Query(default=False),
     limit: int = Query(default=50, ge=1, le=100),
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
@@ -266,30 +352,35 @@ def list_artifacts(
         query = query.where(AIArtifact.job_id == job_id)
     if artifact_type:
         query = query.where(AIArtifact.artifact_type == artifact_type)
+    if not include_superseded:
+        query = query.where(AIArtifact.superseded_at.is_(None))
     rows = list(
         session.scalars(query.order_by(AIArtifact.created_at.desc()).limit(limit))
     )
-    return {
-        "items": [
-            {
-                "id": row.id,
-                "run_id": row.run_id,
-                "job_id": row.job_id,
-                "application_id": row.application_id,
-                "artifact_type": row.artifact_type,
-                "status": row.status,
-                "version": row.version,
-                "content": row.content_json,
-                "evidence": row.evidence_json,
-                "candidate_verified": row.candidate_verified,
-                "created_at": row.created_at,
-            }
-            for row in rows
-        ]
-    }
+    return {"items": [_artifact_payload(row) for row in rows]}
 
 
-@router.patch("/tailorings/{tailoring_id}/revisions/{position}")
+@router.get("/artifacts/{artifact_id}", response_model=AIArtifactResponse)
+def get_artifact(
+    artifact_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> dict:
+    row = session.scalar(
+        select(AIArtifact).where(
+            AIArtifact.id == artifact_id,
+            AIArtifact.user_id == user.id,
+        )
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="AI artifact not found")
+    return _artifact_payload(row)
+
+
+@router.patch(
+    "/tailorings/{tailoring_id}/revisions/{position}",
+    response_model=ResumeRevisionReviewResponse,
+)
 def review_resume_revision(
     tailoring_id: uuid.UUID,
     position: int,
@@ -345,7 +436,10 @@ def review_resume_revision(
     }
 
 
-@router.patch("/cover-letters/{cover_letter_id}")
+@router.patch(
+    "/cover-letters/{cover_letter_id}",
+    response_model=CoverLetterReviewResponse,
+)
 def review_cover_letter(
     cover_letter_id: uuid.UUID,
     payload: CoverLetterReviewWrite,
@@ -374,7 +468,10 @@ def review_cover_letter(
     }
 
 
-@router.patch("/question-drafts/{draft_id}")
+@router.patch(
+    "/question-drafts/{draft_id}",
+    response_model=QuestionDraftReviewResponse,
+)
 def review_question_draft(
     draft_id: uuid.UUID,
     payload: QuestionReviewWrite,
@@ -407,7 +504,10 @@ def review_question_draft(
     }
 
 
-@router.post("/artifacts/{artifact_id}/feedback")
+@router.post(
+    "/artifacts/{artifact_id}/feedback",
+    response_model=ArtifactFeedbackResponse,
+)
 def record_artifact_feedback(
     artifact_id: uuid.UUID,
     payload: FeedbackWrite,

@@ -10,8 +10,11 @@ import uuid
 
 import httpx
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
-from app.ai.provider import DeterministicAIProvider
+from app.ai.provider import DeterministicAIProvider, OpenAIResponsesProvider
+from app.ai.semantic_matching import OpenAIEmbeddingProvider
+from app.core.auth import ClerkAuthProvider
 from app.core.config import get_settings
 from app.core.email import send_email
 from app.core.queue import Task, get_task_queue_for_type, sqs_client
@@ -20,6 +23,7 @@ from app.main import app
 
 
 DEV_EMAIL = "local.cleanroom@example.test"
+PROVIDER_MOCK = os.getenv("LOCAL_PROVIDER_MOCK_URL", "http://127.0.0.1:8099").rstrip("/")
 
 
 def dev_headers() -> dict[str, str]:
@@ -100,6 +104,94 @@ def assert_deterministic_ai() -> None:
     assert result.input_tokens is None and result.output_tokens is None
 
 
+def _request_with_bearer(token: str) -> Request:
+    return Request(
+        {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": "/",
+            "raw_path": b"/",
+            "query_string": b"",
+            "headers": [(b"authorization", f"Bearer {token}".encode())],
+            "client": ("127.0.0.1", 50000),
+            "server": ("127.0.0.1", 8000),
+        }
+    )
+
+
+def assert_local_clerk_protocol() -> None:
+    token_response = httpx.get(
+        f"{PROVIDER_MOCK}/clerk/token",
+        params={"email": "protocol.clerk@example.test", "subject": "protocol_clerk_user"},
+        timeout=5.0,
+    )
+    token_response.raise_for_status()
+    payload = token_response.json()
+    provider = ClerkAuthProvider(
+        jwks_url=payload["jwks_url"],
+        issuer=payload["issuer"],
+        audience=None,
+    )
+    claims = provider.authenticate(_request_with_bearer(payload["token"]))
+    assert claims.subject == "protocol_clerk_user"
+    assert claims.email == "protocol.clerk@example.test"
+
+
+def assert_local_openai_protocol() -> None:
+    settings = get_settings().model_copy(
+        update={
+            "ai_provider": "openai",
+            "openai_api_key": "local-openai-protocol-key",
+            "openai_base_url": PROVIDER_MOCK,
+            "openai_model": "local-responses-protocol-model",
+            "ai_request_timeout_seconds": 5,
+        }
+    )
+    provider = OpenAIResponsesProvider(settings)
+    result = provider.generate_json(
+        system_prompt="Return the requested strict object.",
+        user_payload={"evidence_catalog": {}},
+        task_type="LOCAL_PROTOCOL_SMOKE",
+        safety_identifier="local-protocol-smoke",
+        output_schema={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {"ok": {"type": "boolean"}, "label": {"type": "string"}},
+            "required": ["ok", "label"],
+        },
+    )
+    assert result.output == {"ok": True, "label": "local-protocol-value"}
+    assert result.input_tokens == 11
+    assert result.output_tokens == 7
+
+    previous_key = os.environ.get("OPENAI_API_KEY")
+    previous_base = os.environ.get("OPENAI_BASE_URL")
+    previous_model = os.environ.get("OPENAI_EMBEDDING_MODEL")
+    try:
+        os.environ["OPENAI_API_KEY"] = "local-openai-protocol-key"
+        os.environ["OPENAI_BASE_URL"] = PROVIDER_MOCK
+        os.environ["OPENAI_EMBEDDING_MODEL"] = "local-embedding-protocol-model"
+        vectors = OpenAIEmbeddingProvider().embed(["candidate evidence", "job evidence"])
+    finally:
+        if previous_key is None:
+            os.environ.pop("OPENAI_API_KEY", None)
+        else:
+            os.environ["OPENAI_API_KEY"] = previous_key
+        if previous_base is None:
+            os.environ.pop("OPENAI_BASE_URL", None)
+        else:
+            os.environ["OPENAI_BASE_URL"] = previous_base
+        if previous_model is None:
+            os.environ.pop("OPENAI_EMBEDDING_MODEL", None)
+        else:
+            os.environ["OPENAI_EMBEDDING_MODEL"] = previous_model
+    assert len(vectors) == 2
+    assert len(vectors[0]) == 8
+    assert vectors[0] != vectors[1]
+
+
 def stripe_signature(raw: bytes, secret: str) -> str:
     timestamp = int(time.time())
     digest = hmac.new(secret.encode(), f"{timestamp}.".encode() + raw, hashlib.sha256).hexdigest()
@@ -159,6 +251,8 @@ def main() -> None:
         ("SQS/LocalStack", assert_local_sqs),
         ("SMTP/Mailpit", assert_local_email),
         ("deterministic AI", assert_deterministic_ai),
+        ("Clerk JWT/JWKS protocol", assert_local_clerk_protocol),
+        ("OpenAI Responses + embeddings protocol", assert_local_openai_protocol),
         ("dev auth + Stripe mock + signed webhook", assert_local_api_and_stripe),
     ]
     for name, check in checks:

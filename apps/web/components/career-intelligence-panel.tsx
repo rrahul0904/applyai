@@ -4,14 +4,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BrainCircuit, FilePenLine, MessageSquareText, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { Badge, Button, Card } from "@/components/ui";
 import {
   api,
   type AIArtifact,
   type AIJobRun,
   type CareerTaskPath,
 } from "@/lib/api/client";
-import { Badge, Button, Card } from "@/components/ui";
 import { titleCase } from "@/lib/utils";
+import styles from "./career-intelligence-panel.module.css";
 
 const actions: Array<{
   task: CareerTaskPath;
@@ -53,7 +54,9 @@ const artifactTitle: Record<string, string> = {
 };
 
 function textList(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
 }
 
 function ArtifactPreview({ artifact }: { artifact: AIArtifact }) {
@@ -64,34 +67,46 @@ function ArtifactPreview({ artifact }: { artifact: AIArtifact }) {
     null;
   const strengths = textList(content.strengths);
   const gaps = textList(content.gaps);
-  const questions = Array.isArray(content.likely_questions) ? content.likely_questions : [];
+  const questions = Array.isArray(content.likely_questions)
+    ? content.likely_questions
+    : [];
 
   return (
-    <div className="career-artifact">
-      <div className="detail-title-row">
+    <div className={styles.artifact}>
+      <div className={styles.artifactHeader}>
         <div>
-          <p className="eyebrow">{artifactTitle[artifact.artifact_type] ?? titleCase(artifact.artifact_type)}</p>
+          <p className="eyebrow">
+            {artifactTitle[artifact.artifact_type] ?? titleCase(artifact.artifact_type)}
+          </p>
           <strong>Version {artifact.version}</strong>
         </div>
         <Badge tone={artifact.candidate_verified ? "success" : "warning"}>
           {artifact.candidate_verified ? "Verified" : "Review required"}
         </Badge>
       </div>
-      {summary ? <p className="detail-copy">{summary}</p> : null}
+      {summary ? <p className={styles.description}>{summary}</p> : null}
       {strengths.length ? (
         <div>
           <strong>Strengths</strong>
-          <ul>{strengths.slice(0, 4).map((item) => <li key={item}>{item}</li>)}</ul>
+          <ul>
+            {strengths.slice(0, 4).map((item) => <li key={item}>{item}</li>)}
+          </ul>
         </div>
       ) : null}
       {gaps.length ? (
         <div>
           <strong>Gaps to review</strong>
-          <ul>{gaps.slice(0, 4).map((item) => <li key={item}>{item}</li>)}</ul>
+          <ul>
+            {gaps.slice(0, 4).map((item) => <li key={item}>{item}</li>)}
+          </ul>
         </div>
       ) : null}
-      {questions.length ? <p className="muted-copy">{questions.length} interview questions prepared.</p> : null}
-      <p className="muted-copy">Grounded in {Array.isArray(artifact.evidence.refs) ? artifact.evidence.refs.length : 0} verified evidence references.</p>
+      {questions.length ? (
+        <p className={styles.muted}>{questions.length} interview questions prepared.</p>
+      ) : null}
+      <p className={styles.muted}>
+        Grounded in {Array.isArray(artifact.evidence.refs) ? artifact.evidence.refs.length : 0} verified evidence references.
+      </p>
     </div>
   );
 }
@@ -123,8 +138,8 @@ export function CareerIntelligencePanel({ jobId }: { jobId: string }) {
     queryFn: ({ signal }) => api.careerV2.run(activeRunId as string, signal),
     enabled: Boolean(activeRunId),
     refetchInterval: (query) => {
-      const status = query.state.data?.status;
-      return status === "QUEUED" || status === "PROCESSING" ? 1500 : false;
+      const runStatus = query.state.data?.status;
+      return runStatus === "QUEUED" || runStatus === "PROCESSING" ? 1500 : false;
     },
   });
 
@@ -170,17 +185,20 @@ export function CareerIntelligencePanel({ jobId }: { jobId: string }) {
   const busy = createRun.isPending || Boolean(activeRunId);
 
   return (
-    <Card className="detail-section career-intelligence-panel">
-      <div className="detail-title-row">
+    <Card className={`detail-section ${styles.panel}`}>
+      <div className={styles.header}>
         <div>
           <p className="eyebrow">Career Intelligence V2</p>
           <h2>Turn this job into an evidence-backed plan</h2>
-          <p className="detail-copy">
+          <p className={styles.description}>
             ApplyAI uses your verified profile, career memory, and job evidence. Suggestions never represent a hiring probability or an external application submission.
           </p>
         </div>
         {match.data ? (
-          <div className="career-score" aria-label={`${match.data.final_score} percent match score`}>
+          <div
+            className={styles.score}
+            aria-label={`${match.data.final_score} percent match score`}
+          >
             <strong>{match.data.final_score}</strong>
             <span>/100</span>
             <Badge tone={match.data.decision === "PRIORITIZE" ? "success" : "info"}>
@@ -190,26 +208,33 @@ export function CareerIntelligencePanel({ jobId }: { jobId: string }) {
         ) : null}
       </div>
 
-      <div className="career-action-grid">
+      <div className={styles.actionGrid}>
         {actions.map(({ task, label, description, icon: Icon }) => (
           <button
-            className="career-action-card"
+            className={styles.actionCard}
             key={task}
             type="button"
             disabled={busy}
             onClick={() => createRun.mutate({ task })}
           >
             <Icon size={20} aria-hidden="true" />
-            <span><strong>{label}</strong><small>{description}</small></span>
+            <span>
+              <strong>{label}</strong>
+              <small>{description}</small>
+            </span>
           </button>
         ))}
       </div>
 
       {lastRun && lastRun.status !== "COMPLETED" ? (
-        <div className="career-run-status" role="status">
-          <span className="status-dot" aria-hidden="true" />
+        <div className={styles.runStatus} role="status">
+          <span className={styles.dot} aria-hidden="true" />
           <strong>{titleCase(lastRun.status)}</strong>
-          <span>{lastRun.status === "FAILED" ? lastRun.error_code ?? "Request failed" : "Your evidence is being processed."}</span>
+          <span>
+            {lastRun.status === "FAILED"
+              ? lastRun.error_code ?? "Request failed"
+              : "Your evidence is being processed."}
+          </span>
           {lastRun.status === "FAILED" ? (
             <Button
               size="small"
@@ -227,11 +252,15 @@ export function CareerIntelligencePanel({ jobId }: { jobId: string }) {
       ) : null}
 
       {latestArtifacts.length ? (
-        <div className="career-artifact-list">
-          {latestArtifacts.map((artifact) => <ArtifactPreview artifact={artifact} key={artifact.id} />)}
+        <div className={styles.artifactList}>
+          {latestArtifacts.map((artifact) => (
+            <ArtifactPreview artifact={artifact} key={artifact.id} />
+          ))}
         </div>
       ) : (
-        <p className="muted-copy">No AI artifacts yet. Start with Analyze fit to create the hybrid match baseline.</p>
+        <p className={styles.muted}>
+          No AI artifacts yet. Start with Analyze fit to create the hybrid match baseline.
+        </p>
       )}
     </Card>
   );

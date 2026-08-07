@@ -1,195 +1,238 @@
 # Implementation Plan
 
-Updated: 2026-08-06
+Updated: 2026-08-07
 
-This plan distinguishes **repository/source completion** from **real external-service acceptance**.
-Passing CI does not prove that AWS, Vercel, Clerk, public ATS providers or an external model have
-been exercised in a real staging environment.
+ApplyAI's repository/source implementation plan is complete. The remaining plan contains only real deployment, external-provider, signing, distribution and operational-evidence gates.
 
-## Milestones 0–3 — Candidate and job-data foundation
+## Completed source milestones
 
-Status: **SOURCE IMPLEMENTED**
+### Milestone 0 — Core architecture
 
-### Milestone 0 — Architecture correction
+Status: **COMPLETE**
 
-- Next.js App Router candidate web.
-- FastAPI modular monolith.
-- PostgreSQL/Alembic canonical persistence.
-- Clerk identity/ownership boundary.
-- storage, queue, search and connector interfaces.
-- source-controlled CI and deployment architecture.
+- Next.js App Router web product;
+- FastAPI modular monolith;
+- PostgreSQL/Alembic canonical persistence;
+- Clerk identity and owner-scoping boundary;
+- private object storage and durable queue abstractions;
+- source-controlled CI and AWS/Vercel deployment architecture.
 
-### Milestone 1 — Authenticated onboarding
+### Milestone 1 — Candidate onboarding and durable resume
 
-- candidate identity mapping;
-- owner-scoped APIs;
+Status: **COMPLETE**
+
+- authenticated candidate mapping;
+- profile/experience/education/skills/preferences;
 - resume-less and resume-upload onboarding;
-- direct private-S3 upload design;
-- transactional outbox -> SQS -> resume worker;
-- deterministic PDF/DOCX extraction, provenance review and confirmation;
-- one master resume with version history.
+- private direct-S3 upload architecture;
+- transactional outbox -> resume SQS -> worker;
+- PDF/DOCX extraction/review/confirmation;
+- one master resume plus version history and processing provenance.
 
 ### Milestone 2 — Candidate workflow
 
-- PostgreSQL job search/filter/relevance/cursor pagination;
-- job detail;
-- save/unsave;
-- application creation, status history and notes;
-- persisted return-session browser acceptance;
-- Candidate A/B ownership isolation.
+Status: **COMPLETE**
 
-### Milestone 3 — Multi-source job-data platform
+- job search/filter/relevance/cursor pagination;
+- saved jobs and saved searches;
+- application command center;
+- statuses/events/notes;
+- candidate analytics;
+- notifications/reminders;
+- network/recruiter contacts;
+- account privacy/export/deletion;
+- canonical browser acceptance and ownership isolation.
 
-- Greenhouse, Lever, Ashby and structured public-source architecture;
-- source registry, scheduling, leasing and durable dispatch;
-- canonicalization, deduplication and field provenance;
-- source authority/conflict resolution;
+### Milestone 3 — Job-data platform
+
+Status: **COMPLETE**
+
+- Greenhouse/Lever/Ashby dedicated adapters;
+- bounded public structured-page import;
+- ATS discovery for major recognized career systems;
+- source registry/scheduling/leasing;
+- canonicalization/dedup/provenance/authority;
 - apply-URL verification and closure evidence;
-- ACTIVE -> UNKNOWN -> STALE/closure lifecycle;
-- source quality metrics and scale benchmark workflow;
-- dedicated source queue/DLQ/worker/outbox infrastructure.
+- quality metrics;
+- source queue/DLQ/worker/outbox infrastructure;
+- 10K/50K/250K PostgreSQL benchmark gate.
 
-Real provider-scale measurements remain staging/benchmark evidence, not source claims.
+### Milestone 4 — Career Intelligence V1
 
-## Milestone 4 — Career Intelligence V1
+Status: **COMPLETE**
 
-Status: **COMPLETE ON MAIN**
-
-- deterministic explainable opportunity prioritization;
-- six-factor 100-point baseline;
+- deterministic explainable ranking baseline;
 - evidence-locked resume wording;
-- candidate approve/reject flow;
-- cover-letter and common application-answer preparation;
-- application package readiness;
-- persisted browser reload journey;
-- screenshots/demo artifact;
-- clear boundary that ApplyAI prepares but does not externally submit applications.
+- candidate review decisions;
+- cover-letter/application-answer preparation;
+- readiness state and persisted browser workflow.
 
-V1 is retained as a compatibility/baseline layer rather than deleted.
+### Milestone 5 — Career Intelligence V2
 
-## Milestone 5 — Career Intelligence V2
+Status: **COMPLETE**
 
-Status: **IMPLEMENTED ON PR #12; EXACT-HEAD VALIDATION REQUIRED BEFORE MERGE**
+- first-class AI runs/artifacts/matches/tailoring/cover-letter/question/feedback persistence;
+- verified Career Memory;
+- dedicated AI queue/DLQ/worker/outbox;
+- structured provider abstraction;
+- strict schema/evidence validation;
+- retry/fail-closed behavior;
+- prompt/model/schema/token/latency/configured-cost telemetry;
+- hybrid matching;
+- canonical Career Intelligence product integration.
 
-### 5A — First-class AI domain
+### Milestone 6 — Candidate Product Completion
 
-- `AIJobRun`;
-- versioned `AIArtifact`;
-- `CareerMatch`;
-- `ResumeTailoring` / revisions;
-- `CoverLetter`;
-- `ApplicationQuestionDraft`;
-- candidate artifact feedback.
+Status: **COMPLETE**
 
-### 5B — Verified Career Memory
+- AI Matches;
+- semantic embedding reranking;
+- Resume Studio;
+- Application Command Center;
+- Interview Copilot/practice;
+- Alerts and saved searches;
+- networking/follow-up workspace;
+- company intelligence;
+- candidate analytics;
+- public pricing, subscription and privacy controls;
+- `/demo` and `/beta` consolidated into canonical product routes.
 
-- candidate-owned facts for achievements, projects, metrics, responsibilities, certifications,
-  leadership stories, interview feedback and career goals;
-- explicit `USER_VERIFIED` provenance;
-- archive/review behavior;
-- inclusion in the AI evidence catalog.
+### Milestone 7 — Employer Platform
 
-### 5C — Durable AI runtime
+Status: **COMPLETE**
 
-- four server-owned task types;
-- transactional outbox creation;
-- dedicated AI SQS/DLQ routing;
-- visibility heartbeat and retry behavior;
-- deterministic CI provider;
-- production-capable structured model-provider abstraction;
-- strict JSON schema plus Pydantic validation;
-- exact evidence-reference validation;
-- model/prompt/schema/latency/token/configured-cost telemetry;
-- transient-vs-terminal failure handling.
+- employer organizations and memberships;
+- operator verification/suspension;
+- employer job drafting/publishing/closure;
+- first-party jobs in the canonical candidate marketplace;
+- first-party applicant pipeline;
+- stages, ratings, recruiter notes and dashboard metrics.
 
-### 5D — Hybrid matching and copilots
+### Milestone 8 — Application Submission Orchestration
 
-- deterministic baseline retained;
-- hybrid persisted match;
-- evidence-grounded deep fit analysis;
-- evidence-locked resume tailoring;
-- application copilot;
-- interview preparation;
-- artifact version/supersession;
-- candidate review persistence.
+Status: **COMPLETE**
 
-### 5E — Candidate product integration
+- explicit candidate review/approval boundary;
+- direct submission for verified first-party ApplyAI employers;
+- recorded external handoff for third-party employers;
+- no employer authentication, CAPTCHA or anti-bot circumvention.
 
-- V2 actions on real `/jobs/[id]` pages;
-- asynchronous polling for durable staging work;
-- `/career` Career Memory workspace;
-- recent artifact visibility;
-- existing `/beta` reduced to compatibility/demo evidence rather than the architectural product
-  surface.
+### Milestone 9 — Billing and Entitlements
 
-### 5F — Evaluation and observability
+Status: **COMPLETE**
 
-- measured run success/failure;
-- provider/task/model breakdown;
-- latency/token/configured-cost telemetry;
-- artifact verification rate;
-- accepted/edited/rejected feedback rates;
-- AI queue depth/age/DLQ alarms;
-- protected operator metrics.
+- Free/Pro/Team plans and usage entitlements;
+- subscription persistence;
+- Stripe Checkout adapter;
+- Stripe Billing Portal adapter;
+- signed Stripe webhook lifecycle;
+- billing ledger and candidate billing UI.
 
-### 5G — Staging runtime source
+### Milestone 10 — Engagement, Operations and AI Evaluation
 
-- AI SQS + DLQ/redrive;
-- AI Fargate worker;
-- queue-aware universal outbox publisher;
-- least-privilege IAM;
-- conditional Secrets Manager access for provider credentials;
-- release activation after migration gate;
-- infrastructure verification for AI services/queues/logs/alarms.
+Status: **COMPLETE**
 
-## Milestone 6 — Real staging acceptance
+- notification preferences and inbox;
+- saved-search job alerts;
+- interview/recruiter follow-up dispatch;
+- operator console and employer trust controls;
+- runtime AI quality telemetry;
+- golden evaluation datasets;
+- ranking/evidence metrics and baseline-vs-candidate A/B comparison.
 
-Status: **BLOCKED BY EXTERNAL ENVIRONMENT**
+### Milestone 11 — Native Mobile and Browser Extension Source
 
-Required before production promotion:
+Status: **COMPLETE**
 
-1. provision the real dedicated staging AWS environment;
-2. configure GitHub `staging` environment and OIDC outputs;
-3. issue/attach ACM certificate and API DNS;
-4. configure the real Clerk staging application;
-5. configure the Vercel staging project/domain;
-6. approve a small explicit Greenhouse/Lever/Ashby source set;
-7. run Candidate A/B browser acceptance against real services;
-8. run direct S3 -> outbox -> resume SQS -> worker acceptance;
-9. run source queue/provider freshness/dedup/closure acceptance;
-10. configure a reviewed AI provider credential and model;
-11. execute each Career Intelligence V2 task through AI SQS/worker;
-12. inject transient model/worker failures and prove retry/DLQ/redrive;
-13. prove evidence/schema failures fail closed;
-14. verify no resume/model credential/auth-token leakage in logs;
-15. record real latency/token/cost observations;
-16. execute rollback and database backup/restore drills.
+- Expo/React Native mobile source with Clerk secure token handling;
+- native Matches, Jobs, Applications, Alerts and Profile/Career Memory;
+- Manifest V3 browser extension with permission-minimal public-job URL handoff;
+- repository tests compile mobile TS/TSX and validate extension source/permissions.
 
-No repository change can honestly mark this milestone complete without those external resources.
+### Milestone 12 — Infrastructure and Release Source
 
-## Milestone 7 — Production promotion
+Status: **COMPLETE**
 
-Status: **GATED**
+- AWS staging Terraform for candidate/source/AI runtime;
+- CloudFormation OIDC/state bootstrap;
+- immutable-image release;
+- migration gate;
+- rollback/recovery automation;
+- infrastructure verification;
+- provider/environment templates;
+- production-promotion and recovery runbooks.
 
-Only after staging acceptance:
+## Remaining external execution milestones
 
-- production account/state/trust boundary;
-- deletion protection and final-snapshot/PITR policy;
-- production capacity/HA decisions based on measurements;
-- alert routing and operational ownership;
-- reviewed AI provider/model/cost budgets;
-- staged rollout/rollback policy;
-- privacy/security review;
-- production domain and Clerk configuration.
+### Real staging activation
 
-## Later product milestones
+Status: **BLOCKED**
 
-Not part of the current Candidate/Career Intelligence completion gate:
+Requires real AWS/Vercel/Clerk/DNS/ACM resources and GitHub staging environment configuration. Then execute the existing preflight, infrastructure, release and verification workflows.
 
-- native iOS/Android;
-- employer/recruiter platform;
-- billing;
-- autonomous external messaging;
-- auto-apply/external form submission.
+### Real candidate and worker acceptance
 
-These remain separate because they materially change product permissions, risk and operating model.
+Status: **BLOCKED**
+
+Prove against real services:
+
+```text
+Clerk -> Vercel -> FastAPI/ECS -> Aurora
+browser -> private S3 -> outbox -> resume SQS -> worker
+source dispatcher -> source SQS -> provider lifecycle
+AI outbox -> AI SQS -> AI worker -> reviewed model -> validated artifact
+```
+
+Also prove Candidate A/B isolation, retries, DLQ/redrive, safe logs and rollback/recovery.
+
+### Live model/embedding acceptance
+
+Status: **BLOCKED**
+
+Configure the reviewed OpenAI secret/model/embedding model in the real AI runtime and measure quality, latency, token usage and cost. Inject retryable and terminal failures and prove the existing safety boundaries.
+
+### Live billing acceptance
+
+Status: **BLOCKED**
+
+Configure the real Stripe account, prices and webhook secret, then exercise Checkout, Billing Portal, signed webhooks, cancellation and entitlement transitions.
+
+### Real notification delivery
+
+Status: **BLOCKED**
+
+Choose/configure email and push providers and prove delivery, preferences, opt-out and failure handling. Durable notification generation/inbox state is already complete.
+
+### Production cloud promotion
+
+Status: **BLOCKED**
+
+Promote only after staging evidence determines final account/state/trust boundaries, capacity, HA, WAF/rate limiting, alert routing, provider budgets, backup/PITR and rollback approvals.
+
+### Production recovery drills
+
+Status: **BLOCKED**
+
+Execute backup/restore, PITR, worker/DLQ recovery, rollback and incident drills against real infrastructure.
+
+### Native app distribution
+
+Status: **BLOCKED**
+
+Configure Apple/Google developer accounts, signing/EAS credentials, native builds, App Store/Play Store review and publication.
+
+### Browser-extension distribution
+
+Status: **BLOCKED**
+
+Package, sign and publish through the selected browser extension stores.
+
+### External identity deletion
+
+Status: **BLOCKED**
+
+ApplyAI application-side personal-data deletion is implemented. Revoking/deleting the external Clerk identity must be completed through the configured identity provider.
+
+## Completion rule
+
+Source capabilities are complete when they exist in the repository and pass the applicable exact-head gate. External milestones remain blocked until genuine environment/provider/distribution evidence exists; repository source is never used to fabricate that evidence.

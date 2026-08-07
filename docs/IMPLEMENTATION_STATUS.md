@@ -1,111 +1,90 @@
 # Implementation Status
 
-Updated: 2026-07-30
+Updated: 2026-08-06
 
-Statuses are restricted to COMPLETE, PARTIAL, NOT STARTED, and BLOCKED.
+Statuses are restricted to `COMPLETE`, `PARTIAL`, `NOT STARTED`, and `BLOCKED`.
+`COMPLETE` means source plus the applicable repository validation gate. External services are never
+marked complete merely because their Terraform/workflow source exists.
 
 | Capability | Status | Evidence / boundary |
 |---|---|---|
-| Frozen architecture | COMPLETE | Next.js App Router + Clerk; FastAPI modular monolith; PostgreSQL/Alembic; S3/SQS; Vercel/AWS target preserved. No Redis/OpenSearch/Kafka/Kubernetes/microservice split added. |
-| Candidate authorization | COMPLETE | Candidate-owned profile, resume, saved-job, application and note APIs are owner-scoped; deterministic two-user coverage exists. |
-| Resume upload durability | COMPLETE | Upload intent -> presigned PUT -> S3 HEAD verification -> `ResumeVersion + task_outbox` transaction; direct S3 browser path in durable environments. |
-| Resume versioning | COMPLETE | One master resume per candidate, monotonic versions, migration-enforced uniqueness. |
-| Transactional outbox | COMPLETE | Durable outbox, unique idempotency key, `FOR UPDATE SKIP LOCKED`, stale claim recovery and exponential retry. |
-| Resume processing idempotency | COMPLETE | Parser-version uniqueness, persisted processing attempts, stale-attempt recovery and redelivery-safe terminal handling. |
-| SQS worker lease behavior | COMPLETE | Configurable visibility timeout/heartbeat and processing timeout; PROCESSING is not acknowledged; failed messages remain eligible for retry/DLQ. |
-| DLQ operator path | COMPLETE | Durable environments require a DLQ; SQS redrive is configured in Terraform; sanitized DLQ inspection command avoids printing resume bodies. |
-| Resume confirmation/profile provenance | COMPLETE | Confirmation completes extraction/version and persists candidate-reviewed profile data as `USER_VERIFIED` in one transaction. |
-| Candidate profile/onboarding source | COMPLETE | Profile, experience, education, skills, roles, location, work mode, compensation, onboarding state and manual fallback are implemented. |
-| Job search | COMPLETE | PostgreSQL FTS, structured filters, stable cursor pagination and relevance ordering are implemented; the old rank/cursor source mismatch is resolved. |
-| Saved jobs | COMPLETE | Ownership, save/unsave, UI and keyset pagination implemented. |
-| Applications | COMPLETE | Create/detail/status/events/notes plus lightweight keyset-paginated list projection. |
-| Greenhouse connector | COMPLETE | Public-board connector preserves source identity, source metadata/raw payload and normalized canonical data. |
-| Greenhouse ingestion lifecycle | COMPLETE | Ingestion runs, savepoint isolation, repeat-fetch idempotency, changed-job propagation, multi-source freshness and ACTIVE -> UNKNOWN -> STALE recovery logic. |
-| Deterministic deduplication | COMPLETE | Exact source/application/internal identity and strict company/title/location/description fingerprint; heuristic confidence does not claim certainty. |
-| N+1 regression protection | COMPLETE | SQL statement-count scaling tests cover jobs, saved jobs and applications and require statement count not to grow with page row count. |
-| OpenAPI contract consistency | COMPLETE | Generated frontend schema is committed and CI enforces no contract drift. |
-| API container | COMPLETE | Non-root production Docker image exists and has built successfully in GitHub Actions. |
-| Database migrations | COMPLETE | Alembic zero-to-head migration, current-head reporting and migration-drift checks execute in CI against PostgreSQL 17. |
-| Candidate MVP Playwright | COMPLETE | Deterministic browser -> Next.js -> FastAPI -> real PostgreSQL journey covers onboarding, resume review/confirm, search, save, application/status/note persistence, relogin and Candidate B isolation. This is CI proof, not real Clerk/AWS proof. |
-| CI definition | COMPLETE | Independent lint, typecheck, Vitest, production build, OpenAPI, Alembic, API tests, Docker build, Terraform validation and Playwright gates. |
-| Terraform staging source | COMPLETE | `infra/staging` defines networking, ALB, ECS/Fargate, ECR, Aurora Serverless v2, private S3, SQS/DLQ, IAM, EventBridge and CloudWatch. Terraform 1.15.5 `fmt`, provider `init -backend=false`, and `validate` have executed successfully. AWS provider is pinned to validated release 6.55.0. |
-| AWS bootstrap source | COMPLETE | CloudFormation bootstrap creates/reuses GitHub OIDC trust, private/versioned Terraform state and the staging deploy role; the pinned `cfn-lint` gate has executed successfully. |
-| GitHub workflow static validation | PARTIAL | `actionlint` is source-controlled and identified shell-quality issues in the new deployment workflows; those findings were corrected and the latest gate must finish green before this row becomes COMPLETE. |
-| GitHub -> AWS deployment automation | COMPLETE | OIDC-only preflight, foundation plan/apply, immutable release/migration/activation, rollback and deployed-infrastructure verification workflows are source-controlled. No static AWS keys are required. |
-| Vercel/Clerk staging templates | COMPLETE | Vercel staging env example, GitHub environment manifest and staging runbook define exact external values without committing secrets. |
-| Staging deployment | BLOCKED | Requires real AWS staging account, GitHub `staging` environment values, ACM/DNS, Clerk staging application and Vercel staging project. No real AWS resources are claimed deployed. |
-| Real-service Candidate MVP acceptance | BLOCKED | Must prove real Clerk -> Vercel -> ECS -> Aurora plus browser -> S3 -> outbox -> SQS -> worker, failure recovery and two-user isolation in staging. |
-| Production infrastructure | PARTIAL | Promotion checklist and production-safe deployment ordering are defined. Production Terraform is intentionally not created until real staging acceptance and recovery drills pass. |
-| AI matching / embeddings | NOT STARTED | Intentionally gated behind Candidate MVP + staging verification. |
-| Mobile | NOT STARTED | Intentionally outside this milestone. |
-| Employer platform | NOT STARTED | Intentionally outside this milestone. |
-| Billing | NOT STARTED | Intentionally outside this milestone. |
-| Auto-apply | NOT STARTED | Intentionally outside this milestone. |
+| Core architecture | COMPLETE | Next.js App Router + Clerk; FastAPI modular monolith; PostgreSQL/Alembic; private S3; SQS; Vercel/AWS target preserved. No Redis/OpenSearch/Kafka/Kubernetes/microservice split. |
+| Candidate authorization | COMPLETE | Candidate profile, resume, saved-job, application, note and career-intelligence APIs are owner scoped; deterministic two-user coverage exists for the established Candidate MVP. |
+| Resume upload durability | COMPLETE | Upload intent -> presigned PUT -> S3 HEAD verification -> `ResumeVersion + task_outbox`; direct S3 browser path in durable environments. |
+| Resume processing | COMPLETE | Versioning, transactional outbox, SQS lease heartbeat, idempotent attempts, candidate confirmation/provenance and DLQ operator path exist. |
+| Candidate profile/onboarding | COMPLETE | Profile, experience, education, skills, target roles, preferences, onboarding state and manual fallback are implemented. |
+| Job search/saved jobs/applications | COMPLETE | PostgreSQL FTS/filters/cursors, job detail, saved jobs and application status/events/notes are implemented with N+1 regression protection. |
+| Multi-source job-data source | COMPLETE | Greenhouse/Lever/Ashby/structured-source architecture, source registry, durable dispatch, authority/provenance, dedup, freshness, closure evidence, URL verification and quality metrics exist. Real provider scale remains staging evidence. |
+| OpenAPI contract discipline | PARTIAL | Public Career Memory/V2 endpoints are typed and generated client synchronization is automated during PR #12 development. The temporary sync workflow must be removed and exact-head drift CI must finish green before this returns to COMPLETE. |
+| Database migrations | PARTIAL | Career Intelligence V2 and Career Memory Alembic revisions are source controlled. Exact-head zero-to-head and migration-drift CI must finish green before this returns to COMPLETE. |
+| Candidate MVP browser acceptance | COMPLETE | Existing deterministic browser -> Next.js -> FastAPI -> real PostgreSQL journey covers onboarding, resume review/confirm, search, save, application/status/note persistence, relogin and Candidate B isolation. This is repository CI proof, not real Clerk/AWS proof. |
+| Career Intelligence V1 | COMPLETE | Explainable six-factor prioritization, evidence-locked tailoring, application assistant/readiness, persistence reload and demo captures are merged on `main`. V1 remains a deterministic compatibility/baseline layer. |
+| First-class Career Intelligence V2 domain | PARTIAL | `AIJobRun`, versioned `AIArtifact`, `CareerMatch`, tailoring/revisions, cover letters, application-question drafts, feedback and migrations are implemented on PR #12; exact-head CI pending. |
+| Verified Career Memory | PARTIAL | Candidate-owned achievements/projects/metrics/responsibilities/certifications/leadership/interview-feedback/goals plus CRUD/summary and AI evidence inclusion are implemented on PR #12; exact-head CI pending. |
+| Durable AI queue runtime | PARTIAL | AI task outbox, dedicated SQS/DLQ routing, queue-aware claim filtering, AI worker heartbeat/retry, transient-vs-terminal failure handling and deterministic CI provider are implemented; exact-head CI/staging proof pending. |
+| Structured model-provider boundary | PARTIAL | Server-side provider abstraction, strict JSON-schema output, Pydantic validation, exact evidence-reference validation, provider/model/prompt/schema/latency/token/configured-cost telemetry and secret boundary are implemented. No real external model invocation is claimed yet. |
+| Hybrid matching V2 | PARTIAL | Deterministic V1 baseline plus persisted 65/35 hybrid score, strengths/gaps/risks/actions and candidate-scoped match reads are implemented; real model calibration/evaluation remains staging/product evidence. |
+| Resume Intelligence V2 | PARTIAL | Evidence-locked structured revisions, evidence refs, risk flags, confidence, candidate decision/edit text and artifact versioning are implemented; real model acceptance pending. |
+| Application Copilot V2 | PARTIAL | First-class reviewable cover letter, question drafts, recruiter outreach and strategy artifact implemented; external submission remains intentionally outside scope. |
+| Interview preparation V2 | PARTIAL | Evidence-grounded role questions, rationale, answer outlines, employer questions and gap plan implemented; real model acceptance pending. |
+| Candidate Career workspace | PARTIAL | Real job-detail V2 actions, durable-run polling, hybrid score/artifact previews and `/career` Career Memory/recent-artifact workspace are implemented; exact-head web/Playwright validation pending. |
+| AI quality/evaluation telemetry | PARTIAL | Run success/failure, latency, token/configured-cost, artifact verification and candidate feedback metrics plus regression tests are implemented; real model observations remain unavailable until staging. |
+| CI definition | COMPLETE | Lint, typecheck, Vitest, production build, OpenAPI, Alembic, API tests, Docker, Terraform, Playwright, CloudFormation and workflow validation gates are source controlled. |
+| Terraform candidate/source staging | COMPLETE | Networking, ALB, ECS/Fargate, ECR, Aurora, private S3, resume/source SQS/DLQ, IAM, EventBridge and CloudWatch source have validated previously. Real deployment remains separate. |
+| Terraform AI staging source | PARTIAL | Dedicated AI queue/DLQ, AI worker, universal queue-aware outbox, conditional Secrets Manager credential access, logs and alarms are implemented on PR #12; exact-head Terraform validation pending. |
+| GitHub -> AWS V2 release/verification | PARTIAL | V2 release now activates candidate/source/AI runtimes after the migration gate; V2 verification checks AI services/queues/logs/alarms/private networking. Workflow static validation and real AWS execution remain pending. |
+| AWS bootstrap source | COMPLETE | CloudFormation bootstrap creates/reuses GitHub OIDC trust, private/versioned state and staging deploy role; no long-lived AWS key is required for normal deployment workflows. |
+| Vercel/Clerk/operator templates | COMPLETE | Vercel/API templates plus GitHub/Terraform examples define staging values without committing credentials; Career Intelligence provider/model/Secrets Manager ARN are documented. |
+| Real AWS/Vercel/Clerk staging deployment | BLOCKED | Requires actual staging account/environment, OIDC outputs, ACM/DNS, Clerk app, Vercel project/domain and reviewed source set. No real resources are claimed deployed. |
+| Real-service Candidate MVP acceptance | BLOCKED | Must prove real Clerk -> Vercel -> ECS -> Aurora and browser -> S3 -> outbox -> resume SQS -> worker plus failure recovery and Candidate A/B isolation. |
+| Real multi-source provider acceptance | BLOCKED | Must execute reviewed Greenhouse/Lever/Ashby set, freshness/dedup/closure/failure recovery and measured throughput/cost in staging. |
+| Real model-provider acceptance | BLOCKED | Requires reviewed model credential/model and real AI outbox -> SQS -> worker -> provider -> validated artifact runs, retries/DLQ, evidence/schema failure injection and measured token/latency/cost observations. |
+| Production infrastructure | PARTIAL | Promotion/recovery guidance exists; production Terraform remains intentionally gated by real staging acceptance, recovery drills and measured capacity/security decisions. |
+| Native mobile | NOT STARTED | Intentionally outside the current Candidate/Career Intelligence milestone. |
+| Employer platform | NOT STARTED | Intentionally outside the current Candidate/Career Intelligence milestone. |
+| Billing | NOT STARTED | Intentionally outside the current Candidate/Career Intelligence milestone. |
+| Auto-apply/external submission | NOT STARTED | Intentionally separate; current product prepares/reviews materials but does not submit external forms or send messages autonomously. |
 
-## Verified source gates
+## Current PR #12 acceptance gate
 
-GitHub-hosted runners are operational. Executable runs have demonstrated the application/infrastructure source gates rather than merely creating jobs. Verified evidence includes:
+Before PR #12 is eligible to merge, the exact candidate head must pass:
 
 ```text
 Web lint
 Web typecheck
-Vitest
+Web unit tests
 Next.js production build
 OpenAPI contract drift
 API tests
-Alembic migration validation
+Alembic zero-to-head + drift validation
 API production Docker build
-Terraform fmt
-Terraform provider initialization
-Terraform validate
-CloudFormation cfn-lint
+Terraform fmt/init/validate
+GitHub workflow static validation
+Candidate MVP Playwright
+applicable Career Intelligence/browser regression
 ```
 
-The Candidate MVP Playwright journey has also completed successfully on a verified application head. One later Playwright execution was cancelled during Chromium installation only because `cancel-in-progress` superseded that older run with a newer commit; it was not a test assertion failure.
+Cancelled runs caused only by `cancel-in-progress` superseding an older source head are not failures,
+but they are also not proof for the final head.
 
-Do not reuse those results as evidence for a future source-changing head. Each deployment candidate must pass its own required checks.
+## Real staging acceptance after merge
 
-## Deployment package
-
-The staging deployment package now contains:
+Real staging must separately prove:
 
 ```text
-infra/bootstrap/
-  applyai-staging-bootstrap.yaml
-  README.md
-
-infra/staging/
-  backend.tf
-  versions.tf
-  variables.tf
-  network.tf
-  data.tf
-  compute.tf
-  observability.tf
-  outputs.tf
-  terraform.tfvars.example
-  github.environment.example
-  README.md
-
-.github/workflows/
-  ci.yml
-  bootstrap-validation.yml
-  workflow-validation.yml
-  staging-preflight.yml
-  staging-infra.yml
-  staging-deploy.yml
-  staging-rollback.yml
-  staging-verify.yml
-
-apps/web/.env.staging.example
-docs/AWS_STAGING_DEPLOYMENT.md
-docs/PRODUCTION_PROMOTION_CHECKLIST.md
+Clerk -> Vercel -> FastAPI/ECS -> Aurora
+browser -> private S3 -> outbox -> resume SQS -> worker
+source dispatcher -> source SQS -> adapters -> canonical job lifecycle
+AI outbox -> AI SQS -> AI worker -> reviewed provider -> validated artifact
 ```
 
-## Candidate MVP status
+It must also prove Candidate A/B ownership, queue/DLQ recovery, model transient retry, terminal
+schema/evidence failure behavior, safe logs, provider/source measurements, rollback and database
+backup/restore. These gates remain `BLOCKED` until the external environment exists.
 
-**PARTIAL**
+## Source-of-truth rule
 
-The application and deployment source are ready for the real-service phase, but the milestone remains PARTIAL until AWS/Clerk/Vercel staging exists and the real Candidate MVP, queue/outbox failure recovery, Greenhouse lifecycle, observability and recovery acceptance gates are executed successfully.
-
-Do not begin Milestone 3 / AI matching until that staging gate is verified.
+Do not use the older statement “AI matching is not started.” Career Intelligence V1 is already on
+`main`, and V2 is the active PR. Use this file, `CURRENT_REPOSITORY_STATE.md`, and
+`CAREER_INTELLIGENCE_V2.md` together; never reuse a historical PASS for a newer source-changing
+head.

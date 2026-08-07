@@ -12,18 +12,32 @@ clerk_issuer   = "https://your-staging-clerk-instance.clerk.accounts.dev"
 clerk_jwks_url = "https://your-staging-clerk-instance.clerk.accounts.dev/.well-known/jwks.json"
 clerk_audience = ""
 
-# Start with a small explicit set and validate ingestion/dedup/freshness before expanding.
-greenhouse_board_tokens = [
-  "example-company",
-]
+# Start with a small explicit provider set and validate ingestion/dedup/freshness before
+# expanding. These identifiers are public source configuration, not credentials.
+greenhouse_board_tokens = ["example-company"]
+lever_site_names        = []
+ashby_board_names       = []
 
-# Infrastructure can be created before an image exists. After the first image is
-# pushed and migrations are applied, set these to 1 and enable ingestion.
-image_tag                  = "staging"
-api_desired_count          = 0
-worker_desired_count       = 0
-outbox_desired_count       = 0
-ingestion_schedule_enabled = false
+# Career Intelligence V2. `deterministic` proves queue/worker/persistence behavior without
+# external model calls. For `openai`, store the API key in Secrets Manager and provide only
+# its ARN here or through the GitHub staging environment.
+ai_provider                  = "deterministic"
+openai_api_key_secret_arn    = ""
+openai_model                 = "gpt-5.6-luna"
+openai_reasoning_effort      = "low"
+
+# Infrastructure can be created before an image exists. The initial foundation remains
+# dormant. The V2 release workflow activates the reviewed services only after Alembic passes.
+image_tag                               = "staging"
+api_desired_count                       = 0
+worker_desired_count                    = 0
+outbox_desired_count                    = 0
+source_worker_desired_count             = 0
+source_outbox_desired_count             = 0
+source_dispatch_schedule_enabled        = false
+ai_worker_desired_count                 = 0
+ai_outbox_desired_count                 = 0
+ingestion_schedule_enabled              = false
 
 # Optional existing SNS topic for alarm notifications.
 alarm_sns_topic_arn = null

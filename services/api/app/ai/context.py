@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.api.candidate_workspace import candidate_context
 from app.api.career_product import _match_payload
+from app.career_memory_models import CandidateCareerFact
 from app.models import (
     Company,
     Job,
@@ -41,6 +42,21 @@ def build_career_ai_context(session: Session, user: User, job: Job) -> dict[str,
     candidate = candidate_context(session, user)
     profile = candidate["profile"]
     preference = candidate["preference"]
+    career_facts = list(
+        session.scalars(
+            select(CandidateCareerFact)
+            .where(
+                CandidateCareerFact.user_id == user.id,
+                CandidateCareerFact.user_verified.is_(True),
+                CandidateCareerFact.archived_at.is_(None),
+            )
+            .order_by(
+                CandidateCareerFact.occurred_at.desc().nullslast(),
+                CandidateCareerFact.updated_at.desc(),
+            )
+            .limit(100)
+        )
+    )
     company = session.get(Company, job.company_id)
     locations = list(
         session.scalars(
@@ -102,6 +118,10 @@ def build_career_ai_context(session: Session, user: User, job: Job) -> dict[str,
         evidence[f"candidate.skill.{item.id}"] = item.name
     for item in candidate["roles"]:
         evidence[f"candidate.target_role.{item.id}"] = item.title
+    for item in career_facts:
+        evidence[f"candidate.career_fact.{item.id}"] = " | ".join(
+            part for part in [item.category, item.title or "", item.fact_text] if part
+        )
     if preference:
         if preference.location_text:
             evidence["candidate.preference.location"] = preference.location_text
@@ -158,6 +178,18 @@ def build_career_ai_context(session: Session, user: User, job: Job) -> dict[str,
                     "provenance": item.provenance,
                 }
                 for item in candidate["experiences"]
+            ],
+            "career_memory": [
+                {
+                    "id": str(item.id),
+                    "category": item.category,
+                    "title": item.title,
+                    "fact_text": item.fact_text,
+                    "tags": item.tags,
+                    "occurred_at": item.occurred_at,
+                    "provenance": item.provenance,
+                }
+                for item in career_facts
             ],
             "preference": {
                 "location_text": preference.location_text,

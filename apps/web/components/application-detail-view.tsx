@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api/client";
+import { ApplicationSubmissionPanel } from "@/components/application-submission-panel";
 import { Badge, Button, Card, ErrorState, Field, NativeSelect, PageHeader, Skeleton, Textarea } from "@/components/ui";
 import { formatDate, titleCase } from "@/lib/utils";
 
@@ -55,9 +56,10 @@ export function ApplicationDetailView({ applicationId }: { applicationId: string
   const posting = job.data;
   return (
     <>
-      <PageHeader eyebrow="Application workspace" title={posting.title} description={`${posting.company_name} · ${posting.location ?? "Location flexible"}`} action={<Link className="ui-button ui-button-secondary ui-button-small" href={`/jobs/${posting.id}`}>View job</Link>} />
+      <PageHeader eyebrow="Application command center" title={posting.title} description={`${posting.company_name} · ${posting.location ?? "Location flexible"}`} action={<Link className="ui-button ui-button-secondary ui-button-small" href={`/jobs/${posting.id}`}>View job</Link>} />
       <div className="detail-grid">
         <div className="detail-main">
+          <ApplicationSubmissionPanel applicationId={applicationId} jobId={posting.id} sourceUrl={posting.source_url} />
           <Card className="detail-section">
             <div className="section-header"><div><h2>Timeline</h2><p>Application history is append-only.</p></div><Badge tone="info">{titleCase(app.current_status)}</Badge></div>
             <ol className="timeline">
@@ -65,7 +67,7 @@ export function ApplicationDetailView({ applicationId }: { applicationId: string
             </ol>
           </Card>
           <Card className="detail-section">
-            <h2>Notes</h2>
+            <h2>Notes and follow-ups</h2>
             <form className="form-stack" onSubmit={(event) => { event.preventDefault(); if (note.trim()) noteMutation.mutate(note.trim()); }}>
               <Field label="Add a private note" htmlFor="application-note"><Textarea id="application-note" value={note} onChange={(event) => setNote(event.target.value)} placeholder="Interview follow-up, recruiter details, next steps…" /></Field>
               <div className="button-row"><Button disabled={!note.trim() || noteMutation.isPending} type="submit">Add note</Button></div>
@@ -83,6 +85,7 @@ export function ApplicationDetailView({ applicationId }: { applicationId: string
               <div className="fact-row"><CalendarDays size={17} /><div><strong>Tracking started</strong><span>{formatDate(app.created_at)}</span></div></div>
               <div className="fact-row"><CalendarDays size={17} /><div><strong>Last updated</strong><span>{formatDate(app.updated_at)}</span></div></div>
             </div>
+            <div className="button-row"><Link className="ui-button ui-button-secondary ui-button-small" href={`/interview/${posting.id}`}>Interview prep</Link><Link className="ui-button ui-button-secondary ui-button-small" href="/network">Recruiter contacts</Link></div>
           </Card>
         </aside>
       </div>

@@ -85,7 +85,11 @@ def _run_payload(run: AIJobRun) -> dict:
         "latency_ms": run.latency_ms,
         "input_tokens": run.input_tokens,
         "output_tokens": run.output_tokens,
-        "estimated_cost_usd": float(run.estimated_cost_usd) if run.estimated_cost_usd is not None else None,
+        "estimated_cost_usd": (
+            float(run.estimated_cost_usd)
+            if run.estimated_cost_usd is not None
+            else None
+        ),
         "error_code": run.error_code,
         "created_at": run.created_at,
         "completed_at": run.completed_at,
@@ -93,7 +97,12 @@ def _run_payload(run: AIJobRun) -> dict:
 
 
 def _input_hash(context: dict) -> str:
-    encoded = json.dumps(context, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    encoded = json.dumps(
+        context,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -108,23 +117,31 @@ def _queue_run(
     job = get_owned_active_job(session, job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
+
     context = build_career_ai_context(session, user, job)
     digest = _input_hash(context)
     idempotency_key = f"{user.id}:{job.id}:{task_type}:{PROMPT_VERSION}:{digest}"
-    existing = session.scalar(select(AIJobRun).where(AIJobRun.idempotency_key == idempotency_key))
+    existing = session.scalar(
+        select(AIJobRun).where(AIJobRun.idempotency_key == idempotency_key)
+    )
     if existing is not None:
         return existing
 
     application = None
     if task_type in APPLICATION_TASKS:
         application = get_or_create_application(job=job, user=user, session=session)
+
     run = AIJobRun(
         user_id=user.id,
         job_id=job.id,
         application_id=application.id if application else None,
         task_type=task_type,
         provider=settings.ai_provider,
-        model=settings.openai_model if settings.ai_provider == "openai" else "deterministic-evidence-v1",
+        model=(
+            settings.openai_model
+            if settings.ai_provider == "openai"
+            else "deterministic-evidence-v1"
+        ),
         prompt_version=PROMPT_VERSION,
         schema_version=SCHEMA_VERSION,
         input_hash=digest,
@@ -145,6 +162,7 @@ def _queue_run(
         aggregate_id=run.id,
     )
     session.commit()
+
     if settings.task_queue_provider == "memory":
         execute_ai_run(run.id, settings)
         session.expire_all()
@@ -155,7 +173,12 @@ def _queue_run(
 @router.post("/jobs/{job_id}/{task_path}")
 def create_ai_task(
     job_id: uuid.UUID,
-    task_path: Literal["deep-match", "resume-tailoring", "application-copilot", "interview-prep"],
+    task_path: Literal[
+        "deep-match",
+        "resume-tailoring",
+        "application-copilot",
+        "interview-prep",
+    ],
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_settings),
@@ -176,7 +199,12 @@ def get_run(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> dict:
-    run = session.scalar(select(AIJobRun).where(AIJobRun.id == run_id, AIJobRun.user_id == user.id))
+    run = session.scalar(
+        select(AIJobRun).where(
+            AIJobRun.id == run_id,
+            AIJobRun.user_id == user.id,
+        )
+    )
     if run is None:
         raise HTTPException(status_code=404, detail="AI run not found")
     return _run_payload(run)
@@ -189,11 +217,20 @@ def retry_run(
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_settings),
 ) -> dict:
-    run = session.scalar(select(AIJobRun).where(AIJobRun.id == run_id, AIJobRun.user_id == user.id))
+    run = session.scalar(
+        select(AIJobRun).where(
+            AIJobRun.id == run_id,
+            AIJobRun.user_id == user.id,
+        )
+    )
     if run is None:
         raise HTTPException(status_code=404, detail="AI run not found")
     if run.status != "FAILED":
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only failed AI runs can be retried")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only failed AI runs can be retried",
+        )
+
     run.status = "QUEUED"
     run.error_code = None
     run.error_summary = None
@@ -208,6 +245,7 @@ def retry_run(
         aggregate_id=run.id,
     )
     session.commit()
+
     if settings.task_queue_provider == "memory":
         execute_ai_run(run.id, settings)
         session.expire_all()
@@ -228,7 +266,9 @@ def list_artifacts(
         query = query.where(AIArtifact.job_id == job_id)
     if artifact_type:
         query = query.where(AIArtifact.artifact_type == artifact_type)
-    rows = list(session.scalars(query.order_by(AIArtifact.created_at.desc()).limit(limit)))
+    rows = list(
+        session.scalars(query.order_by(AIArtifact.created_at.desc()).limit(limit))
+    )
     return {
         "items": [
             {
@@ -265,6 +305,7 @@ def review_resume_revision(
     )
     if tailoring is None:
         raise HTTPException(status_code=404, detail="Resume tailoring not found")
+
     revision = session.scalar(
         select(ResumeTailoringRevision).where(
             ResumeTailoringRevision.tailoring_id == tailoring.id,
@@ -272,10 +313,16 @@ def review_resume_revision(
         )
     )
     if revision is None:
-        raise HTTPException(status_code=404, detail="Resume tailoring revision not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Resume tailoring revision not found",
+        )
+
     revision.candidate_decision = payload.decision
     revision.candidate_text = payload.text or revision.suggested_text
     revision.reviewed_at = utcnow()
+    session.flush()
+
     decisions = list(
         session.scalars(
             select(ResumeTailoringRevision.candidate_decision).where(
@@ -283,10 +330,12 @@ def review_resume_revision(
             )
         )
     )
-    decisions = [payload.decision if item == "PENDING" and position == revision.position else item for item in decisions]
     if decisions and all(item in {"APPROVED", "REJECTED"} for item in decisions):
         tailoring.status = "REVIEWED"
+    else:
+        tailoring.status = "NEEDS_REVIEW"
     session.commit()
+
     return {
         "tailoring_id": tailoring.id,
         "position": revision.position,
@@ -304,17 +353,25 @@ def review_cover_letter(
     session: Session = Depends(get_session),
 ) -> dict:
     row = session.scalar(
-        select(CoverLetter).where(CoverLetter.id == cover_letter_id, CoverLetter.user_id == user.id)
+        select(CoverLetter).where(
+            CoverLetter.id == cover_letter_id,
+            CoverLetter.user_id == user.id,
+        )
     )
     if row is None:
         raise HTTPException(status_code=404, detail="Cover letter not found")
+
     row.body = payload.body
     row.candidate_verified = payload.candidate_verified
     artifact = session.get(AIArtifact, row.artifact_id)
-    if artifact and artifact.user_id == user.id and payload.candidate_verified:
-        artifact.candidate_verified = True
+    if artifact and artifact.user_id == user.id:
+        artifact.candidate_verified = payload.candidate_verified
     session.commit()
-    return {"id": row.id, "body": row.body, "candidate_verified": row.candidate_verified}
+    return {
+        "id": row.id,
+        "body": row.body,
+        "candidate_verified": row.candidate_verified,
+    }
 
 
 @router.patch("/question-drafts/{draft_id}")
@@ -327,10 +384,17 @@ def review_question_draft(
     row = session.scalar(
         select(ApplicationQuestionDraft)
         .join(AIArtifact, AIArtifact.id == ApplicationQuestionDraft.artifact_id)
-        .where(ApplicationQuestionDraft.id == draft_id, AIArtifact.user_id == user.id)
+        .where(
+            ApplicationQuestionDraft.id == draft_id,
+            AIArtifact.user_id == user.id,
+        )
     )
     if row is None:
-        raise HTTPException(status_code=404, detail="Application answer draft not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Application answer draft not found",
+        )
+
     row.candidate_text = payload.answer
     row.candidate_verified = payload.candidate_verified
     row.reviewed_at = utcnow()
@@ -351,10 +415,14 @@ def record_artifact_feedback(
     session: Session = Depends(get_session),
 ) -> dict:
     artifact = session.scalar(
-        select(AIArtifact).where(AIArtifact.id == artifact_id, AIArtifact.user_id == user.id)
+        select(AIArtifact).where(
+            AIArtifact.id == artifact_id,
+            AIArtifact.user_id == user.id,
+        )
     )
     if artifact is None:
         raise HTTPException(status_code=404, detail="AI artifact not found")
+
     feedback = CandidateAIArtifactFeedback(
         artifact_id=artifact.id,
         user_id=user.id,
@@ -363,4 +431,8 @@ def record_artifact_feedback(
     )
     session.add(feedback)
     session.commit()
-    return {"id": feedback.id, "artifact_id": artifact.id, "action": feedback.action}
+    return {
+        "id": feedback.id,
+        "artifact_id": artifact.id,
+        "action": feedback.action,
+    }

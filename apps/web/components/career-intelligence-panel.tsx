@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BrainCircuit, FilePenLine, MessageSquareText, Sparkles } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Badge, Button, Card } from "@/components/ui";
 import {
@@ -114,7 +114,8 @@ function ArtifactPreview({ artifact }: { artifact: AIArtifact }) {
 export function CareerIntelligencePanel({ jobId }: { jobId: string }) {
   const queryClient = useQueryClient();
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
-  const [lastRun, setLastRun] = useState<AIJobRun | null>(null);
+  const [submittedRun, setSubmittedRun] = useState<AIJobRun | null>(null);
+  const handledTerminalRun = useRef<string | null>(null);
 
   const artifacts = useQuery({
     queryKey: ["career-v2-artifacts", jobId],
@@ -144,15 +145,18 @@ export function CareerIntelligencePanel({ jobId }: { jobId: string }) {
   });
 
   useEffect(() => {
-    if (!run.data) return;
-    setLastRun(run.data);
-    if (run.data.status === "COMPLETED") {
-      setActiveRunId(null);
+    const result = run.data;
+    if (!result || (result.status !== "COMPLETED" && result.status !== "FAILED")) return;
+
+    const terminalKey = `${result.id}:${result.status}:${result.attempt_count}`;
+    if (handledTerminalRun.current === terminalKey) return;
+    handledTerminalRun.current = terminalKey;
+
+    if (result.status === "COMPLETED") {
       queryClient.invalidateQueries({ queryKey: ["career-v2-artifacts", jobId] });
       queryClient.invalidateQueries({ queryKey: ["career-v2-match", jobId] });
       toast.success("Career intelligence is ready for review.");
-    } else if (run.data.status === "FAILED") {
-      setActiveRunId(null);
+    } else {
       toast.error("Career intelligence could not complete this request.");
     }
   }, [jobId, queryClient, run.data]);
@@ -160,7 +164,8 @@ export function CareerIntelligencePanel({ jobId }: { jobId: string }) {
   const createRun = useMutation({
     mutationFn: ({ task }: { task: CareerTaskPath }) => api.careerV2.start(jobId, task),
     onSuccess: (result) => {
-      setLastRun(result);
+      handledTerminalRun.current = null;
+      setSubmittedRun(result);
       if (result.status === "COMPLETED") {
         queryClient.invalidateQueries({ queryKey: ["career-v2-artifacts", jobId] });
         queryClient.invalidateQueries({ queryKey: ["career-v2-match", jobId] });
@@ -182,7 +187,11 @@ export function CareerIntelligencePanel({ jobId }: { jobId: string }) {
     });
   }, [artifacts.data]);
 
-  const busy = createRun.isPending || Boolean(activeRunId);
+  const currentRun = run.data?.id === activeRunId ? run.data : submittedRun;
+  const busy =
+    createRun.isPending ||
+    currentRun?.status === "QUEUED" ||
+    currentRun?.status === "PROCESSING";
 
   return (
     <Card className={`detail-section ${styles.panel}`}>
@@ -226,22 +235,23 @@ export function CareerIntelligencePanel({ jobId }: { jobId: string }) {
         ))}
       </div>
 
-      {lastRun && lastRun.status !== "COMPLETED" ? (
+      {currentRun && currentRun.status !== "COMPLETED" ? (
         <div className={styles.runStatus} role="status">
           <span className={styles.dot} aria-hidden="true" />
-          <strong>{titleCase(lastRun.status)}</strong>
+          <strong>{titleCase(currentRun.status)}</strong>
           <span>
-            {lastRun.status === "FAILED"
-              ? lastRun.error_code ?? "Request failed"
+            {currentRun.status === "FAILED"
+              ? currentRun.error_code ?? "Request failed"
               : "Your evidence is being processed."}
           </span>
-          {lastRun.status === "FAILED" ? (
+          {currentRun.status === "FAILED" ? (
             <Button
               size="small"
               variant="secondary"
               onClick={async () => {
-                const retried = await api.careerV2.retry(lastRun.id);
-                setLastRun(retried);
+                const retried = await api.careerV2.retry(currentRun.id);
+                handledTerminalRun.current = null;
+                setSubmittedRun(retried);
                 if (retried.status !== "COMPLETED") setActiveRunId(retried.id);
               }}
             >

@@ -29,7 +29,7 @@ def benchmark(*, organizations: int, shards: int, output: Path) -> dict:
             country_code="US",
             state_region="MA" if index % 2 == 0 else "NY",
             priority=index % 101,
-            dataset="synthetic-benchmark",
+            dataset="SYNTHETIC_SCALE_BENCHMARK",
         )
         validate_record(record)
         validated += 1
@@ -62,6 +62,7 @@ def benchmark(*, organizations: int, shards: int, output: Path) -> dict:
 
     shard_values = list(distribution.values())
     report = {
+        "evidence_class": "SYNTHETIC_SCALE_EVIDENCE",
         "organizations": organizations,
         "shards": shards,
         "validated": validated,
@@ -81,6 +82,8 @@ def benchmark(*, organizations: int, shards: int, output: Path) -> dict:
             "database_ingestion": False,
             "external_provider": False,
             "production": False,
+            "production_inventory": False,
+            "live_source_coverage": False,
         },
     }
     output.parent.mkdir(parents=True, exist_ok=True)

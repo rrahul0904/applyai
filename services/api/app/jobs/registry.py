@@ -14,6 +14,7 @@ from app.job_source_models import JobSourceRegistry
 from app.jobs.adapter_factory import create_source_adapter
 from app.jobs.adaptive_schedule import ShardConfig, belongs_to_shard, recommended_interval_seconds
 from app.jobs.contracts import JobSourceType, SourceHealthStatus, SourceTrustLevel
+from app.jobs.source_completeness import record_source_completeness
 from app.jobs.source_pipeline import RegisteredSourceIngestionPipeline
 
 
@@ -88,7 +89,7 @@ def upsert_source(
 
     source.source_name = source_name
     source.base_url = base_url
-    source.configuration = configuration
+    source.configuration = {**dict(source.configuration or {}), **configuration}
     source.trust_level = trust_level.value
     source.priority = max(source.priority or 0, _TRUST_PRIORITY[trust_level.value])
     source.crawl_interval_seconds = interval_seconds
@@ -250,11 +251,9 @@ def run_registered_source(
                 source.last_change_count = counts["created"] + counts["updated"] + counts["closed"]
             return counts
         finally:
-            close = getattr(connector, "close", None)
-            if callable(close):
-                close()
             source = session.get(JobSourceRegistry, source_id)
             if source is not None:
+                completeness = record_source_completeness(source, connector, counts)
                 source.next_run_at = utcnow() + timedelta(
                     seconds=adaptive_interval_seconds(source, settings)
                 )
@@ -262,6 +261,16 @@ def run_registered_source(
                 source.locked_by = None
                 source.lease_expires_at = None
                 session.commit()
+                logger.info(
+                    "job_source_completeness_recorded",
+                    extra={
+                        "source_id": str(source.id),
+                        "source_completeness": completeness.value,
+                    },
+                )
+            close = getattr(connector, "close", None)
+            if callable(close):
+                close()
 
 
 def run_due_sources(settings: Settings | None = None) -> dict[str, dict[str, int] | str]:

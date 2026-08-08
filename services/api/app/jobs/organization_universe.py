@@ -4,6 +4,7 @@ import csv
 import json
 import re
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import urlsplit
@@ -12,23 +13,30 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.global_job_supply_models import OrganizationProfile
-from app.models import Company, CompanyAlias
+from app.models import Company, CompanyAlias, CompanySource
 
 
 ORGANIZATION_TYPES = {
     "COMPANY",
+    "PUBLIC_COMPANY",
+    "PRIVATE_COMPANY",
     "STARTUP",
     "UNIVERSITY",
     "COLLEGE",
     "RESEARCH_INSTITUTE",
+    "RESEARCH_INSTITUTION",
     "HOSPITAL",
     "HEALTH_SYSTEM",
     "NONPROFIT",
     "NGO",
     "FOUNDATION",
     "GOVERNMENT",
+    "FEDERAL_AGENCY",
+    "STATE_AGENCY",
+    "LOCAL_GOVERNMENT",
     "PUBLIC_INSTITUTION",
     "NATIONAL_LAB",
+    "OTHER_EMPLOYER",
 }
 
 SOURCE_STATES = {
@@ -57,7 +65,13 @@ class OrganizationRecord:
     careers_url: str | None = None
     ats_provider: str | None = None
     dataset: str | None = None
+    external_ids: dict[str, str] = field(default_factory=dict)
+    parent_domain: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 def normalize_name(value: str) -> str:
@@ -88,6 +102,16 @@ def _clean_url(value: str | None) -> str | None:
     return value.strip()
 
 
+def _normalize_external_ids(values: dict[str, Any] | None) -> dict[str, str]:
+    normalized: dict[str, str] = {}
+    for key, value in dict(values or {}).items():
+        source = str(key).strip().upper()
+        external_id = str(value).strip()
+        if source and external_id:
+            normalized[source] = external_id
+    return normalized
+
+
 def validate_record(record: OrganizationRecord) -> OrganizationRecord:
     name = " ".join(record.canonical_name.split()).strip()
     if len(name) < 2 or len(name) > 240:
@@ -99,10 +123,19 @@ def validate_record(record: OrganizationRecord) -> OrganizationRecord:
     if country_code and len(country_code) != 2:
         raise ValueError("country_code must be ISO alpha-2")
     priority = max(0, min(int(record.priority), 100))
+    aliases = tuple(
+        sorted(
+            {
+                " ".join(alias.split()).strip()
+                for alias in record.aliases
+                if alias and alias.strip()
+            }
+        )
+    )
     return OrganizationRecord(
         canonical_name=name,
         domain=normalize_domain(record.domain),
-        aliases=tuple(sorted({" ".join(alias.split()).strip() for alias in record.aliases if alias.strip()})),
+        aliases=aliases,
         organization_type=organization_type,
         industry=record.industry.strip() if record.industry else None,
         country_code=country_code,
@@ -112,26 +145,129 @@ def validate_record(record: OrganizationRecord) -> OrganizationRecord:
         careers_url=_clean_url(record.careers_url),
         ats_provider=record.ats_provider.upper().strip() if record.ats_provider else None,
         dataset=record.dataset.strip() if record.dataset else None,
+        external_ids=_normalize_external_ids(record.external_ids),
+        parent_domain=normalize_domain(record.parent_domain),
         metadata=dict(record.metadata or {}),
     )
 
 
-def upsert_organization(session: Session, incoming: OrganizationRecord) -> tuple[Company, OrganizationProfile, str]:
+def _append_identity_event(profile: OrganizationProfile, *, event: str, detail: dict[str, Any]) -> None:
+    metadata = dict(profile.metadata_json or {})
+    events = list(metadata.get("identity_events") or [])
+    events.append({"event": event, "detail": detail, "at": utcnow().isoformat()})
+    metadata["identity_events"] = events[-100:]
+    profile.metadata_json = metadata
+
+
+def _company_from_external_ids(
+    session: Session,
+    external_ids: dict[str, str],
+) -> Company | None:
+    company_ids: set = set()
+    for source_name, external_id in external_ids.items():
+        source = session.scalar(
+            select(CompanySource).where(
+                CompanySource.source_name == source_name,
+                CompanySource.external_company_id == external_id,
+            )
+        )
+        if source is not None:
+            company_ids.add(source.company_id)
+    if not company_ids:
+        return None
+    if len(company_ids) > 1:
+        raise ValueError("External organization identifiers resolve to multiple companies")
+    return session.get(Company, next(iter(company_ids)))
+
+
+def _company_from_aliases(session: Session, aliases: Iterable[str]) -> Company | None:
+    normalized_aliases = {normalize_name(value) for value in aliases if value.strip()}
+    if not normalized_aliases:
+        return None
+    rows = list(
+        session.scalars(
+            select(CompanyAlias).where(CompanyAlias.normalized_alias.in_(normalized_aliases))
+        )
+    )
+    company_ids = {row.company_id for row in rows}
+    if not company_ids:
+        return None
+    if len(company_ids) > 1:
+        raise ValueError("Organization aliases resolve to multiple companies")
+    return session.get(Company, next(iter(company_ids)))
+
+
+def _record_external_ids(
+    session: Session,
+    company: Company,
+    external_ids: dict[str, str],
+    *,
+    source_url: str | None,
+) -> None:
+    for source_name, external_id in external_ids.items():
+        existing = session.scalar(
+            select(CompanySource).where(
+                CompanySource.source_name == source_name,
+                CompanySource.external_company_id == external_id,
+            )
+        )
+        if existing is not None:
+            if existing.company_id != company.id:
+                raise ValueError(
+                    f"External identifier {source_name}:{external_id} belongs to another company"
+                )
+            existing.last_seen_at = utcnow()
+            if source_url:
+                existing.source_url = source_url
+            continue
+        session.add(
+            CompanySource(
+                company_id=company.id,
+                source_name=source_name,
+                external_company_id=external_id,
+                source_url=source_url,
+                last_seen_at=utcnow(),
+            )
+        )
+
+
+def upsert_organization(
+    session: Session,
+    incoming: OrganizationRecord,
+) -> tuple[Company, OrganizationProfile, str]:
     record = validate_record(incoming)
-    profile = None
-    company = None
+    profile: OrganizationProfile | None = None
+    company: Company | None = None
+    resolution_reason: str | None = None
 
     if record.domain:
         profile = session.scalar(
-            select(OrganizationProfile).where(OrganizationProfile.canonical_domain == record.domain)
+            select(OrganizationProfile).where(
+                OrganizationProfile.canonical_domain == record.domain
+            )
         )
         if profile is not None:
             company = session.get(Company, profile.company_id)
+            resolution_reason = "DOMAIN"
+
+    if company is None and record.external_ids:
+        company = _company_from_external_ids(session, record.external_ids)
+        if company is not None:
+            resolution_reason = "EXTERNAL_ID"
 
     if company is None:
         company = session.scalar(
-            select(Company).where(Company.normalized_name == normalize_name(record.canonical_name))
+            select(Company).where(
+                Company.normalized_name == normalize_name(record.canonical_name)
+            )
         )
+        if company is not None:
+            resolution_reason = "CANONICAL_NAME"
+
+    if company is None and record.aliases:
+        company = _company_from_aliases(session, (record.canonical_name, *record.aliases))
+        if company is not None:
+            resolution_reason = "ALIAS"
 
     created = False
     if company is None:
@@ -143,6 +279,7 @@ def upsert_organization(session: Session, incoming: OrganizationRecord) -> tuple
         session.add(company)
         session.flush()
         created = True
+        resolution_reason = "CREATED"
     elif record.domain and not company.website_url:
         company.website_url = f"https://{record.domain}"
 
@@ -153,14 +290,15 @@ def upsert_organization(session: Session, incoming: OrganizationRecord) -> tuple
     if profile is None:
         profile = OrganizationProfile(company_id=company.id)
         session.add(profile)
+        session.flush()
 
-    # Conflicting non-null domains require review rather than silently merging two organizations.
     if profile.canonical_domain and record.domain and profile.canonical_domain != record.domain:
         profile.source_status = "REQUIRES_REVIEW"
-        profile.metadata_json = {
-            **dict(profile.metadata_json or {}),
-            "domain_conflict": [profile.canonical_domain, record.domain],
-        }
+        _append_identity_event(
+            profile,
+            event="DOMAIN_CONFLICT",
+            detail={"existing": profile.canonical_domain, "incoming": record.domain},
+        )
     elif record.domain:
         profile.canonical_domain = record.domain
 
@@ -174,7 +312,23 @@ def upsert_organization(session: Session, incoming: OrganizationRecord) -> tuple
     profile.ats_provider = record.ats_provider or profile.ats_provider
     if profile.source_status not in {"REQUIRES_REVIEW", "BLOCKED"}:
         profile.source_status = profile.source_status or "NEW"
-    profile.metadata_json = {**dict(profile.metadata_json or {}), **record.metadata}
+
+    metadata = {**dict(profile.metadata_json or {}), **record.metadata}
+    if record.parent_domain:
+        metadata["parent_domain"] = record.parent_domain
+        parent = session.scalar(
+            select(OrganizationProfile).where(
+                OrganizationProfile.canonical_domain == record.parent_domain
+            )
+        )
+        if parent is not None and parent.company_id != company.id:
+            metadata["parent_company_id"] = str(parent.company_id)
+    metadata["last_identity_resolution"] = {
+        "reason": resolution_reason,
+        "at": utcnow().isoformat(),
+    }
+    profile.metadata_json = metadata
+
     provenance = list(profile.dataset_provenance or [])
     if record.dataset and record.dataset not in provenance:
         provenance.append(record.dataset)
@@ -190,27 +344,65 @@ def upsert_organization(session: Session, incoming: OrganizationRecord) -> tuple
             )
         )
         if exists is None and normalized != company.normalized_name:
-            session.add(CompanyAlias(company_id=company.id, alias=alias, normalized_alias=normalized))
+            session.add(
+                CompanyAlias(
+                    company_id=company.id,
+                    alias=alias,
+                    normalized_alias=normalized,
+                )
+            )
+
+    _record_external_ids(
+        session,
+        company,
+        record.external_ids,
+        source_url=record.metadata.get("dataset_source_url") if record.metadata else None,
+    )
 
     session.flush()
     return company, profile, "created" if created else "updated"
 
 
-def import_organizations(session: Session, records: Iterable[OrganizationRecord]) -> dict[str, int]:
-    counts = {"created": 0, "updated": 0, "failed": 0}
+def import_organizations(
+    session: Session,
+    records: Iterable[OrganizationRecord],
+) -> dict[str, int]:
+    counts = {"created": 0, "updated": 0, "failed": 0, "review_required": 0}
     for record in records:
         try:
-            # One malformed/conflicting record must not undo previously accepted rows.
             with session.begin_nested():
-                _, _, result = upsert_organization(session, record)
+                _, profile, result = upsert_organization(session, record)
                 counts[result] += 1
+                if profile.source_status == "REQUIRES_REVIEW":
+                    counts["review_required"] += 1
         except Exception:
             counts["failed"] += 1
     session.commit()
     return counts
 
 
-def _record_from_mapping(item: dict[str, Any], *, dataset: str | None = None) -> OrganizationRecord:
+def _parse_external_ids(item: dict[str, Any]) -> dict[str, str]:
+    value = item.get("external_ids") or item.get("external_identifiers") or {}
+    if isinstance(value, str):
+        try:
+            value = json.loads(value) if value.strip() else {}
+        except json.JSONDecodeError:
+            pairs = [part.partition(":") for part in value.split("|")]
+            value = {key: identifier for key, sep, identifier in pairs if sep}
+    if not isinstance(value, dict):
+        value = {}
+    result = _normalize_external_ids(value)
+    for key, raw in item.items():
+        if key.casefold().startswith("external_id_") and raw:
+            result[key[len("external_id_") :].upper()] = str(raw).strip()
+    return result
+
+
+def _record_from_mapping(
+    item: dict[str, Any],
+    *,
+    dataset: str | None = None,
+) -> OrganizationRecord:
     aliases = item.get("aliases") or []
     if isinstance(aliases, str):
         aliases = [value.strip() for value in aliases.split("|") if value.strip()]
@@ -224,7 +416,9 @@ def _record_from_mapping(item: dict[str, Any], *, dataset: str | None = None) ->
         canonical_name=str(item.get("canonical_name") or item.get("name") or ""),
         domain=item.get("domain") or item.get("canonical_domain"),
         aliases=tuple(str(value) for value in aliases),
-        organization_type=str(item.get("organization_type") or item.get("type") or "COMPANY"),
+        organization_type=str(
+            item.get("organization_type") or item.get("type") or "COMPANY"
+        ),
         industry=item.get("industry"),
         country_code=item.get("country_code") or item.get("country"),
         state_region=item.get("state_region") or item.get("region"),
@@ -233,28 +427,43 @@ def _record_from_mapping(item: dict[str, Any], *, dataset: str | None = None) ->
         careers_url=item.get("careers_url"),
         ats_provider=item.get("ats_provider"),
         dataset=str(item.get("dataset") or dataset or "") or None,
+        external_ids=_parse_external_ids(item),
+        parent_domain=item.get("parent_domain"),
         metadata=dict(metadata),
     )
 
 
-def load_organization_records(path: str | Path, *, dataset: str | None = None) -> list[OrganizationRecord]:
+def load_organization_records(
+    path: str | Path,
+    *,
+    dataset: str | None = None,
+) -> list[OrganizationRecord]:
     source = Path(path)
     suffix = source.suffix.casefold()
     if suffix == ".csv":
         with source.open("r", encoding="utf-8-sig", newline="") as handle:
-            return [_record_from_mapping(dict(row), dataset=dataset) for row in csv.DictReader(handle)]
+            return [
+                _record_from_mapping(dict(row), dataset=dataset)
+                for row in csv.DictReader(handle)
+            ]
     if suffix == ".jsonl":
         rows = []
         with source.open("r", encoding="utf-8") as handle:
             for line in handle:
                 if line.strip():
-                    rows.append(_record_from_mapping(json.loads(line), dataset=dataset))
+                    rows.append(
+                        _record_from_mapping(json.loads(line), dataset=dataset)
+                    )
         return rows
     if suffix == ".json":
         payload = json.loads(source.read_text(encoding="utf-8"))
         if isinstance(payload, dict):
             payload = payload.get("organizations") or payload.get("data") or []
         if not isinstance(payload, list):
-            raise ValueError("JSON organization file must be a list or contain organizations/data list")
-        return [_record_from_mapping(dict(item), dataset=dataset) for item in payload]
+            raise ValueError(
+                "JSON organization file must be a list or contain organizations/data list"
+            )
+        return [
+            _record_from_mapping(dict(item), dataset=dataset) for item in payload
+        ]
     raise ValueError("Organization imports support .csv, .json and .jsonl")

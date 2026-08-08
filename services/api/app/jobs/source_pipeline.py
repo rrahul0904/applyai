@@ -24,7 +24,15 @@ from app.jobs.contracts import (
 )
 from app.jobs.pipeline import JobIngestionPipeline, normalize_text, payload_hash
 from app.jobs.source_authority import record_field_provenance, should_source_update_canonical
-from app.models import Job, JobLocation, JobSource, JobSourceLink, JobStatusHistory, RawJobPosting as RawJobPostingModel
+from app.jobs.source_completeness import closure_authoritative, observed_completeness
+from app.models import (
+    Job,
+    JobLocation,
+    JobSource,
+    JobSourceLink,
+    JobStatusHistory,
+    RawJobPosting as RawJobPostingModel,
+)
 
 
 logger = logging.getLogger("applyai.job_source_pipeline")
@@ -106,10 +114,6 @@ class AuthorityAwareJobIngestionPipeline(JobIngestionPipeline):
             if link is not None:
                 return self.session.get(Job, link.job_id), "CANONICAL_APPLICATION_URL", Decimal("1.0000")
 
-        # Requisition IDs are commonly preserved when the same employer role is syndicated
-        # across an ATS, an employer career page, and an authorized aggregator. Scope the
-        # identifier to the resolved canonical company so IDs reused by different employers
-        # cannot collide.
         internal_job_id = item.raw_payload.get("_applyai_internal_job_id")
         if internal_job_id:
             link = self.session.scalar(
@@ -290,16 +294,20 @@ class RegisteredSourceIngestionPipeline:
                     },
                 )
 
+        completeness = observed_completeness(connector, counts)
         if counts["failed"] == 0:
-            snapshot_complete = bool(getattr(connector, "authoritative_snapshot", True))
-            if snapshot_complete:
+            if closure_authoritative(completeness):
                 freshness = self._apply_registry_freshness(source, seen_external_ids)
                 counts["stale"] += freshness["stale"]
                 counts["closed"] += freshness["closed"]
             else:
                 logger.info(
-                    "job_ingestion_partial_snapshot_freshness_skipped",
-                    extra={"source_id": str(source.id), "fetched": counts["fetched"]},
+                    "job_ingestion_non_authoritative_snapshot_freshness_skipped",
+                    extra={
+                        "source_id": str(source.id),
+                        "fetched": counts["fetched"],
+                        "source_completeness": completeness.value,
+                    },
                 )
             run.status = "COMPLETED"
             source.health_status = SourceHealthStatus.HEALTHY.value
@@ -317,6 +325,10 @@ class RegisteredSourceIngestionPipeline:
             source.last_error_summary = f"{counts['failed']} posting(s) failed"
 
         source.last_job_count = counts["valid"]
+        configuration = dict(source.configuration or {})
+        configuration["last_source_completeness"] = completeness.value
+        configuration["last_source_completeness_at"] = utcnow().isoformat()
+        source.configuration = configuration
         self._finish_run(run, counts, started_monotonic)
         self.session.commit()
         logger.info(
@@ -325,6 +337,7 @@ class RegisteredSourceIngestionPipeline:
                 "source_id": str(source.id),
                 "run_id": str(run.id),
                 "source_type": source.source_type,
+                "source_completeness": completeness.value,
                 "duration_ms": run.duration_ms,
                 "counts": counts,
             },

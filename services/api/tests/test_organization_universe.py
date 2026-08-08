@@ -75,7 +75,12 @@ def test_import_uses_per_record_savepoints_and_domain_dedup(database_url):
                     ),
                 ],
             )
-            assert counts == {"created": 1, "updated": 1, "failed": 1}
+            assert counts == {
+                "created": 1,
+                "updated": 1,
+                "failed": 1,
+                "review_required": 0,
+            }
             assert session.scalar(select(func.count(Company.id))) == 1
             profile = session.scalar(select(OrganizationProfile))
             assert profile is not None

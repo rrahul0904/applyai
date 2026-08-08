@@ -12,10 +12,10 @@ def capability(provider_key: str):
 
 def test_official_sources_are_implemented_without_overclaiming_marketplaces():
     assert capability("greenhouse").access_mode == SourceAccessMode.PUBLIC_ATS
-    assert capability("lever").implementation_status == ProviderImplementationStatus.SOURCE_IMPLEMENTED
-    assert capability("ashby").implementation_status == ProviderImplementationStatus.SOURCE_IMPLEMENTED
+    assert capability("lever").implementation_status == ProviderImplementationStatus.SOURCE_TESTED
+    assert capability("ashby").implementation_status == ProviderImplementationStatus.SOURCE_TESTED
     assert capability("usajobs").access_mode == SourceAccessMode.DIRECT_PUBLIC_API
-    assert capability("reliefweb").implementation_status == ProviderImplementationStatus.SOURCE_IMPLEMENTED
+    assert capability("reliefweb").implementation_status == ProviderImplementationStatus.SOURCE_TESTED
 
     for provider in (
         "indeed",

@@ -70,9 +70,12 @@ def recommended_interval_seconds(
     if change_count > 0 or job_count >= 1_000:
         return max(minimum, int(base * 0.75))
 
-    # Repeatedly empty/quiet boards progressively consume less crawl budget.
+    # Empty boards back off aggressively because there is no active inventory to
+    # protect. A non-empty but unchanged source uses the established 1.25x quiet
+    # cadence so existing source behavior remains stable while still spending less
+    # crawl budget than the normal base interval.
     if job_count == 0:
         return min(maximum, max(24 * 60 * 60, base * 2))
     if change_count == 0:
-        return min(maximum, max(base, 12 * 60 * 60))
+        return min(maximum, max(base, int(base * 1.25)))
     return base

@@ -13,6 +13,8 @@ from app.global_job_supply_models import JobSourceCapability
 class SourceAccessMode(StrEnum):
     DIRECT_PUBLIC_API = "DIRECT_PUBLIC_API"
     AUTHORIZED_FEED = "AUTHORIZED_FEED"
+    PARTNER_API = "PARTNER_API"
+    LICENSED_IMPORT = "LICENSED_IMPORT"
     PUBLIC_ATS = "PUBLIC_ATS"
     PUBLIC_STRUCTURED_PAGE = "PUBLIC_STRUCTURED_PAGE"
     EMPLOYER_CAREER_SITE = "EMPLOYER_CAREER_SITE"
@@ -23,8 +25,12 @@ class SourceAccessMode(StrEnum):
 
 
 class ProviderImplementationStatus(StrEnum):
+    SOURCE_DESIGNED = "SOURCE_DESIGNED"
     SOURCE_IMPLEMENTED = "SOURCE_IMPLEMENTED"
+    SOURCE_TESTED = "SOURCE_TESTED"
     LIVE_PUBLIC_SOURCE_VERIFIED = "LIVE_PUBLIC_SOURCE_VERIFIED"
+    LIVE_STAGING_VERIFIED = "LIVE_STAGING_VERIFIED"
+    PRODUCTION_VERIFIED = "PRODUCTION_VERIFIED"
     PARTNERSHIP_REQUIRED = "PARTNERSHIP_REQUIRED"
     BLOCKED_BY_PROVIDER_POLICY = "BLOCKED_BY_PROVIDER_POLICY"
     NOT_YET_SUPPORTED = "NOT_YET_SUPPORTED"
@@ -41,10 +47,18 @@ class ProviderCapabilitySeed:
     partner_feed_available: bool = False
     public_page_access: bool = False
     authentication_required: bool = False
+    requires_partnership: bool = False
     robots_policy: str = "SOURCE_SPECIFIC"
+    rate_limit_policy: str = "PROVIDER_SPECIFIC"
+    pagination_strategy: str = "PROVIDER_SPECIFIC"
+    supports_delta: bool = False
+    supports_closure_detection: bool = False
+    trust_level: str = "UNVERIFIED_PUBLIC_SOURCE"
+    allowed_for_automated_ingestion: bool = False
     recommended_strategy: str = ""
     documentation_url: str | None = None
     notes: str | None = None
+    reason: str | None = None
 
 
 def employer_career(
@@ -59,11 +73,18 @@ def employer_career(
         SourceAccessMode.EMPLOYER_CAREER_SITE,
         ProviderImplementationStatus.SOURCE_IMPLEMENTED,
         public_page_access=True,
+        robots_policy="ROBOTS_AND_SOURCE_POLICY_REQUIRED",
+        rate_limit_policy="PER_DOMAIN_BOUNDED",
+        pagination_strategy="BOUNDED_DISCOVERY",
+        supports_closure_detection=True,
+        trust_level="EMPLOYER_CAREER_SITE",
+        allowed_for_automated_ingestion=True,
         recommended_strategy=(
             "Detect the employer ATS and ingest only bounded public job pages through the "
             "robots-aware generic career-site connector unless a dedicated documented public API is available."
         ),
         notes=notes,
+        reason="Employer-origin public page; runtime policy and robots checks remain mandatory.",
     )
 
 
@@ -85,83 +106,130 @@ def partnership(
         official_api_available=official_api,
         partner_feed_available=partner_feed,
         authentication_required=auth,
+        requires_partnership=True,
+        rate_limit_policy="CONTRACT_SPECIFIC",
+        pagination_strategy="CONTRACT_SPECIFIC",
+        supports_closure_detection=False,
+        trust_level="AUTHORIZED_AGGREGATOR_FEED",
+        allowed_for_automated_ingestion=False,
         recommended_strategy=(
             "Use an authorized/licensed provider integration when contracted; otherwise resolve "
             "the opportunity to the original employer ATS or employer career page. Do not bypass access controls."
         ),
         documentation_url=docs,
         notes=notes,
+        reason="No anonymous crawler is authorized by ApplyAI policy for this provider.",
     )
 
 
-# This catalog is intentionally conservative: technical discoverability is not permission to crawl.
 PROVIDER_CAPABILITY_SEEDS: tuple[ProviderCapabilitySeed, ...] = (
     ProviderCapabilitySeed(
         "applyai",
         "ApplyAI first-party employers",
         SourceAccessMode.FIRST_PARTY_APPLYAI,
-        ProviderImplementationStatus.SOURCE_IMPLEMENTED,
+        ProviderImplementationStatus.SOURCE_TESTED,
+        supports_delta=True,
+        supports_closure_detection=True,
+        trust_level="APPLYAI_FIRST_PARTY",
+        allowed_for_automated_ingestion=True,
         recommended_strategy="Use ApplyAI employer-published jobs as canonical highest-authority observations.",
+        reason="First-party employer publication managed by ApplyAI.",
     ),
     ProviderCapabilitySeed(
         "greenhouse",
         "Greenhouse",
         SourceAccessMode.PUBLIC_ATS,
-        ProviderImplementationStatus.SOURCE_IMPLEMENTED,
+        ProviderImplementationStatus.SOURCE_TESTED,
         official_api_available=True,
         public_page_access=True,
+        rate_limit_policy="BOUNDED_WITH_RETRY_AFTER",
+        pagination_strategy="PUBLIC_JOB_BOARD_LIST",
+        supports_closure_detection=True,
+        trust_level="OFFICIAL_ATS",
+        allowed_for_automated_ingestion=True,
         recommended_strategy="Use the documented public Job Board API for published employer jobs.",
         documentation_url="https://developers.greenhouse.io/job-board.html",
+        reason="Documented public employer job-board API.",
     ),
     ProviderCapabilitySeed(
         "lever",
         "Lever",
         SourceAccessMode.PUBLIC_ATS,
-        ProviderImplementationStatus.SOURCE_IMPLEMENTED,
+        ProviderImplementationStatus.SOURCE_TESTED,
         official_api_available=True,
         public_page_access=True,
+        rate_limit_policy="BOUNDED_WITH_429_BACKOFF",
+        pagination_strategy="PUBLIC_POSTINGS_PAGINATION",
+        supports_closure_detection=True,
+        trust_level="OFFICIAL_ATS",
+        allowed_for_automated_ingestion=True,
         recommended_strategy="Use the public postings API for employer sites; do not automate private recruiting APIs.",
         documentation_url="https://github.com/lever/postings-api",
+        reason="Published employer job postings are exposed through the public postings API.",
     ),
     ProviderCapabilitySeed(
         "ashby",
         "Ashby",
         SourceAccessMode.PUBLIC_ATS,
-        ProviderImplementationStatus.SOURCE_IMPLEMENTED,
+        ProviderImplementationStatus.SOURCE_TESTED,
         official_api_available=True,
         public_page_access=True,
+        rate_limit_policy="BOUNDED_PROVIDER_SPECIFIC",
+        pagination_strategy="PUBLIC_JOB_BOARD",
+        supports_closure_detection=True,
+        trust_level="OFFICIAL_ATS",
+        allowed_for_automated_ingestion=True,
         recommended_strategy="Use Ashby's public job-board posting endpoint for published jobs.",
         documentation_url="https://developers.ashbyhq.com/docs/public-job-posting-api",
+        reason="Public employer job-board interface.",
     ),
     ProviderCapabilitySeed(
         "smartrecruiters",
         "SmartRecruiters",
         SourceAccessMode.PUBLIC_ATS,
-        ProviderImplementationStatus.SOURCE_IMPLEMENTED,
+        ProviderImplementationStatus.SOURCE_TESTED,
         official_api_available=True,
         public_page_access=True,
+        rate_limit_policy="BOUNDED_WITH_PROVIDER_LIMITS",
+        pagination_strategy="OFFSET_LIMIT",
+        supports_closure_detection=True,
+        trust_level="OFFICIAL_ATS",
+        allowed_for_automated_ingestion=True,
         recommended_strategy="Use the public Posting API list/detail endpoints for active public company postings.",
         documentation_url="https://developers.smartrecruiters.com/docs/endpoints",
+        reason="Public posting endpoints are supported by the dedicated adapter.",
     ),
     ProviderCapabilitySeed(
         "usajobs",
         "USAJOBS",
         SourceAccessMode.DIRECT_PUBLIC_API,
-        ProviderImplementationStatus.SOURCE_IMPLEMENTED,
+        ProviderImplementationStatus.SOURCE_TESTED,
         official_api_available=True,
         authentication_required=True,
+        rate_limit_policy="OFFICIAL_API_KEY_QUOTA",
+        pagination_strategy="PAGE_RESULTS_PER_PAGE",
+        supports_closure_detection=True,
+        trust_level="GOVERNMENT_OFFICIAL",
+        allowed_for_automated_ingestion=True,
         recommended_strategy="Use the official Search API with an issued API key and configured user agent.",
         documentation_url="https://developer.usajobs.gov/api-reference/get-api-search",
+        reason="Official government job-search API; staging requires issued credentials.",
     ),
     ProviderCapabilitySeed(
         "reliefweb",
         "ReliefWeb",
         SourceAccessMode.DIRECT_PUBLIC_API,
-        ProviderImplementationStatus.SOURCE_IMPLEMENTED,
+        ProviderImplementationStatus.SOURCE_TESTED,
         official_api_available=True,
         authentication_required=True,
+        rate_limit_policy="APPNAME_QUOTA",
+        pagination_strategy="OFFSET_LIMIT",
+        supports_closure_detection=True,
+        trust_level="AUTHORIZED_AGGREGATOR_FEED",
+        allowed_for_automated_ingestion=True,
         recommended_strategy="Use the official ReliefWeb v2 jobs API with a pre-approved appname and quota-aware paging.",
         documentation_url="https://apidoc.reliefweb.int/",
+        reason="Official humanitarian jobs API; staging requires an approved appname.",
     ),
     employer_career("workday", "Workday"),
     employer_career("workable", "Workable"),
@@ -185,6 +253,11 @@ PROVIDER_CAPABILITY_SEEDS: tuple[ProviderCapabilitySeed, ...] = (
     employer_career("pageup", "PageUp"),
     employer_career("peopleadmin", "PeopleAdmin"),
     employer_career("cornerstone", "Cornerstone"),
+    employer_career(
+        "neogov",
+        "GovernmentJobs / NEOGOV",
+        notes="Detect public government employer job pages; use a dedicated adapter only if a reviewed public interface is available.",
+    ),
     partnership(
         "indeed",
         "Indeed",
@@ -272,12 +345,28 @@ def trust_weight(trust_level: str) -> int:
     return TRUST_WEIGHTS.get(trust_level, 0)
 
 
+def capability_metadata(seed: ProviderCapabilitySeed) -> dict:
+    return {
+        "requires_credentials": seed.authentication_required,
+        "requires_partnership": seed.requires_partnership,
+        "rate_limit_policy": seed.rate_limit_policy,
+        "pagination_strategy": seed.pagination_strategy,
+        "supports_delta": seed.supports_delta,
+        "supports_closure_detection": seed.supports_closure_detection,
+        "trust_level": seed.trust_level,
+        "allowed_for_automated_ingestion": seed.allowed_for_automated_ingestion,
+        "reason": seed.reason,
+    }
+
+
 def seed_source_capabilities(session: Session) -> list[JobSourceCapability]:
     now = datetime.now(timezone.utc)
     records: list[JobSourceCapability] = []
     for seed in PROVIDER_CAPABILITY_SEEDS:
         record = session.scalar(
-            select(JobSourceCapability).where(JobSourceCapability.provider_key == seed.provider_key)
+            select(JobSourceCapability).where(
+                JobSourceCapability.provider_key == seed.provider_key
+            )
         )
         values = {
             "display_name": seed.display_name,
@@ -292,6 +381,7 @@ def seed_source_capabilities(session: Session) -> list[JobSourceCapability]:
             "recommended_strategy": seed.recommended_strategy,
             "documentation_url": seed.documentation_url,
             "notes": seed.notes,
+            "metadata_json": capability_metadata(seed),
             "reviewed_at": now,
         }
         if record is None:

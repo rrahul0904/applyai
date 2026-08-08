@@ -41,9 +41,12 @@ COMMON_CAREER_PATHS = (
     "/careers",
     "/jobs",
     "/careers/jobs",
+    "/about/careers",
     "/company/careers",
     "/work-with-us",
     "/join-us",
+    "/opportunities",
+    "/employment",
 )
 SEMANTIC_LINK_TERMS = (
     "careers",
@@ -145,7 +148,17 @@ def _semantic_links(html: str, base_url: str) -> list[str]:
             continue
         if urlsplit(url).hostname != base_host and not any(
             provider in text
-            for provider in ("greenhouse", "lever.co", "ashbyhq", "workday", "smartrecruiters", "workable")
+            for provider in (
+                "greenhouse",
+                "lever.co",
+                "ashbyhq",
+                "workday",
+                "smartrecruiters",
+                "workable",
+                "icims",
+                "oraclecloud",
+                "successfactors",
+            )
         ):
             continue
         canonical = canonicalize_public_url(url)
@@ -237,12 +250,18 @@ def _register_detected_source(
     careers_url: str,
     settings: Settings,
 ) -> JobSourceRegistry:
-    supported = detection.provider in {
+    direct_ats = detection.provider in {
         JobSourceType.GREENHOUSE,
         JobSourceType.LEVER,
         JobSourceType.ASHBY,
     }
     configuration: dict = {}
+    source_type = detection.provider if direct_ats else JobSourceType.CAREER_SITE
+    source_identity = (
+        detection.source_identity
+        if direct_ats
+        else f"{detection.provider.value}:{detection.source_identity}"
+    )
     if detection.provider == JobSourceType.GREENHOUSE:
         configuration["board_token"] = detection.source_identity
     elif detection.provider == JobSourceType.LEVER:
@@ -251,28 +270,37 @@ def _register_detected_source(
         configuration["board_name"] = detection.source_identity
         configuration["include_compensation"] = True
     else:
-        configuration["detected_provider"] = detection.provider.value
-        configuration["detection_evidence"] = list(detection.evidence)
+        configuration.update(
+            {
+                "detected_provider": detection.provider.value,
+                "detection_evidence": list(detection.evidence),
+                "careers_url": careers_url,
+                "max_pages": max(40, settings.career_discovery_max_pages * 6),
+                "max_jobs": 50,
+                "max_response_bytes": settings.career_discovery_max_bytes,
+                "max_redirects": settings.career_discovery_max_redirects,
+                "timeout_seconds": settings.career_discovery_timeout_seconds,
+            }
+        )
 
     source = upsert_source(
         session,
-        source_type=detection.provider,
+        source_type=source_type,
         source_name=f"Discovered {detection.provider.value}: {detection.source_identity}",
-        source_identity=detection.source_identity,
+        source_identity=source_identity,
         base_url=detection.candidate_source_url,
         configuration=configuration,
         interval_seconds=settings.job_source_default_interval_seconds,
         trust_level=(
             SourceTrustLevel.OFFICIAL_ATS
-            if supported
+            if direct_ats
             else SourceTrustLevel.EMPLOYER_CAREER_SITE
         ),
     )
     source.careers_url = careers_url
-    source.enabled = supported
+    source.enabled = True
     source.crawl_allowed = True
-    if not supported:
-        source.health_status = SourceHealthStatus.DISABLED.value
+    source.health_status = SourceHealthStatus.HEALTHY.value
     session.flush()
     return source
 

@@ -14,6 +14,7 @@ from app.core.config import get_settings
 
 COMPANY_ID = "00000000-0000-4000-8000-000000000001"
 BENCHMARK_ORIGIN = "SYNTHETIC_BENCHMARK"
+SUPPORTED_ROWS = (10_000, 50_000, 250_000, 500_000, 1_000_000)
 
 
 def uuid_sql(prefix: str, value: str) -> str:
@@ -279,7 +280,7 @@ def benchmark(rows: int, output: Path, cleanup: bool) -> dict:
         "source_commit": os.getenv("GITHUB_SHA"),
         "source_ref": os.getenv("GITHUB_HEAD_REF") or os.getenv("GITHUB_REF"),
         "queries": results,
-        "environment": "synthetic_github_hosted_postgresql",
+        "environment": "synthetic_postgresql",
         "claims": {
             "aurora": False,
             "production": False,
@@ -300,7 +301,7 @@ def benchmark(rows: int, output: Path, cleanup: bool) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--rows", type=int, choices=(10_000, 50_000, 250_000), required=True)
+    parser.add_argument("--rows", type=int, choices=SUPPORTED_ROWS, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--cleanup", action="store_true")
     args = parser.parse_args()

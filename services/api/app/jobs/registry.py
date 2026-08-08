@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, get_settings
 from app.core.database import SessionLocal
 from app.job_source_models import JobSourceRegistry
-from app.jobs.adapters import JobSourceAdapterFactory
+from app.jobs.adapter_factory import create_source_adapter
+from app.jobs.adaptive_schedule import ShardConfig, belongs_to_shard, recommended_interval_seconds
 from app.jobs.contracts import JobSourceType, SourceHealthStatus, SourceTrustLevel
 from app.jobs.source_pipeline import RegisteredSourceIngestionPipeline
 
@@ -24,12 +25,20 @@ def utcnow() -> datetime:
 
 
 _TRUST_PRIORITY = {
+    SourceTrustLevel.APPLYAI_FIRST_PARTY.value: 100,
     SourceTrustLevel.EMPLOYER_DIRECT.value: 100,
-    SourceTrustLevel.OFFICIAL_ATS.value: 90,
-    SourceTrustLevel.EMPLOYER_CAREER_SITE.value: 80,
+    SourceTrustLevel.EMPLOYER_OFFICIAL_API.value: 95,
+    SourceTrustLevel.OFFICIAL_ATS.value: 95,
+    SourceTrustLevel.EMPLOYER_JSONLD.value: 90,
+    SourceTrustLevel.EMPLOYER_CAREER_SITE.value: 85,
+    SourceTrustLevel.GOVERNMENT_OFFICIAL.value: 75,
+    SourceTrustLevel.AUTHORIZED_AGGREGATOR_FEED.value: 70,
     SourceTrustLevel.LICENSED_FEED.value: 70,
-    SourceTrustLevel.STRUCTURED_JOB_PAGE.value: 60,
-    SourceTrustLevel.THIRD_PARTY_SOURCE.value: 40,
+    SourceTrustLevel.STRUCTURED_JOB_PAGE.value: 65,
+    SourceTrustLevel.VERIFIED_PARTNER.value: 60,
+    SourceTrustLevel.THIRD_PARTY_SOURCE.value: 50,
+    SourceTrustLevel.CANDIDATE_IMPORTED.value: 40,
+    SourceTrustLevel.UNVERIFIED_PUBLIC_SOURCE.value: 20,
     SourceTrustLevel.UNVERIFIED.value: 20,
 }
 
@@ -44,6 +53,7 @@ def upsert_source(
     configuration: dict,
     interval_seconds: int,
     trust_level: SourceTrustLevel = SourceTrustLevel.OFFICIAL_ATS,
+    crawl_allowed: bool = True,
 ) -> JobSourceRegistry:
     source = session.scalar(
         select(JobSourceRegistry).where(
@@ -61,8 +71,12 @@ def upsert_source(
             trust_level=trust_level.value,
             priority=_TRUST_PRIORITY[trust_level.value],
             enabled=True,
-            crawl_allowed=True,
-            health_status=SourceHealthStatus.HEALTHY.value,
+            crawl_allowed=crawl_allowed,
+            health_status=(
+                SourceHealthStatus.HEALTHY.value
+                if crawl_allowed
+                else SourceHealthStatus.BLOCKED.value
+            ),
             crawl_interval_seconds=interval_seconds,
             min_interval_seconds=min(900, interval_seconds),
             max_interval_seconds=max(604_800, interval_seconds),
@@ -78,6 +92,9 @@ def upsert_source(
     source.trust_level = trust_level.value
     source.priority = max(source.priority or 0, _TRUST_PRIORITY[trust_level.value])
     source.crawl_interval_seconds = interval_seconds
+    source.crawl_allowed = crawl_allowed
+    if not crawl_allowed:
+        source.health_status = SourceHealthStatus.BLOCKED.value
     return source
 
 
@@ -140,6 +157,31 @@ def sync_configured_sources(
     return sources
 
 
+def _eligible_rows_query(settings: Settings, now: datetime, *, limit: int):
+    return (
+        select(JobSourceRegistry)
+        .where(
+            JobSourceRegistry.enabled.is_(True),
+            JobSourceRegistry.crawl_allowed.is_(True),
+            JobSourceRegistry.next_run_at <= now,
+            JobSourceRegistry.health_status.notin_(
+                [SourceHealthStatus.DISABLED.value, SourceHealthStatus.BLOCKED.value]
+            ),
+            or_(
+                JobSourceRegistry.lease_expires_at.is_(None),
+                JobSourceRegistry.lease_expires_at < now,
+            ),
+        )
+        .order_by(
+            JobSourceRegistry.priority.desc(),
+            JobSourceRegistry.next_run_at,
+            JobSourceRegistry.created_at,
+        )
+        .with_for_update(skip_locked=True)
+        .limit(limit)
+    )
+
+
 def claim_due_source_ids(
     session: Session,
     *,
@@ -147,30 +189,13 @@ def claim_due_source_ids(
     worker_id: str,
 ) -> list[uuid.UUID]:
     now = utcnow()
-    rows = list(
-        session.scalars(
-            select(JobSourceRegistry)
-            .where(
-                JobSourceRegistry.enabled.is_(True),
-                JobSourceRegistry.crawl_allowed.is_(True),
-                JobSourceRegistry.next_run_at <= now,
-                JobSourceRegistry.health_status.notin_(
-                    [SourceHealthStatus.DISABLED.value, SourceHealthStatus.BLOCKED.value]
-                ),
-                or_(
-                    JobSourceRegistry.lease_expires_at.is_(None),
-                    JobSourceRegistry.lease_expires_at < now,
-                ),
-            )
-            .order_by(
-                JobSourceRegistry.priority.desc(),
-                JobSourceRegistry.next_run_at,
-                JobSourceRegistry.created_at,
-            )
-            .with_for_update(skip_locked=True)
-            .limit(settings.job_source_claim_batch_size)
-        )
-    )
+    shard = ShardConfig.from_environment()
+    target = settings.job_source_claim_batch_size
+    # Fetch a bounded oversample so each shard can pick its own due work without
+    # adding database-specific UUID hashing expressions to the query.
+    candidate_limit = max(target, target * shard.count * 2)
+    candidates = list(session.scalars(_eligible_rows_query(settings, now, limit=candidate_limit)))
+    rows = [row for row in candidates if belongs_to_shard(row.id, shard)][:target]
     lease_expires_at = now + timedelta(seconds=settings.job_source_lease_seconds)
     for source in rows:
         source.locked_at = now
@@ -186,29 +211,15 @@ def adaptive_interval_seconds(source: JobSourceRegistry, settings: Settings) -> 
     source_interval = int(source.crawl_interval_seconds or settings.job_source_default_interval_seconds)
     minimum = max(settings.job_source_min_interval_seconds, source_minimum)
     maximum = min(settings.job_source_max_interval_seconds, source_maximum)
-    base = max(minimum, min(source_interval, maximum))
-
-    failure_count = int(source.consecutive_failures or 0)
-    change_count = max(0, int(source.last_change_count or 0))
-    job_count = max(0, int(source.last_job_count or 0))
-
-    if failure_count > 0:
-        failure_interval = base * (2 ** min(failure_count, 8))
-        return min(
-            maximum,
-            settings.job_source_failure_max_backoff_seconds,
-            failure_interval,
-        )
-
-    if change_count >= 25 or (
-        job_count >= 100 and change_count / max(job_count, 1) >= 0.10
-    ):
-        return max(minimum, int(base * 0.5))
-    if change_count > 0 or job_count >= 1_000:
-        return max(minimum, int(base * 0.75))
-    if job_count == 0:
-        return min(maximum, int(base * 2.0))
-    return min(maximum, int(base * 1.25))
+    return recommended_interval_seconds(
+        base_seconds=source_interval,
+        minimum_seconds=minimum,
+        maximum_seconds=maximum,
+        priority=int(source.priority or 50),
+        job_count=int(source.last_job_count or 0),
+        change_count=int(source.last_change_count or 0),
+        consecutive_failures=int(source.consecutive_failures or 0),
+    )
 
 
 def run_registered_source(
@@ -227,7 +238,7 @@ def run_registered_source(
         if not source.enabled or not source.crawl_allowed:
             raise RuntimeError("Job source is disabled or crawling is not allowed")
 
-        connector = JobSourceAdapterFactory.create(source)
+        connector = create_source_adapter(source)
         counts: dict[str, int] | None = None
         try:
             health = connector.health()
@@ -254,10 +265,7 @@ def run_registered_source(
 
 
 def run_due_sources(settings: Settings | None = None) -> dict[str, dict[str, int] | str]:
-    """Compatibility synchronous runner retained for local operations/tests.
-
-    Staging Prompt 3 uses the transactional dispatcher and dedicated source queue.
-    """
+    """Compatibility synchronous runner retained for local operations/tests."""
     settings = settings or get_settings()
     worker_id = f"{socket.gethostname()}:{uuid.uuid4()}"
     with SessionLocal() as session:

@@ -39,18 +39,29 @@ _PROVIDER_PATTERNS: list[tuple[JobSourceType, tuple[str, ...]]] = [
     (JobSourceType.LEVER, ("jobs.lever.co", "api.lever.co", "api.eu.lever.co")),
     (JobSourceType.ASHBY, ("jobs.ashbyhq.com", "api.ashbyhq.com/posting-api")),
     (JobSourceType.WORKDAY, ("myworkdayjobs.com", "wd1.myworkdaysite.com", "wd5.myworkdaysite.com")),
-    (JobSourceType.SMARTRECRUITERS, ("careers.smartrecruiters.com", "jobs.smartrecruiters.com")),
+    (JobSourceType.SMARTRECRUITERS, ("careers.smartrecruiters.com", "jobs.smartrecruiters.com", "api.smartrecruiters.com/v1/companies")),
     (JobSourceType.WORKABLE, ("apply.workable.com", "workable.com/j/")),
-    (JobSourceType.ICIMS, ("icims.com/jobs", "careers-", "jobs.icims.com")),
+    (JobSourceType.ICIMS, ("icims.com/jobs", "jobs.icims.com", "careers-")),
     (JobSourceType.ORACLE, ("oraclecloud.com/hcmui", "oracle.com/careers")),
     (JobSourceType.SUCCESSFACTORS, ("successfactors.com", "career5.successfactors.eu")),
+    (JobSourceType.JOBVITE, ("jobs.jobvite.com", "jobvite.com/job")),
+    (JobSourceType.UKG, ("recruiting.ultipro.com", "recruiting2.ultipro.com", "ukg.com/careers")),
+    (JobSourceType.BAMBOOHR, ("bamboohr.com/careers", "bamboohr.com/jobs")),
+    (JobSourceType.JAZZHR, ("applytojob.com", "jazzhr.com")),
+    (JobSourceType.RECRUITEE, ("recruitee.com/o/", "recruitee.com/c/")),
+    (JobSourceType.TEAMTAILOR, ("teamtailor.com/jobs", "teamtailor.com/pages")),
+    (JobSourceType.PINPOINT, ("pinpointhq.com", "pinpoint.com/careers")),
+    (JobSourceType.COMEET, ("comeet.com/jobs", "comeet.co/jobs")),
+    (JobSourceType.PERSONIO, ("jobs.personio.", "personio.de/job")),
+    (JobSourceType.RIPPLING, ("ats.rippling.com", "rippling.com/careers")),
+    (JobSourceType.ADP, ("workforcenow.adp.com", "jobs.adp.com")),
+    (JobSourceType.PAYLOCITY, ("recruiting.paylocity.com",)),
+    (JobSourceType.DAYFORCE, ("dayforcehcm.com/candidateportal", "jobs.dayforcehcm.com")),
+    (JobSourceType.TALEO, ("taleo.net", "oracle.taleo")),
+    (JobSourceType.PAGEUP, ("pageuppeople.com", "careers.pageuppeople.com")),
+    (JobSourceType.PEOPLEADMIN, ("peopleadmin.com/postings", "peopleadmin.com")),
+    (JobSourceType.CORNERSTONE, ("csod.com/ux/ats/careersite", "cornerstoneondemand.com")),
 ]
-
-_EXTRA_PROVIDER_NAMES = {
-    "jobvite": "JOBVITE",
-    "recruiting.ultipro.com": "UKG",
-    "ukg.com/careers": "UKG",
-}
 
 
 def _source_identity(provider: JobSourceType, url: str) -> str:
@@ -71,6 +82,7 @@ def _source_identity(provider: JobSourceType, url: str) -> str:
         return f"{host}:{segments[0] if segments else 'root'}"
     if provider in {JobSourceType.SMARTRECRUITERS, JobSourceType.WORKABLE} and segments:
         return segments[0]
+    # For employer-hosted ATS subdomains the full host is a stable, domain-scoped identity.
     return host or url
 
 
@@ -98,6 +110,7 @@ def detect_ats(url: str, html: str = "") -> ATSDetection:
             for candidate_provider, patterns in _PROVIDER_PATTERNS
             if candidate_provider == provider
             for pattern in patterns
+            if "/" not in pattern
         )
         confidence = 1.0 if exact_host else min(0.98, 0.82 + 0.04 * len(evidence))
         return ATSDetection(
@@ -107,19 +120,6 @@ def detect_ats(url: str, html: str = "") -> ATSDetection:
             candidate_source_url=source_url,
             source_identity=_source_identity(provider, source_url),
         )
-
-    joined = "\n".join(normalized)
-    for signal, name in _EXTRA_PROVIDER_NAMES.items():
-        if signal in joined:
-            # These providers are detected for operational evidence but remain a
-            # conservative custom-career source until a dedicated adapter exists.
-            return ATSDetection(
-                provider=JobSourceType.CAREER_SITE,
-                confidence=0.75,
-                evidence=(f"provider-signal:{name}",),
-                candidate_source_url=url,
-                source_identity=(urlsplit(url).hostname or url).casefold(),
-            )
 
     if re.search(r"\b(job|career|position|opening)s?\b", html.casefold()):
         return ATSDetection(

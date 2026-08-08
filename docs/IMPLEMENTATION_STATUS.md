@@ -9,11 +9,10 @@ Statuses are intentionally restricted to:
 - `COMPLETE` — the product/source capability exists and has an applicable repository validation gate.
 - `BLOCKED` — the remaining work requires a real external environment, provider account, secret, signing identity, store publication, licensed dataset/feed, or live operational evidence that cannot be fabricated from source control.
 
-## Platform/source status
+## Job supply source status
 
 | Area | Status | Evidence boundary |
 |---|---|---|
-| Core candidate platform | COMPLETE | Candidate workflows, persistence, search, applications, resume, AI, employer/admin, billing, notifications and privacy source exist with repository gates. |
 | Multi-source job-data platform | COMPLETE | Greenhouse/Lever/Ashby/SmartRecruiters, USAJOBS, ReliefWeb, permitted employer career/JSON-LD paths, authorized/licensed JSON/JSONL/CSV/XML/RSS/Atom feed contract, source registry, scheduling/leasing, source completeness, authority/provenance, dedup, freshness, closure evidence, URL verification and measured quality metrics exist. This does not claim live provider execution. |
 | Organization universe and authoritative dataset ingestion | COMPLETE | Repeatable organization ingestion supports canonical domains, aliases, source-specific external IDs, review-safe identity resolution, dataset provenance and SEC, NCES/IPEDS, CMS hospital, IRS nonprofit and reviewed government directory loaders. The architecture can represent large organization universes; no live 50K employer count is claimed. |
 | ATS/career-site discovery | COMPLETE | Discovery identifies Greenhouse, Lever, Ashby, Workday, SmartRecruiters, Workable, iCIMS, Oracle, SuccessFactors, Jobvite, UKG, BambooHR, JazzHR, PageUp, PeopleAdmin, Cornerstone, GovernmentJobs/NEOGOV and additional reviewed fingerprints; unsupported board APIs use the bounded public structured-page path without bypassing access controls. |

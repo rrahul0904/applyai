@@ -18,6 +18,23 @@ class JobSourceType(StrEnum):
     ICIMS = "ICIMS"
     ORACLE = "ORACLE"
     SUCCESSFACTORS = "SUCCESSFACTORS"
+    JOBVITE = "JOBVITE"
+    UKG = "UKG"
+    BAMBOOHR = "BAMBOOHR"
+    JAZZHR = "JAZZHR"
+    RECRUITEE = "RECRUITEE"
+    TEAMTAILOR = "TEAMTAILOR"
+    PINPOINT = "PINPOINT"
+    COMEET = "COMEET"
+    PERSONIO = "PERSONIO"
+    RIPPLING = "RIPPLING"
+    ADP = "ADP"
+    PAYLOCITY = "PAYLOCITY"
+    DAYFORCE = "DAYFORCE"
+    TALEO = "TALEO"
+    PAGEUP = "PAGEUP"
+    PEOPLEADMIN = "PEOPLEADMIN"
+    CORNERSTONE = "CORNERSTONE"
     CAREER_SITE = "CAREER_SITE"
     JSON_LD = "JSON_LD"
     XML_FEED = "XML_FEED"
@@ -184,6 +201,7 @@ def normalize_employment_type(value: str | None) -> str:
         "temp": "TEMPORARY",
         "intern": "INTERNSHIP",
         "internship": "INTERNSHIP",
+        "permanent": "FULL_TIME",
     }
     if normalized in mapping:
         return mapping[normalized]

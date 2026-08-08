@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from enum import StrEnum
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.global_job_supply_models import JobSourceCapability
@@ -363,11 +364,6 @@ def seed_source_capabilities(session: Session) -> list[JobSourceCapability]:
     now = datetime.now(timezone.utc)
     records: list[JobSourceCapability] = []
     for seed in PROVIDER_CAPABILITY_SEEDS:
-        record = session.scalar(
-            select(JobSourceCapability).where(
-                JobSourceCapability.provider_key == seed.provider_key
-            )
-        )
         seed_metadata = capability_metadata(seed)
         values = {
             "display_name": seed.display_name,
@@ -385,26 +381,36 @@ def seed_source_capabilities(session: Session) -> list[JobSourceCapability]:
             "metadata_json": seed_metadata,
             "reviewed_at": now,
         }
+        session.execute(
+            pg_insert(JobSourceCapability)
+            .values(provider_key=seed.provider_key, **values)
+            .on_conflict_do_nothing(index_elements=[JobSourceCapability.provider_key])
+        )
+        record = session.scalar(
+            select(JobSourceCapability).where(
+                JobSourceCapability.provider_key == seed.provider_key
+            )
+        )
         if record is None:
-            record = JobSourceCapability(provider_key=seed.provider_key, **values)
-            session.add(record)
+            raise RuntimeError(
+                f"Provider capability seed did not materialize for {seed.provider_key!r}"
+            )
+        existing_metadata = dict(record.metadata_json or {})
+        if existing_metadata.get("operator_override"):
+            # Keep operator-reviewed policy/status decisions durable while still refreshing
+            # non-policy provider facts and filling metadata fields introduced by new code.
+            record.display_name = seed.display_name
+            record.official_api_available = seed.official_api_available
+            record.public_feed_available = seed.public_feed_available
+            record.partner_feed_available = seed.partner_feed_available
+            record.public_page_access = seed.public_page_access
+            record.documentation_url = seed.documentation_url
+            for key, value in seed_metadata.items():
+                existing_metadata.setdefault(key, value)
+            record.metadata_json = existing_metadata
         else:
-            existing_metadata = dict(record.metadata_json or {})
-            if existing_metadata.get("operator_override"):
-                # Keep operator-reviewed policy/status decisions durable while still refreshing
-                # non-policy provider facts and filling metadata fields introduced by new code.
-                record.display_name = seed.display_name
-                record.official_api_available = seed.official_api_available
-                record.public_feed_available = seed.public_feed_available
-                record.partner_feed_available = seed.partner_feed_available
-                record.public_page_access = seed.public_page_access
-                record.documentation_url = seed.documentation_url
-                for key, value in seed_metadata.items():
-                    existing_metadata.setdefault(key, value)
-                record.metadata_json = existing_metadata
-            else:
-                for key, value in values.items():
-                    setattr(record, key, value)
+            for key, value in values.items():
+                setattr(record, key, value)
         records.append(record)
     session.flush()
     return records

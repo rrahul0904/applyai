@@ -2,154 +2,231 @@
 
 Updated: 2026-08-08
 
-## Scope
-
-This document records the repository-side implementation state of the Global Real Job Supply Platform. It deliberately separates source implementation from live-provider acceptance. A connector or policy record is not evidence that a third-party marketplace permits anonymous crawling or that a live feed has been activated.
-
-## Existing platform reused
-
-ApplyAI already had a normalized job domain, PostgreSQL search, source registry/run tracking, Greenhouse/Lever/Ashby adapters, company career-site discovery, JSON-LD extraction, safe public URL fetching, robots/access-policy checks, SSRF protections, provenance, freshness/closure evidence, SQS/outbox workers, candidate URL import, and search-scale benchmarks. The global-supply work extends these capabilities rather than replacing them.
-
-## Global-supply additions
-
-### Provider capability and policy registry
-
-`app.jobs.source_capabilities` defines explicit access modes:
-
-- `DIRECT_PUBLIC_API`
-- `AUTHORIZED_FEED`
-- `PUBLIC_ATS`
-- `PUBLIC_STRUCTURED_PAGE`
-- `EMPLOYER_CAREER_SITE`
-- `FIRST_PARTY_APPLYAI`
-- `PARTNERSHIP_REQUIRED`
-- `BLOCKED_BY_POLICY`
-- `UNSUPPORTED`
-
-Implementation status is tracked independently as:
-
-- `SOURCE_IMPLEMENTED`
-- `LIVE_PUBLIC_SOURCE_VERIFIED`
-- `PARTNERSHIP_REQUIRED`
-- `BLOCKED_BY_PROVIDER_POLICY`
-- `NOT_YET_SUPPORTED`
-
-This prevents technical discoverability from being treated as permission to crawl.
-
-### Direct/public sources implemented in source
-
-- ApplyAI first-party employer jobs
-- Greenhouse public Job Board API
-- Lever public postings API
-- Ashby public job-board API
-- SmartRecruiters public posting path
-- USAJOBS official Search API (requires issued API key/user-agent configuration)
-- ReliefWeb official jobs API (requires configured app name)
-- bounded employer career-site/JSON-LD extraction for permitted public pages
-
-### Marketplace policy classification
-
-Major marketplaces including Indeed, LinkedIn, Dice, Monster, ZipRecruiter, Glassdoor, CareerBuilder, SimplyHired, Wellfound, Built In, HigherEdJobs, Handshake, Idealist and Devex are represented conservatively as partnership/authorized-feed candidates unless a documented public source is available and reviewed. The platform does not implement CAPTCHA, authentication, anti-bot, robots or rate-limit bypasses.
-
-### Organization universe
-
-`app.jobs.organization_universe` provides normalized organization ingestion from CSV, JSON and JSONL, with:
-
-- canonical name and domain normalization
-- aliases
-- organization type
-- industry
-- country/region
-- size band
-- source priority
-- careers URL
-- ATS provider
-- dataset provenance
-- conflict-to-review behavior rather than unsafe merging
-
-The model supports companies, startups, universities, colleges, research institutes, hospitals, health systems, nonprofits, NGOs, foundations, government/public institutions and national laboratories.
-
-### Discovery and source registration
-
-Organization records can feed asynchronous career-page discovery. The existing ATS detector is extended to recognize additional provider fingerprints while unsupported providers are routed through the safe generic career-site path rather than assumed to have private APIs.
-
-### Source authority and deduplication
-
-Source trust is explicit. ApplyAI first-party and employer-origin sources outrank authorized aggregators and candidate imports. Cross-source dedup review retains source observations/provenance instead of discarding duplicate evidence.
-
-### Adaptive scheduling and sharding
-
-The global-supply layer adds source priority, adaptive refresh intervals, progressive backoff and deterministic source sharding. The intended operating model is high-frequency refresh for high-change sources, normal 6–12 hour refresh for ordinary sources, daily refresh for low-volume sources, and longer backoff for repeatedly empty/failing sources.
-
-### Public feed connectors
-
-USAJOBS and ReliefWeb connectors expose checkpoint/health behavior and avoid claiming an authoritative snapshot when configured paging limits prevent exhaustion of the source.
-
-### Operator/API surface
-
-Internal job-supply endpoints and scripts provide source registration, organization import/discovery/synchronization, provider capability seeding and dedup review support.
-
-## CLI / operator entry points
-
-Representative commands include:
-
-```bash
-uv run --project services/api python -m scripts.import_organizations --file <organizations.csv>
-uv run --project services/api python -m scripts.seed_job_source_capabilities
-uv run --project services/api python -m scripts.register_public_job_sources
-uv run --project services/api python -m scripts.discover_job_sources
-uv run --project services/api python -m scripts.sync_job_sources
-uv run --project services/api python -m scripts.build_job_dedup_candidates
-```
-
-See each script's `--help` output for exact options and required credentials.
-
-## Scale design
-
-The repository targets a representation capacity of 50,000+ organizations and a path toward 1M+ active jobs / 10M+ historical observations. Synthetic benchmark tooling measures organization validation, scheduling and shard distribution. Existing PostgreSQL search benchmarking remains the evidence gate for search scale; synthetic CPU-only scheduling benchmarks must not be described as proof of production database throughput.
-
-## Source-safety rules
-
-The implementation must not:
-
-- bypass `robots.txt` or source access policy
-- solve or evade CAPTCHA
-- bypass authentication/paywalls
-- rotate proxies to defeat blocking
-- spoof private sessions/cookies
-- reverse engineer authenticated private APIs for ingestion
-- ignore `Retry-After`, 429 responses or provider throttling
-
-Blocked/disallowed sources must remain explicit operational states.
-
 ## Status boundary
 
-### SOURCE IMPLEMENTED
+The repository now contains the source-side platform required to load a real organization universe, discover employer job sources, ingest supported public/authorized feeds, operate the source catalog and evaluate staging acceptance. This is not evidence that a live organization universe has already been loaded or that every provider has been exercised in staging.
 
-Repository code exists and must pass the applicable exact-head CI/tests.
+Use these evidence states consistently:
 
-### LIVE PUBLIC SOURCE VERIFIED
+- `SOURCE_DESIGNED` — architecture/contract exists.
+- `SOURCE_IMPLEMENTED` — production-path source code exists.
+- `SOURCE_TESTED` — repository tests/gates exercise the source implementation.
+- `LIVE_PUBLIC_SOURCE_VERIFIED` — a real public/authorized source produced measured runtime evidence.
+- `LIVE_STAGING_VERIFIED` — staging acceptance passed against the required representative matrix.
+- `PRODUCTION_VERIFIED` — production operation has separately been proven.
+- `PARTNERSHIP_REQUIRED` — the desired source path requires authorized/licensed provider access.
+- `BLOCKED_BY_PROVIDER_POLICY` — automated use of the attempted path is disallowed.
+- `NOT_YET_SUPPORTED` — no reviewed production-grade ingestion path exists.
 
-Requires successful staging execution against a real public/authorized source with captured metrics. Source code alone is insufficient.
+Do not collapse these states into one generic "complete" flag.
 
-### PARTNERSHIP REQUIRED
+## Organization universe
 
-A provider requires licensed/partner access for the desired ingestion path. ApplyAI should prefer the original employer ATS/career page until such access is contracted.
+`app.jobs.organization_universe` now supports repeatable organization ingestion with:
 
-### BLOCKED BY PROVIDER POLICY
+- canonical name/domain normalization
+- aliases and former-name style aliases
+- source-specific external organization identifiers through `CompanySource`
+- domain-first, external-ID, canonical-name and alias identity resolution
+- ambiguity/conflict-to-review behavior rather than unsafe merge
+- parent-domain/parent-company metadata where evidence exists
+- identity-resolution audit metadata
+- dataset provenance
+- CSV, JSON and JSONL normalized imports
 
-Automated access is explicitly disallowed for the attempted path. The source must not be bypassed.
+Supported organization taxonomy includes:
 
-### NOT YET SUPPORTED
+`PUBLIC_COMPANY`, `PRIVATE_COMPANY`, `STARTUP`, `UNIVERSITY`, `COLLEGE`, `RESEARCH_INSTITUTION`, `HOSPITAL`, `HEALTH_SYSTEM`, `NONPROFIT`, `NGO`, `FOUNDATION`, `FEDERAL_AGENCY`, `STATE_AGENCY`, `LOCAL_GOVERNMENT`, `PUBLIC_INSTITUTION`, `NATIONAL_LAB`, and `OTHER_EMPLOYER` plus compatibility categories already present in the platform.
 
-No production-grade adapter/path has been implemented and reviewed.
+### Authoritative dataset loaders
 
-## Remaining non-source-control work
+`app.jobs.organization_datasets` provides explicit normalization for:
 
-- load a reviewed real organization universe (large public/licensed datasets are intentionally not fabricated or committed)
-- provide real USAJOBS/ReliefWeb credentials/configuration where required
-- activate staging source schedules and workers
-- measure live source job counts, freshness, dedup, closure and provider error behavior
-- obtain any desired marketplace partnerships/licensed feeds
+- SEC company metadata → public companies / CIK identity
+- NCES/IPEDS → U.S. colleges and universities / UNITID identity
+- CMS hospital data → hospitals / provider identity
+- IRS EO BMF/TEOS-style rows → nonprofits / EIN identity
+- reviewed government directories → federal/state/local government organization identity
 
-Those are activation/acceptance tasks, not a reason to fabricate source support in code.
+These loaders normalize public organization datasets; they do not automatically assert a careers URL or permission to crawl every resulting domain.
+
+Use:
+
+```bash
+uv run --project services/api python -m scripts.import_organizations \
+  --file <dataset.csv> \
+  --dataset-type sec|ipeds|cms|irs|government
+```
+
+`--dry-run` validates without writing.
+
+## Source discovery and ATS classification
+
+Organization records can be queued for asynchronous career-source discovery through the existing PostgreSQL outbox → SQS source-worker flow. Discovery remains bounded by safe URL validation, SSRF defenses, robots/access-policy evaluation, response/page budgets and redirect limits.
+
+Known ATS/provider fingerprint detection includes Greenhouse, Lever, Ashby, SmartRecruiters, Workday, Workable, iCIMS, Oracle Recruiting, SuccessFactors, Jobvite, UKG, BambooHR, JazzHR, Recruitee, Teamtailor, Pinpoint, Comeet, Personio, Rippling, ADP, Paylocity, Dayforce, Taleo, PageUp, PeopleAdmin, Cornerstone and GovernmentJobs/NEOGOV.
+
+Detection does not imply a dedicated API adapter. Providers without a reviewed dedicated public connector remain on the bounded employer-career path.
+
+## Direct/public source implementations
+
+Source-tested repository paths exist for:
+
+- ApplyAI first-party employer jobs
+- Greenhouse public Job Board
+- Lever public postings
+- Ashby public job board
+- SmartRecruiters public postings
+- USAJOBS official Search API, requiring issued API key/user-agent configuration
+- ReliefWeb official jobs API, requiring configured/approved app name
+- permitted employer career pages / JSON-LD
+
+Live verification is separately measured by staging acceptance.
+
+## Authorized/licensed feed contract
+
+`app.jobs.partner_feed.PartnerFeedConnector` provides a generic contracted-feed path for:
+
+- JSON
+- JSONL
+- CSV
+- XML
+- RSS
+- Atom
+
+It requires an explicitly registered feed URL, source identity and provider key, preserves provenance, supports configurable field mapping and uses the same safe public-fetch controls. `AUTHORIZED_AGGREGATOR_FEED`, `JSON_FEED` and `XML_FEED` source registry entries can use this contract.
+
+This is an integration contract for authorized/licensed supply. It is not an anonymous marketplace scraper.
+
+## Provider policy
+
+`app.jobs.source_capabilities` is the operational provider-policy registry. Provider records expose:
+
+- access mode
+- implementation status
+- credential requirement
+- partnership requirement
+- robots policy
+- rate-limit policy
+- pagination strategy
+- delta support
+- closure support
+- trust level
+- whether automated ingestion is permitted by ApplyAI policy
+- reason/notes
+- last reviewed timestamp
+
+Major marketplaces such as Indeed, LinkedIn, Dice, Monster, ZipRecruiter, Glassdoor, CareerBuilder, Wellfound, Built In, HigherEdJobs, Handshake, Idealist and Devex remain partnership/authorized-feed candidates. ApplyAI does not implement CAPTCHA bypass, authenticated-session bypass, anti-bot evasion, proxy rotation to defeat blocking or private-API circumvention.
+
+## Canonical job integrity
+
+The existing authority-aware ingestion pipeline remains the canonicalization path. It preserves:
+
+- source observations
+- raw payload hash/provenance
+- source/company/job identity
+- canonical application URL
+- employer requisition identity
+- cross-source dedup evidence
+- field-level provenance
+- source authority
+- closure/reopen evidence
+
+Lower-authority observations cannot silently replace higher-authority employer-origin canonical content.
+
+## Source completeness
+
+Runtime source evidence now records one of:
+
+- `FULL_SNAPSHOT`
+- `PAGINATED_FULL_SNAPSHOT`
+- `DELTA`
+- `PARTIAL`
+- `TRUNCATED`
+- `UNKNOWN_COMPLETENESS`
+
+Failed record processing downgrades observed completeness to `PARTIAL`. Generic employer career extraction and non-authoritative partner feeds remain non-authoritative for absence-based closure. Only full snapshot classes should be treated as closure authority.
+
+Latest completeness evidence is stored with the source registry runtime configuration instead of pretending a partial crawl was complete.
+
+## Scheduling and scale
+
+The scheduler retains:
+
+- adaptive refresh intervals
+- quiet-source 1.25× compatibility cadence
+- daily-or-longer empty-source backoff
+- bounded exponential failure backoff
+- deterministic sharding
+- database leases / skip-locked claims
+
+A PostgreSQL scheduler benchmark now measures 1,000, 10,000 and 50,000 synthetic due sources. It records claim throughput, batch latency, duplicate leases and second-worker conflicts. The artifact is explicitly labeled `SYNTHETIC_SCALE_EVIDENCE`; it is not a live-employer count.
+
+The existing PostgreSQL job-search benchmark remains the measured search gate at 10K, 50K and 250K synthetic jobs.
+
+## Catalog quality
+
+`app.jobs.quality` exposes measured values for:
+
+- organizations and organization-type coverage
+- organizations with domains/career sites/detected ATS
+- source totals, enabled/healthy/blocked/failing and provider distribution
+- raw postings and canonical active/closed/stale jobs
+- new/updated/closed/reopened jobs
+- cross-source canonical jobs and orphan source observations
+- apply URL validity
+- salary/location coverage
+- freshness buckets
+- source-authority distribution
+- ingestion p50/p95
+- source failure rate
+- measured worker/network/cost observations where instrumented
+
+Unmeasured metrics remain `null` rather than being invented.
+
+## Operator control plane
+
+`/api/v1/internal/job-supply` now exposes consolidated operator endpoints for:
+
+- overview/quality
+- provider policy
+- organizations
+- sources/source details
+- ingestion runs/failures
+- dedup review
+- source enable/disable/refresh/reclassification
+- provider reclassification
+- queued organization discovery
+- dedup approve/reject review state
+
+The existing operator-only `/admin` UI surfaces job-supply health, source controls, organization discovery and provider-policy status without exposing the internal API token to the browser.
+
+## Acceptance command
+
+Run:
+
+```bash
+pnpm job-supply:acceptance
+```
+
+The command reads actual database/runtime evidence. It deliberately returns `BLOCKED_EXTERNAL_CONFIGURATION` when a real organization universe, active real sources, successful real-source runs or real canonical jobs are absent. It does not convert deterministic seed data or synthetic benchmarks into live-source evidence.
+
+For a non-blocking diagnostic report:
+
+```bash
+pnpm job-supply:acceptance:report
+```
+
+## What is still external/runtime work
+
+The repository does not fabricate these outcomes:
+
+- a reviewed real 50K organization dataset being physically loaded
+- live USAJOBS/ReliefWeb credentials
+- marketplace contracts/licensed feeds
+- active staging source workers and queues
+- measured real job counts/freshness/apply-link validity from staging
+- representative real-source staging acceptance
+- production verification
+
+Those are runtime/provider dependencies. When configured, the repository now has an explicit acceptance command and operator surfaces to measure them.

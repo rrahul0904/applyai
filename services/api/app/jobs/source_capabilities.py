@@ -368,6 +368,7 @@ def seed_source_capabilities(session: Session) -> list[JobSourceCapability]:
                 JobSourceCapability.provider_key == seed.provider_key
             )
         )
+        seed_metadata = capability_metadata(seed)
         values = {
             "display_name": seed.display_name,
             "access_mode": seed.access_mode.value,
@@ -381,15 +382,29 @@ def seed_source_capabilities(session: Session) -> list[JobSourceCapability]:
             "recommended_strategy": seed.recommended_strategy,
             "documentation_url": seed.documentation_url,
             "notes": seed.notes,
-            "metadata_json": capability_metadata(seed),
+            "metadata_json": seed_metadata,
             "reviewed_at": now,
         }
         if record is None:
             record = JobSourceCapability(provider_key=seed.provider_key, **values)
             session.add(record)
         else:
-            for key, value in values.items():
-                setattr(record, key, value)
+            existing_metadata = dict(record.metadata_json or {})
+            if existing_metadata.get("operator_override"):
+                # Keep operator-reviewed policy/status decisions durable while still refreshing
+                # non-policy provider facts and filling metadata fields introduced by new code.
+                record.display_name = seed.display_name
+                record.official_api_available = seed.official_api_available
+                record.public_feed_available = seed.public_feed_available
+                record.partner_feed_available = seed.partner_feed_available
+                record.public_page_access = seed.public_page_access
+                record.documentation_url = seed.documentation_url
+                for key, value in seed_metadata.items():
+                    existing_metadata.setdefault(key, value)
+                record.metadata_json = existing_metadata
+            else:
+                for key, value in values.items():
+                    setattr(record, key, value)
         records.append(record)
     session.flush()
     return records

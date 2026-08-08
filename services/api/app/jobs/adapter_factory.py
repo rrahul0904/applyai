@@ -10,6 +10,7 @@ from app.jobs.connectors import JobSourceConnector
 from app.jobs.contracts import JobSourceType
 from app.jobs.generic_career import CareerSiteJobConnector
 from app.jobs.public_feeds import ReliefWebJobsConnector, USAJobsConnector
+from app.jobs.smartrecruiters import SmartRecruitersPostingConnector
 
 
 def create_source_adapter(
@@ -46,6 +47,17 @@ def create_source_adapter(
             appname=appname,
             page_size=int(configuration.get("page_size") or 1000),
             max_pages=int(configuration.get("max_pages") or 20),
+            client=client,
+        )
+
+    if source_type == JobSourceType.SMARTRECRUITERS:
+        identifier = str(configuration.get("company_identifier") or source.source_identity).strip()
+        return SmartRecruitersPostingConnector(
+            identifier,
+            page_size=int(configuration.get("page_size") or 100),
+            max_pages=int(configuration.get("max_pages") or 20),
+            max_jobs=int(configuration.get("max_jobs") or 2000),
+            request_interval_seconds=float(configuration.get("request_interval_seconds") or 0.11),
             client=client,
         )
 

@@ -3,8 +3,11 @@ from __future__ import annotations
 import logging
 import uuid
 
+from sqlalchemy import select
+
 from app.core.config import Settings, get_settings
 from app.core.database import SessionLocal
+from app.global_job_supply_models import OrganizationProfile
 from app.job_source_models import JobSourceDiscovery
 from app.jobs.contracts import classify_ingestion_error
 from app.jobs.discovery import _register_detected_source, discover_company_career_site, utcnow
@@ -13,6 +16,33 @@ from app.jobs.web_security import CrawlBudget, PublicUrlRejected, SafeHttpFetche
 
 
 logger = logging.getLogger("applyai.company_discovery")
+
+
+def _organization_profile(session, company_id):
+    if company_id is None:
+        return None
+    return session.scalar(
+        select(OrganizationProfile).where(OrganizationProfile.company_id == company_id)
+    )
+
+
+def _reconcile_profile(session, record: JobSourceDiscovery) -> None:
+    profile = _organization_profile(session, record.company_id)
+    if profile is None:
+        return
+    if record.discovered_careers_url:
+        profile.careers_url = record.discovered_careers_url
+    if record.detected_provider:
+        profile.ats_provider = record.detected_provider
+    if record.status == "VERIFIED":
+        profile.source_status = "VERIFIED"
+        profile.last_verified_at = record.verified_at or utcnow()
+    elif record.status == "DISCOVERED":
+        profile.source_status = "DISCOVERED"
+    elif record.status == "BLOCKED":
+        profile.source_status = "BLOCKED"
+    elif record.status in {"FAILED", "REJECTED"}:
+        profile.source_status = "REQUIRES_REVIEW"
 
 
 def process_company_discovery_record(
@@ -37,6 +67,8 @@ def process_company_discovery_record(
             if record is None:
                 raise LookupError(f"Discovery {discovery_id} does not exist")
             if record.status == "VERIFIED":
+                _reconcile_profile(session, record)
+                session.commit()
                 return record
             record.status = "FETCHING"
             record.attempt_count += 1
@@ -87,6 +119,7 @@ def process_company_discovery_record(
                         },
                     )
                 record.completed_at = utcnow()
+                _reconcile_profile(session, record)
                 session.commit()
                 return record
             except Exception as exc:
@@ -95,6 +128,7 @@ def process_company_discovery_record(
                 record.error_category = "BLOCKED" if isinstance(exc, PublicUrlRejected) else category.value
                 record.error_summary = type(exc).__name__
                 record.completed_at = utcnow()
+                _reconcile_profile(session, record)
                 session.commit()
                 logger.warning(
                     "career_discovery_failed",

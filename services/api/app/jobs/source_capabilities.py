@@ -47,9 +47,54 @@ class ProviderCapabilitySeed:
     notes: str | None = None
 
 
-# Conservative catalog. It is intentionally permissible to under-claim access. A provider
-# classified as partnership-required must not be turned into a crawler merely because pages
-# happen to be fetchable from a developer laptop.
+def employer_career(
+    key: str,
+    name: str,
+    *,
+    notes: str | None = None,
+) -> ProviderCapabilitySeed:
+    return ProviderCapabilitySeed(
+        key,
+        name,
+        SourceAccessMode.EMPLOYER_CAREER_SITE,
+        ProviderImplementationStatus.SOURCE_IMPLEMENTED,
+        public_page_access=True,
+        recommended_strategy=(
+            "Detect the employer ATS and ingest only bounded public job pages through the "
+            "robots-aware generic career-site connector unless a dedicated documented public API is available."
+        ),
+        notes=notes,
+    )
+
+
+def partnership(
+    key: str,
+    name: str,
+    *,
+    official_api: bool = False,
+    partner_feed: bool = True,
+    auth: bool = True,
+    docs: str | None = None,
+    notes: str | None = None,
+) -> ProviderCapabilitySeed:
+    return ProviderCapabilitySeed(
+        key,
+        name,
+        SourceAccessMode.PARTNERSHIP_REQUIRED,
+        ProviderImplementationStatus.PARTNERSHIP_REQUIRED,
+        official_api_available=official_api,
+        partner_feed_available=partner_feed,
+        authentication_required=auth,
+        recommended_strategy=(
+            "Use an authorized/licensed provider integration when contracted; otherwise resolve "
+            "the opportunity to the original employer ATS or employer career page. Do not bypass access controls."
+        ),
+        documentation_url=docs,
+        notes=notes,
+    )
+
+
+# This catalog is intentionally conservative: technical discoverability is not permission to crawl.
 PROVIDER_CAPABILITY_SEEDS: tuple[ProviderCapabilitySeed, ...] = (
     ProviderCapabilitySeed(
         "applyai",
@@ -89,6 +134,16 @@ PROVIDER_CAPABILITY_SEEDS: tuple[ProviderCapabilitySeed, ...] = (
         documentation_url="https://developers.ashbyhq.com/docs/public-job-posting-api",
     ),
     ProviderCapabilitySeed(
+        "smartrecruiters",
+        "SmartRecruiters",
+        SourceAccessMode.PUBLIC_ATS,
+        ProviderImplementationStatus.SOURCE_IMPLEMENTED,
+        official_api_available=True,
+        public_page_access=True,
+        recommended_strategy="Use the public Posting API list/detail endpoints for active public company postings.",
+        documentation_url="https://developers.smartrecruiters.com/docs/endpoints",
+    ),
+    ProviderCapabilitySeed(
         "usajobs",
         "USAJOBS",
         SourceAccessMode.DIRECT_PUBLIC_API,
@@ -108,202 +163,88 @@ PROVIDER_CAPABILITY_SEEDS: tuple[ProviderCapabilitySeed, ...] = (
         recommended_strategy="Use the official ReliefWeb v2 jobs API with a pre-approved appname and quota-aware paging.",
         documentation_url="https://apidoc.reliefweb.int/",
     ),
-    ProviderCapabilitySeed(
-        "workday",
-        "Workday",
-        SourceAccessMode.EMPLOYER_CAREER_SITE,
-        ProviderImplementationStatus.SOURCE_IMPLEMENTED,
-        public_page_access=True,
-        recommended_strategy="Discover employer Workday career sites and use bounded public structured-page extraction; no private tenant APIs.",
-    ),
-    ProviderCapabilitySeed(
-        "smartrecruiters",
-        "SmartRecruiters",
-        SourceAccessMode.EMPLOYER_CAREER_SITE,
-        ProviderImplementationStatus.SOURCE_IMPLEMENTED,
-        public_page_access=True,
-        recommended_strategy="Prefer employer public career pages / documented public endpoints when available.",
-    ),
-    ProviderCapabilitySeed(
-        "workable",
-        "Workable",
-        SourceAccessMode.EMPLOYER_CAREER_SITE,
-        ProviderImplementationStatus.SOURCE_IMPLEMENTED,
-        public_page_access=True,
-        recommended_strategy="Prefer public employer career pages and structured job data.",
-    ),
-    ProviderCapabilitySeed(
-        "icims",
-        "iCIMS",
-        SourceAccessMode.EMPLOYER_CAREER_SITE,
-        ProviderImplementationStatus.SOURCE_IMPLEMENTED,
-        public_page_access=True,
-        recommended_strategy="Use bounded employer career-site discovery and structured job pages where access permits.",
-    ),
-    ProviderCapabilitySeed(
-        "oracle",
-        "Oracle Recruiting / Taleo",
-        SourceAccessMode.EMPLOYER_CAREER_SITE,
-        ProviderImplementationStatus.SOURCE_IMPLEMENTED,
-        public_page_access=True,
-        recommended_strategy="Use employer public career pages and JSON-LD/HTML extraction; do not use authenticated HCM APIs without authorization.",
-    ),
-    ProviderCapabilitySeed(
-        "successfactors",
-        "SAP SuccessFactors",
-        SourceAccessMode.EMPLOYER_CAREER_SITE,
-        ProviderImplementationStatus.SOURCE_IMPLEMENTED,
-        public_page_access=True,
-        recommended_strategy="Use bounded public career pages when permitted; partner APIs require explicit authorization.",
-    ),
-    ProviderCapabilitySeed(
-        "jobvite",
-        "Jobvite",
-        SourceAccessMode.EMPLOYER_CAREER_SITE,
-        ProviderImplementationStatus.NOT_YET_SUPPORTED,
-        public_page_access=True,
-        recommended_strategy="Use employer-origin career pages after access-policy verification until a dedicated public adapter is justified.",
-    ),
-    ProviderCapabilitySeed(
-        "ukg",
-        "UKG",
-        SourceAccessMode.EMPLOYER_CAREER_SITE,
-        ProviderImplementationStatus.NOT_YET_SUPPORTED,
-        public_page_access=True,
-        recommended_strategy="Use employer-origin public career pages only after access-policy verification.",
-    ),
-    ProviderCapabilitySeed(
-        "pageup",
-        "PageUp",
-        SourceAccessMode.EMPLOYER_CAREER_SITE,
-        ProviderImplementationStatus.NOT_YET_SUPPORTED,
-        public_page_access=True,
-        recommended_strategy="Use public university/employer job pages via the generic structured career-site path.",
-    ),
-    ProviderCapabilitySeed(
-        "peopleadmin",
-        "PeopleAdmin",
-        SourceAccessMode.EMPLOYER_CAREER_SITE,
-        ProviderImplementationStatus.NOT_YET_SUPPORTED,
-        public_page_access=True,
-        recommended_strategy="Use public institution job pages via the generic structured career-site path.",
-    ),
-    ProviderCapabilitySeed(
+    employer_career("workday", "Workday"),
+    employer_career("workable", "Workable"),
+    employer_career("icims", "iCIMS"),
+    employer_career("oracle", "Oracle Recruiting"),
+    employer_career("successfactors", "SAP SuccessFactors"),
+    employer_career("jobvite", "Jobvite"),
+    employer_career("ukg", "UKG / UltiPro"),
+    employer_career("bamboohr", "BambooHR"),
+    employer_career("jazzhr", "JazzHR"),
+    employer_career("recruitee", "Recruitee"),
+    employer_career("teamtailor", "Teamtailor"),
+    employer_career("pinpoint", "Pinpoint"),
+    employer_career("comeet", "Comeet"),
+    employer_career("personio", "Personio"),
+    employer_career("rippling", "Rippling Recruiting"),
+    employer_career("adp", "ADP Recruiting"),
+    employer_career("paylocity", "Paylocity"),
+    employer_career("dayforce", "Dayforce"),
+    employer_career("taleo", "Taleo"),
+    employer_career("pageup", "PageUp"),
+    employer_career("peopleadmin", "PeopleAdmin"),
+    employer_career("cornerstone", "Cornerstone"),
+    partnership(
         "indeed",
         "Indeed",
-        SourceAccessMode.PARTNERSHIP_REQUIRED,
-        ProviderImplementationStatus.PARTNERSHIP_REQUIRED,
-        official_api_available=True,
-        partner_feed_available=True,
-        authentication_required=True,
-        recommended_strategy="Use an authorized Indeed partner integration/feed if approved; otherwise source the original employer ATS/career page.",
-        documentation_url="https://docs.indeed.com/job-sync-api",
-        notes="The documented Job Sync API is for posting/managing jobs in approved partner contexts, not a general public job-search export for arbitrary crawling.",
+        official_api=True,
+        docs="https://docs.indeed.com/job-sync-api",
+        notes=(
+            "The documented Job Sync API is an approved-partner/ATS job synchronization product, "
+            "not a general anonymous search export for arbitrary crawling."
+        ),
     ),
-    ProviderCapabilitySeed(
+    partnership(
         "linkedin",
         "LinkedIn",
-        SourceAccessMode.PARTNERSHIP_REQUIRED,
-        ProviderImplementationStatus.PARTNERSHIP_REQUIRED,
-        official_api_available=True,
-        partner_feed_available=True,
-        authentication_required=True,
-        recommended_strategy="Use approved LinkedIn Talent Solutions / Apply Connect partner access only; otherwise resolve jobs to employer-origin sources.",
-        documentation_url="https://learn.microsoft.com/en-us/linkedin/talent/job-postings/api/overview",
+        official_api=True,
+        docs="https://learn.microsoft.com/en-us/linkedin/talent/job-postings/api/overview",
+        notes="Use approved Talent Solutions / Apply Connect partner access only.",
     ),
-    ProviderCapabilitySeed(
-        "dice",
-        "Dice",
-        SourceAccessMode.PARTNERSHIP_REQUIRED,
-        ProviderImplementationStatus.PARTNERSHIP_REQUIRED,
-        partner_feed_available=True,
-        authentication_required=True,
-        recommended_strategy="Pursue a licensed/partner feed; do not make public-page crawling a dependency without explicit permission.",
-    ),
-    ProviderCapabilitySeed(
-        "monster",
-        "Monster",
-        SourceAccessMode.PARTNERSHIP_REQUIRED,
-        ProviderImplementationStatus.PARTNERSHIP_REQUIRED,
-        partner_feed_available=True,
-        authentication_required=True,
-        recommended_strategy="Pursue an authorized distribution/search feed or resolve jobs to employer-origin sources.",
-    ),
-    ProviderCapabilitySeed(
-        "ziprecruiter",
-        "ZipRecruiter",
-        SourceAccessMode.PARTNERSHIP_REQUIRED,
-        ProviderImplementationStatus.PARTNERSHIP_REQUIRED,
-        partner_feed_available=True,
-        authentication_required=True,
-        recommended_strategy="Use a contractual/partner integration when available; prefer employer ATS as canonical authority.",
-    ),
-    ProviderCapabilitySeed(
-        "glassdoor",
-        "Glassdoor",
-        SourceAccessMode.PARTNERSHIP_REQUIRED,
-        ProviderImplementationStatus.PARTNERSHIP_REQUIRED,
-        authentication_required=True,
-        recommended_strategy="Use licensed access only; prefer original employer jobs for canonical data.",
-    ),
-    ProviderCapabilitySeed(
-        "careerbuilder",
-        "CareerBuilder",
-        SourceAccessMode.PARTNERSHIP_REQUIRED,
-        ProviderImplementationStatus.PARTNERSHIP_REQUIRED,
-        partner_feed_available=True,
-        recommended_strategy="Use an authorized feed or partner integration if contracted.",
-    ),
-    ProviderCapabilitySeed(
-        "simplyhired",
-        "SimplyHired",
-        SourceAccessMode.PARTNERSHIP_REQUIRED,
-        ProviderImplementationStatus.PARTNERSHIP_REQUIRED,
-        recommended_strategy="Do not crawl as a default source; prefer employer-origin jobs or a licensed feed.",
-    ),
-    ProviderCapabilitySeed(
+    partnership("dice", "Dice"),
+    partnership("monster", "Monster"),
+    partnership("ziprecruiter", "ZipRecruiter"),
+    partnership("glassdoor", "Glassdoor"),
+    partnership("careerbuilder", "CareerBuilder"),
+    partnership("simplyhired", "SimplyHired", auth=False),
+    partnership(
         "wellfound",
         "Wellfound",
-        SourceAccessMode.PARTNERSHIP_REQUIRED,
-        ProviderImplementationStatus.PARTNERSHIP_REQUIRED,
-        recommended_strategy="Use startup directories for organization discovery only unless explicit job-feed access is authorized.",
+        auth=False,
+        notes="Startup company discovery may be useful, but job ingestion requires authorized access or employer-origin resolution.",
     ),
-    ProviderCapabilitySeed(
+    partnership(
         "builtin",
         "Built In",
-        SourceAccessMode.PARTNERSHIP_REQUIRED,
-        ProviderImplementationStatus.PARTNERSHIP_REQUIRED,
-        recommended_strategy="Use company discovery as an input, then ingest from employer ATS/career pages unless a licensed feed is available.",
+        auth=False,
+        notes="Use company discovery as an input, then prefer employer ATS/career pages.",
     ),
-    ProviderCapabilitySeed(
+    partnership(
         "higheredjobs",
         "HigherEdJobs",
-        SourceAccessMode.PARTNERSHIP_REQUIRED,
-        ProviderImplementationStatus.PARTNERSHIP_REQUIRED,
-        recommended_strategy="Prefer university-origin ATS/career pages; add an authorized feed if a partnership is established.",
+        auth=False,
+        notes="Prefer university-origin ATS/career pages unless an authorized feed is contracted.",
     ),
-    ProviderCapabilitySeed(
-        "handshake",
-        "Handshake",
-        SourceAccessMode.PARTNERSHIP_REQUIRED,
-        ProviderImplementationStatus.PARTNERSHIP_REQUIRED,
-        authentication_required=True,
-        recommended_strategy="Use authorized institutional/partner access only; do not automate logged-in job search pages.",
-    ),
-    ProviderCapabilitySeed(
+    partnership("handshake", "Handshake"),
+    partnership(
         "idealist",
         "Idealist",
-        SourceAccessMode.PARTNERSHIP_REQUIRED,
-        ProviderImplementationStatus.PARTNERSHIP_REQUIRED,
-        recommended_strategy="Prefer nonprofit employer-origin pages unless an authorized feed/API is available.",
+        auth=False,
+        notes="Prefer nonprofit employer-origin career pages unless an authorized feed is available.",
     ),
-    ProviderCapabilitySeed(
-        "devex",
-        "Devex",
-        SourceAccessMode.PARTNERSHIP_REQUIRED,
-        ProviderImplementationStatus.PARTNERSHIP_REQUIRED,
-        authentication_required=True,
-        recommended_strategy="Use partner/licensed access only; resolve external-apply roles to the original NGO/employer career source when possible.",
+    partnership("devex", "Devex"),
+    partnership(
+        "uncareers",
+        "UN Careers",
+        auth=False,
+        notes="Prefer official organization job pages and any documented public feed before generic extraction.",
+    ),
+    partnership(
+        "workforgood",
+        "Work for Good",
+        auth=False,
+        notes="Prefer nonprofit employer-origin sources unless a licensed feed is available.",
     ),
 )
 

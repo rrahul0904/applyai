@@ -8,6 +8,7 @@ from app.job_source_models import JobSourceRegistry
 from app.jobs.adapters import JobSourceAdapterFactory
 from app.jobs.connectors import JobSourceConnector
 from app.jobs.contracts import JobSourceType
+from app.jobs.generic_career import CareerSiteJobConnector
 from app.jobs.public_feeds import ReliefWebJobsConnector, USAJobsConnector
 
 
@@ -46,6 +47,22 @@ def create_source_adapter(
             page_size=int(configuration.get("page_size") or 1000),
             max_pages=int(configuration.get("max_pages") or 20),
             client=client,
+        )
+
+    if source_type == JobSourceType.CAREER_SITE:
+        careers_url = str(
+            configuration.get("careers_url") or source.careers_url or source.base_url or ""
+        ).strip()
+        if not careers_url:
+            raise ValueError("CAREER_SITE source requires careers_url or base_url")
+        return CareerSiteJobConnector(
+            careers_url,
+            source_identity=source.source_identity,
+            max_pages=int(configuration.get("max_pages") or 60),
+            max_jobs=int(configuration.get("max_jobs") or 50),
+            max_response_bytes=int(configuration.get("max_response_bytes") or 2 * 1024 * 1024),
+            max_redirects=int(configuration.get("max_redirects") or 4),
+            timeout_seconds=float(configuration.get("timeout_seconds") or 12),
         )
 
     return JobSourceAdapterFactory.create(source, client=client)

@@ -106,6 +106,8 @@ def _capability_dict(row: JobSourceCapability) -> dict[str, Any]:
             "allowed_for_automated_ingestion", False
         ),
         "reason": operational.get("reason"),
+        "operator_override": operational.get("operator_override", False),
+        "operator_override_at": operational.get("operator_override_at"),
         "recommended_strategy": row.recommended_strategy,
         "documentation_url": row.documentation_url,
         "notes": row.notes,
@@ -285,8 +287,11 @@ def reclassify_provider(
             metadata[key] = changes.pop(key)
     for key, value in changes.items():
         setattr(record, key, value)
+    override_at = utcnow()
+    metadata["operator_override"] = True
+    metadata["operator_override_at"] = override_at.isoformat()
     record.metadata_json = metadata
-    record.reviewed_at = utcnow()
+    record.reviewed_at = override_at
     session.commit()
     session.refresh(record)
     return _capability_dict(record)

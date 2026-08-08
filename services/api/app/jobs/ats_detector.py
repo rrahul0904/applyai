@@ -35,17 +35,36 @@ class _ReferenceParser(HTMLParser):
 
 
 _PROVIDER_PATTERNS: list[tuple[JobSourceType, tuple[str, ...]]] = [
-    (JobSourceType.GREENHOUSE, ("boards.greenhouse.io", "job-boards.greenhouse.io", "boards-api.greenhouse.io")),
+    (
+        JobSourceType.GREENHOUSE,
+        ("boards.greenhouse.io", "job-boards.greenhouse.io", "boards-api.greenhouse.io"),
+    ),
     (JobSourceType.LEVER, ("jobs.lever.co", "api.lever.co", "api.eu.lever.co")),
     (JobSourceType.ASHBY, ("jobs.ashbyhq.com", "api.ashbyhq.com/posting-api")),
-    (JobSourceType.WORKDAY, ("myworkdayjobs.com", "wd1.myworkdaysite.com", "wd5.myworkdaysite.com")),
-    (JobSourceType.SMARTRECRUITERS, ("careers.smartrecruiters.com", "jobs.smartrecruiters.com", "api.smartrecruiters.com/v1/companies")),
+    (
+        JobSourceType.WORKDAY,
+        ("myworkdayjobs.com", "wd1.myworkdaysite.com", "wd5.myworkdaysite.com"),
+    ),
+    (
+        JobSourceType.SMARTRECRUITERS,
+        (
+            "careers.smartrecruiters.com",
+            "jobs.smartrecruiters.com",
+            "api.smartrecruiters.com/v1/companies",
+        ),
+    ),
     (JobSourceType.WORKABLE, ("apply.workable.com", "workable.com/j/")),
     (JobSourceType.ICIMS, ("icims.com/jobs", "jobs.icims.com", "careers-")),
     (JobSourceType.ORACLE, ("oraclecloud.com/hcmui", "oracle.com/careers")),
-    (JobSourceType.SUCCESSFACTORS, ("successfactors.com", "career5.successfactors.eu")),
+    (
+        JobSourceType.SUCCESSFACTORS,
+        ("successfactors.com", "career5.successfactors.eu"),
+    ),
     (JobSourceType.JOBVITE, ("jobs.jobvite.com", "jobvite.com/job")),
-    (JobSourceType.UKG, ("recruiting.ultipro.com", "recruiting2.ultipro.com", "ukg.com/careers")),
+    (
+        JobSourceType.UKG,
+        ("recruiting.ultipro.com", "recruiting2.ultipro.com", "ukg.com/careers"),
+    ),
     (JobSourceType.BAMBOOHR, ("bamboohr.com/careers", "bamboohr.com/jobs")),
     (JobSourceType.JAZZHR, ("applytojob.com", "jazzhr.com")),
     (JobSourceType.RECRUITEE, ("recruitee.com/o/", "recruitee.com/c/")),
@@ -56,11 +75,21 @@ _PROVIDER_PATTERNS: list[tuple[JobSourceType, tuple[str, ...]]] = [
     (JobSourceType.RIPPLING, ("ats.rippling.com", "rippling.com/careers")),
     (JobSourceType.ADP, ("workforcenow.adp.com", "jobs.adp.com")),
     (JobSourceType.PAYLOCITY, ("recruiting.paylocity.com",)),
-    (JobSourceType.DAYFORCE, ("dayforcehcm.com/candidateportal", "jobs.dayforcehcm.com")),
+    (
+        JobSourceType.DAYFORCE,
+        ("dayforcehcm.com/candidateportal", "jobs.dayforcehcm.com"),
+    ),
     (JobSourceType.TALEO, ("taleo.net", "oracle.taleo")),
     (JobSourceType.PAGEUP, ("pageuppeople.com", "careers.pageuppeople.com")),
     (JobSourceType.PEOPLEADMIN, ("peopleadmin.com/postings", "peopleadmin.com")),
-    (JobSourceType.CORNERSTONE, ("csod.com/ux/ats/careersite", "cornerstoneondemand.com")),
+    (
+        JobSourceType.CORNERSTONE,
+        ("csod.com/ux/ats/careersite", "cornerstoneondemand.com"),
+    ),
+    (
+        JobSourceType.NEOGOV,
+        ("governmentjobs.com/careers", "governmentjobs.com/jobs", "neogov.com"),
+    ),
 ]
 
 
@@ -82,7 +111,13 @@ def _source_identity(provider: JobSourceType, url: str) -> str:
         return f"{host}:{segments[0] if segments else 'root'}"
     if provider in {JobSourceType.SMARTRECRUITERS, JobSourceType.WORKABLE} and segments:
         return segments[0]
-    # For employer-hosted ATS subdomains the full host is a stable, domain-scoped identity.
+    if provider == JobSourceType.NEOGOV and "governmentjobs.com" in host:
+        try:
+            careers_index = segments.index("careers")
+        except ValueError:
+            careers_index = -1
+        if careers_index >= 0 and len(segments) > careers_index + 1:
+            return segments[careers_index + 1]
     return host or url
 
 

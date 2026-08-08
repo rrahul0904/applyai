@@ -21,3 +21,31 @@ export async function dispatchEngagement() {
   await operatorApi("platform/dispatch-engagement", { method: "POST" });
   revalidatePath("/admin");
 }
+
+export async function enableJobSource(formData: FormData) {
+  const id = String(formData.get("source_id") ?? "");
+  if (!id) return;
+  await operatorApi(`job-supply/sources/${id}/enable`, { method: "POST" });
+  revalidatePath("/admin");
+}
+
+export async function disableJobSource(formData: FormData) {
+  const id = String(formData.get("source_id") ?? "");
+  if (!id) return;
+  await operatorApi(`job-supply/sources/${id}/disable`, { method: "POST" });
+  revalidatePath("/admin");
+}
+
+export async function refreshJobSource(formData: FormData) {
+  const id = String(formData.get("source_id") ?? "");
+  if (!id) return;
+  await operatorApi(`job-supply/sources/${id}/refresh`, { method: "POST" });
+  revalidatePath("/admin");
+}
+
+export async function discoverOrganizationJobs(formData: FormData) {
+  const id = String(formData.get("organization_profile_id") ?? "");
+  if (!id) return;
+  await operatorApi(`job-supply/organizations/${id}/discover`, { method: "POST" });
+  revalidatePath("/admin");
+}

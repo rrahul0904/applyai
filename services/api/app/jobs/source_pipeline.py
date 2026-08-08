@@ -4,6 +4,8 @@ import logging
 import time
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
+from difflib import SequenceMatcher
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -17,11 +19,12 @@ from app.jobs.contracts import (
     ValidationStatus,
     canonicalize_public_url,
     classify_ingestion_error,
+    normalize_title,
     validate_raw_job,
 )
-from app.jobs.pipeline import JobIngestionPipeline, payload_hash
+from app.jobs.pipeline import JobIngestionPipeline, normalize_text, payload_hash
 from app.jobs.source_authority import record_field_provenance, should_source_update_canonical
-from app.models import Job, JobSource, JobSourceLink, JobStatusHistory, RawJobPosting as RawJobPostingModel
+from app.models import Job, JobLocation, JobSource, JobSourceLink, JobStatusHistory, RawJobPosting as RawJobPostingModel
 
 
 logger = logging.getLogger("applyai.job_source_pipeline")
@@ -76,6 +79,79 @@ class AuthorityAwareJobIngestionPipeline(JobIngestionPipeline):
             job.id,
             posting_source.id,
         )
+
+    def find_dedup_candidate(
+        self,
+        *,
+        connector_key: str,
+        company,
+        item: NormalizedJob,
+    ):
+        candidate, reason, confidence = super().find_dedup_candidate(
+            connector_key=connector_key,
+            company=company,
+            item=item,
+        )
+        if candidate is not None:
+            return candidate, reason, confidence
+
+        canonical_apply_url = canonicalize_public_url(item.application_url)
+        if canonical_apply_url:
+            link = self.session.scalar(
+                select(JobSourceLink)
+                .join(JobSource, JobSource.id == JobSourceLink.job_source_id)
+                .where(JobSource.checkpoint["canonical_apply_url"].astext == canonical_apply_url)
+                .limit(1)
+            )
+            if link is not None:
+                return self.session.get(Job, link.job_id), "CANONICAL_APPLICATION_URL", Decimal("1.0000")
+
+        # Requisition IDs are commonly preserved when the same employer role is syndicated
+        # across an ATS, an employer career page, and an authorized aggregator. Scope the
+        # identifier to the resolved canonical company so IDs reused by different employers
+        # cannot collide.
+        internal_job_id = item.raw_payload.get("_applyai_internal_job_id")
+        if internal_job_id:
+            link = self.session.scalar(
+                select(JobSourceLink)
+                .join(JobSource, JobSource.id == JobSourceLink.job_source_id)
+                .join(Job, Job.id == JobSourceLink.job_id)
+                .where(
+                    Job.company_id == company.id,
+                    JobSource.checkpoint["internal_job_id"].astext == str(internal_job_id),
+                )
+                .limit(1)
+            )
+            if link is not None:
+                return self.session.get(Job, link.job_id), "COMPANY_REQUISITION_ID", Decimal("1.0000")
+
+        primary_location = item.locations[0] if item.locations else "Location not specified"
+        candidates = list(
+            self.session.scalars(
+                select(Job)
+                .join(JobLocation, JobLocation.job_id == Job.id)
+                .where(
+                    Job.company_id == company.id,
+                    JobLocation.location_text == primary_location,
+                    Job.status.in_(["ACTIVE", "UNKNOWN", "STALE"]),
+                )
+                .limit(50)
+            ).unique()
+        )
+        target_title = normalize_title(item.title)
+        target_description = normalize_text(item.description)
+        for existing in candidates:
+            if normalize_title(existing.title) != target_title:
+                continue
+            ratio = SequenceMatcher(
+                None,
+                normalize_text(existing.description)[:20_000],
+                target_description[:20_000],
+                autojunk=False,
+            ).ratio()
+            if ratio >= 0.94:
+                return existing, "CROSS_SOURCE_DESCRIPTION_SIMILARITY", Decimal(str(round(ratio, 4)))
+        return None, None, None
 
 
 class RegisteredSourceIngestionPipeline:

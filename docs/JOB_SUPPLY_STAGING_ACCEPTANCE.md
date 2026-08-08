@@ -4,9 +4,44 @@ Updated: 2026-08-08
 
 ## Purpose
 
-This runbook proves the real job-supply system against public/authorized sources after staging infrastructure and credentials are configured. It is deliberately separate from deterministic CI/local certification.
+This runbook proves the real job-supply system against public/authorized sources after staging infrastructure, credentials and a reviewed organization universe are configured. Deterministic CI and synthetic scale evidence do not satisfy this runbook.
 
-Do not mark a source `LIVE_PUBLIC_SOURCE_VERIFIED` until the corresponding acceptance evidence below exists.
+Do not mark a provider `LIVE_PUBLIC_SOURCE_VERIFIED`, `LIVE_STAGING_VERIFIED` or `PRODUCTION_VERIFIED` without the corresponding runtime evidence.
+
+## Primary acceptance command
+
+From the repository root in the target runtime environment:
+
+```bash
+pnpm job-supply:acceptance
+```
+
+The command reads the real database and reports both human-readable and JSON evidence. It exits non-zero when live activation is blocked or representative staging coverage is partial.
+
+For diagnostics before external dependencies are available:
+
+```bash
+pnpm job-supply:acceptance:report
+```
+
+That command allows blocked status but does not convert it to a pass.
+
+Expected fail-closed state before live activation:
+
+```text
+BLOCKED_EXTERNAL_CONFIGURATION
+```
+
+Possible evidence states include:
+
+```text
+BLOCKED_EXTERNAL_CONFIGURATION
+RUNTIME_EVIDENCE_AVAILABLE
+PARTIAL_STAGING_ACCEPTANCE
+PASS
+```
+
+Only a staging `PASS` may emit the `LIVE_STAGING_VERIFIED` claim boundary.
 
 ## Prerequisites
 
@@ -19,26 +54,71 @@ Do not mark a source `LIVE_PUBLIC_SOURCE_VERIFIED` until the corresponding accep
 - no raw credentials committed to GitHub or Terraform state
 - operator access available for source inspection
 
-## Minimum source matrix
+## Load a real organization universe
 
-Exercise a representative set, not only one company per implementation path:
+Use public/licensed datasets whose use has been reviewed. Repository loaders support normalized organization imports plus explicit dataset modes:
 
-1. Multiple Greenhouse employers
-2. Multiple Lever employers
-3. Multiple Ashby employers
-4. Multiple SmartRecruiters employers
-5. Several Workday or other detected ATS employers through the permitted employer-career path
-6. Universities/research institutions
-7. Hospital/health-system employers
-8. Nonprofits/NGOs
-9. USAJOBS official API
-10. ReliefWeb official API
-11. Startup employers discovered from company/portfolio datasets but sourced from employer ATS/career pages
-12. Generic employer pages containing schema.org `JobPosting`
-13. At least one generic employer page without structured JSON-LD that passes conservative extraction
-14. At least one intentionally disallowed/blocked source to prove policy enforcement
+```bash
+uv run --project services/api python -m scripts.import_organizations \
+  --file <sec-file.json> --dataset-type sec
 
-## Evidence captured for every source run
+uv run --project services/api python -m scripts.import_organizations \
+  --file <ipeds-file.csv> --dataset-type ipeds
+
+uv run --project services/api python -m scripts.import_organizations \
+  --file <cms-hospital-file.csv> --dataset-type cms
+
+uv run --project services/api python -m scripts.import_organizations \
+  --file <irs-eo-file.csv> --dataset-type irs
+
+uv run --project services/api python -m scripts.import_organizations \
+  --file <government-directory.csv> --dataset-type government
+```
+
+Run `--dry-run` first for every new dataset variant.
+
+Record actual counts:
+
+```text
+dataset
+owner
+retrieved_at
+license/access note
+records loaded
+valid
+invalid
+created
+updated
+review required
+duplicate/external-ID conflicts
+organizations with domains
+```
+
+Do not fabricate rows to hit the 50K design target.
+
+## Minimum representative source matrix
+
+The acceptance command expects successful measured source runs representing:
+
+- Greenhouse
+- Lever
+- Ashby
+- SmartRecruiters
+- USAJOBS
+- ReliefWeb
+- employer `CAREER_SITE` / JSON-LD path
+
+The broader manual matrix should additionally sample:
+
+- Workday or another detected ATS using the permitted employer-career path
+- universities/research institutions
+- hospital/health systems
+- nonprofits/NGOs
+- startups sourced from the employer ATS/career page
+- an intentionally blocked/disallowed source to prove policy enforcement
+- an authorized/licensed partner feed when a contract exists
+
+## Evidence captured for every real source run
 
 Record:
 
@@ -49,191 +129,219 @@ organization
 provider
 access_mode
 implementation_status
+source_completeness
 started_at
 completed_at
 fetch_duration_ms
 http_status/error_category
 records_received
-jobs_accepted
+jobs_valid
+jobs_invalid
 jobs_created
 jobs_updated
 jobs_unchanged
-jobs_quarantined
-dedup_candidates
-duplicates_merged
-possibly_closed
+jobs_deduplicated
 closed
-reopened
-source_checkpoint
 source_last_seen
 next_scheduled_at
-429_count
-5xx_count
 ```
 
 Never include API secrets or full sensitive payload bodies in the evidence bundle.
 
-## Acceptance tests
+## Acceptance checks
 
-### 1. Provider policy
+### Provider policy
 
 - Marketplace/provider records expose the reviewed access mode.
-- `PARTNERSHIP_REQUIRED` sources cannot accidentally execute as anonymous crawler adapters.
-- robots/access-policy denial results in a blocked state and no bypass attempt.
+- `PARTNERSHIP_REQUIRED` providers cannot execute as anonymous crawler adapters.
+- robots/access denial becomes an explicit blocked state.
+- `allowed_for_automated_ingestion=false` is respected.
 
-### 2. Organization universe
-
-Load a representative dataset containing companies, startup, university, hospital/health system, nonprofit/NGO, government and research organizations.
+### Organization identity
 
 Confirm:
 
 - canonical-domain normalization
+- source-specific external IDs
 - aliases preserved
-- exact repeated imports are idempotent
-- domain conflicts move to review instead of merging silently
-- dataset provenance is retained
-- source discovery can be queued independently of candidate traffic
+- repeated imports are idempotent
+- external-ID/domain ambiguity moves to review instead of silently merging
+- dataset provenance remains attached
+- parent/child metadata is evidence-driven, not guessed
 
-### 3. ATS discovery
+### Discovery
 
 For sampled employer domains:
 
 - careers URL is discovered within crawl budget
-- known ATS provider is detected where evidence exists
+- known ATS fingerprint is recorded
+- unsupported/detection-only ATS remains on the bounded generic path
 - source identity is stable
-- unsupported ATS routes to the safe generic career-site path
-- discovery respects domain/redirect/response-size/robots constraints
+- SSRF/redirect/response-size/robots controls remain active
 
-### 4. Structured ATS connectors
+### Structured ATS connectors
 
 For Greenhouse, Lever, Ashby and SmartRecruiters:
 
-- fetch live public postings
+- fetch real published postings
 - normalize title/company/location/apply URL
 - preserve provider/source identity
-- preserve source metadata and raw hash/provenance
+- preserve raw/source provenance
 - repeated sync is idempotent
-- changed source content updates the canonical job
-- healthy complete snapshot can contribute closure evidence
+- changed content updates the canonical job only when source authority permits
 
-### 5. USAJOBS
+### USAJOBS
 
-Using an issued API key/user-agent:
+Using issued credentials:
 
-- fetch official results
-- preserve agency/department metadata
-- capture security/hiring-path metadata when supplied
-- normalize salary and close date without overwriting raw source data
-- paging-limit truncation must not be treated as an authoritative complete snapshot
+- official results fetch successfully
+- government metadata remains preserved
+- salary/close date remain source-derived
+- configured paging limits cannot create false closure evidence
 
-### 6. ReliefWeb
+### ReliefWeb
 
 Using an approved app name:
 
-- fetch humanitarian jobs from the official API
-- preserve originating organization where available
-- preserve career/experience/theme metadata
-- pagination/truncation must not create false closures
+- official API fetch succeeds
+- originating organization/career metadata is preserved when supplied
+- pagination/truncation cannot create false closures
 
-### 7. JSON-LD / generic career pages
+### Authorized/licensed feeds
 
-- single valid `JobPosting` is accepted
-- multiple `JobPosting` nodes on a listing page are quarantined unless the source path explicitly supports listing extraction
-- generic HTML requires one clear title, one apply path and substantial job-specific content
-- ambiguous/listing pages are quarantined
+When a contract/feed exists, configure a registry source using the authorized feed contract. Verify:
 
-### 8. Cross-source deduplication
+- explicit provider/source identity
+- JSON/JSONL/CSV/XML/RSS/Atom parsing as applicable
+- field map correctness
+- safe fetch controls
+- source trust/provenance
+- ETag/Last-Modified behavior where supported
+- authoritative snapshot is enabled only when the contract guarantees complete inventory
 
-Create or find a role observable through more than one source.
+### Source completeness
+
+Every measured source should expose one of:
+
+```text
+FULL_SNAPSHOT
+PAGINATED_FULL_SNAPSHOT
+DELTA
+PARTIAL
+TRUNCATED
+UNKNOWN_COMPLETENESS
+```
+
+Only `FULL_SNAPSHOT` and `PAGINATED_FULL_SNAPSHOT` may support absence-based closure. A run with record-level failures must be treated as partial evidence.
+
+### Cross-source deduplication
 
 Prove that:
 
-- exact canonical application URL wins first
-- provider/source job identity is stable
+- exact canonical apply URL wins first
 - employer + requisition can resolve the same role
-- fuzzy title/location/description signals create review candidates rather than unsafe automatic merges where confidence is insufficient
-- one canonical job can retain multiple source observations
-- higher-trust employer source remains canonical over lower-trust aggregator/import observations
+- source identity remains stable
+- borderline fuzzy matches become review candidates
+- one canonical job retains multiple source observations
+- lower-trust sources do not overwrite higher-trust employer-origin data
 
-### 9. Freshness and closure
+### Freshness / closure / reopen
 
 Prove:
 
+- transient fetch failures do not close jobs
 - missing once does not immediately close a job
-- transient source failure does not generate closure evidence
-- repeated healthy-source absence increases closure confidence
-- confirmed inactive/expired job becomes non-searchable
-- reappearing/reopened job can return to active state
-- partial/truncated feeds never close unseen jobs as if the snapshot were complete
+- only healthy authoritative snapshot evidence contributes to absence-based closure
+- verified 404/410/closed state can contribute closure evidence
+- a reappearing/reopened role can become active again
 
-### 10. Adaptive scheduling and sharding
+### Apply URL health
 
-Load enough sources to exercise multiple shards.
+Measure latest checks as:
 
-Confirm:
+```text
+VALID
+REDIRECTED
+NOT_FOUND
+GONE/BLOCKED/TIMEOUT/SERVER_ERROR/UNKNOWN as applicable
+```
 
-- deterministic shard assignment
-- priority/high-change sources schedule faster
-- ordinary sources settle into normal cadence
-- empty/low-change sources back off
-- repeated failures back off with bounded retry behavior
-- multiple workers can lease work without duplicate execution
+Transient 5xx/timeouts must not be treated as immediate closure.
 
-### 11. Rate limiting and failure handling
-
-Exercise controlled 429, 5xx and timeout scenarios.
+### Scheduling and workers
 
 Confirm:
 
-- `Retry-After` is honored where supplied
-- exponential backoff/jitter is bounded
-- retries are idempotent
-- terminal failures reach DLQ when appropriate
-- operator can inspect/retry/recover without editing database rows manually
+- deterministic sharding
+- database lease ownership
+- priority/high-change sources refresh faster
+- quiet non-empty sources preserve the 1.25× cadence
+- empty sources back off at least daily
+- repeated failures use bounded exponential backoff
+- multiple workers do not duplicate leased work
+- retry/DLQ recovery is observable
 
-### 12. Search and candidate matching
+Repository CI separately runs a PostgreSQL scheduler benchmark at 1K/10K/50K synthetic sources. Its artifact is `SYNTHETIC_SCALE_EVIDENCE`, not live-source proof.
 
-After live ingestion:
+### Search / matching
+
+After real ingestion:
 
 - active jobs appear in canonical search
 - closed jobs disappear from active results
-- source provenance is available to job detail/operator surfaces
-- matching uses the canonical job rather than duplicate observations
-- expensive AI is not required for base ingestion
+- provenance remains available
+- matching operates on canonical jobs rather than source duplicates
+- base ingestion does not depend on an LLM
 
-## Marketplace/aggregator rule
+## Operator evidence
+
+Use `/admin` or `/api/v1/internal/job-supply/*` to inspect:
+
+- overview/quality
+- providers
+- organizations
+- sources/source details
+- runs/failures
+- dedup review
+
+Controlled operator actions include source enable/disable/refresh/reclassification and queued organization discovery. A dedup review decision does not silently merge canonical records.
+
+## Marketplace rule
 
 For Indeed, LinkedIn, Dice, Monster, ZipRecruiter, Glassdoor, CareerBuilder, SimplyHired, Wellfound, Built In, HigherEdJobs, Handshake, Idealist, Devex and similar services:
 
-- do not claim live ingestion merely because public pages can be viewed in a browser
+- do not claim integration because a public page can be viewed
 - use an official/authorized API or licensed feed when contracted
-- otherwise resolve opportunities to the original employer ATS/career source
+- otherwise resolve to the original employer ATS/career source
 - never bypass authentication, CAPTCHA, anti-bot systems, robots or rate limits
 
 ## Pass criteria
 
-The staging job-supply milestone passes when:
+Staging passes only when:
 
-- all implemented source types have representative successful real runs or are explicitly blocked by unavailable required credentials
-- no policy-restricted source is bypassed
-- canonical jobs retain provenance
-- duplicate observations do not create duplicate search results
-- source failures do not falsely close jobs
-- closure/reopen behavior is demonstrated
-- worker retry/DLQ recovery is demonstrated
-- live source latency/error/freshness/job-count metrics are captured
-- candidate search and Career Intelligence operate on the ingested real catalog
+- a real organization universe is loaded
+- active non-development sources are configured
+- real-source runs have completed successfully
+- non-development canonical jobs exist
+- the required representative provider matrix has measured successful runs
+- policy-restricted sources are not bypassed
+- provenance/dedup/closure/reopen behavior is demonstrated
+- live latency/error/freshness/job-count metrics are captured
+- source workers/queues/retries are operational
+- candidate search can operate on the real catalog
 
 ## Final evidence table
 
-Produce a release artifact/table with one row per tested source and these final classifications:
+Produce one row per significant provider/source with:
 
 ```text
-SOURCE IMPLEMENTED
-LIVE PUBLIC SOURCE VERIFIED
-PARTNERSHIP REQUIRED
-BLOCKED BY PROVIDER POLICY
-NOT YET SUPPORTED
+Provider
+Access method
+Implementation status
+Test evidence
+Runtime evidence
+Live verification
+Blocking dependency
 ```
 
-Do not convert `SOURCE IMPLEMENTED` into `LIVE PUBLIC SOURCE VERIFIED` without actual staging evidence.
+Never promote `SOURCE_TESTED` to live/staging verification without actual runtime evidence.

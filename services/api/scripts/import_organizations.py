@@ -4,7 +4,11 @@ import argparse
 import json
 
 from app.core.database import SessionLocal
-from app.jobs.organization_universe import import_organizations, load_organization_records
+from app.jobs.organization_universe import (
+    import_organizations,
+    load_organization_records,
+    validate_record,
+)
 
 
 def main() -> None:
@@ -16,8 +20,22 @@ def main() -> None:
 
     records = load_organization_records(args.file, dataset=args.dataset)
     if args.dry_run:
-        # Validation occurs during load/upsert; print a deterministic preview without mutating DB.
-        print(json.dumps({"records_loaded": len(records), "dry_run": True}, sort_keys=True))
+        valid = 0
+        failed = 0
+        for record in records:
+            try:
+                validate_record(record)
+                valid += 1
+            except ValueError:
+                failed += 1
+        print(
+            json.dumps(
+                {"records_loaded": len(records), "valid": valid, "failed": failed, "dry_run": True},
+                sort_keys=True,
+            )
+        )
+        if failed:
+            raise SystemExit(2)
         return
 
     with SessionLocal() as session:

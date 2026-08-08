@@ -143,9 +143,8 @@ def upsert_organization(session: Session, incoming: OrganizationRecord) -> tuple
         session.add(company)
         session.flush()
         created = True
-    else:
-        if record.domain and not company.website_url:
-            company.website_url = f"https://{record.domain}"
+    elif record.domain and not company.website_url:
+        company.website_url = f"https://{record.domain}"
 
     if profile is None:
         profile = session.scalar(
@@ -201,10 +200,11 @@ def import_organizations(session: Session, records: Iterable[OrganizationRecord]
     counts = {"created": 0, "updated": 0, "failed": 0}
     for record in records:
         try:
-            _, _, result = upsert_organization(session, record)
-            counts[result] += 1
+            # One malformed/conflicting record must not undo previously accepted rows.
+            with session.begin_nested():
+                _, _, result = upsert_organization(session, record)
+                counts[result] += 1
         except Exception:
-            session.rollback()
             counts["failed"] += 1
     session.commit()
     return counts

@@ -14,6 +14,8 @@
     "test:e2e": "pnpm --dir apps/web test:e2e",
     "test:e2e:cleanroom": "pnpm --dir apps/web exec playwright test --config=playwright.cleanroom.config.ts",
     "local:certify": "bash scripts/local-certify.sh",
+    "job-supply:acceptance": "uv run --project services/api python -m scripts.job_supply_acceptance",
+    "job-supply:acceptance:report": "uv run --project services/api python -m scripts.job_supply_acceptance --allow-blocked",
     "dev:api": "uv run --project services/api uvicorn app.main:app --reload --port 8000",
     "test:api": "uv run --project services/api pytest",
     "openapi:export": "uv run --project services/api python services/api/scripts/export_openapi.py > apps/web/.openapi.json",

@@ -13,6 +13,25 @@ from app.jobs.public_feeds import ReliefWebJobsConnector, USAJobsConnector
 from app.jobs.smartrecruiters import SmartRecruitersPostingConnector
 
 
+def _smartrecruiters_adapter(
+    source: JobSourceRegistry,
+    configuration: dict,
+    *,
+    client: httpx.Client | None,
+) -> SmartRecruitersPostingConnector:
+    identity = str(configuration.get("company_identifier") or source.source_identity).strip()
+    if identity.startswith("SMARTRECRUITERS:"):
+        identity = identity.split(":", 1)[1]
+    return SmartRecruitersPostingConnector(
+        identity,
+        page_size=int(configuration.get("page_size") or 100),
+        max_pages=int(configuration.get("max_pages") or 20),
+        max_jobs=int(configuration.get("max_jobs") or 2000),
+        request_interval_seconds=float(configuration.get("request_interval_seconds") or 0.11),
+        client=client,
+    )
+
+
 def create_source_adapter(
     source: JobSourceRegistry,
     *,
@@ -51,17 +70,11 @@ def create_source_adapter(
         )
 
     if source_type == JobSourceType.SMARTRECRUITERS:
-        identifier = str(configuration.get("company_identifier") or source.source_identity).strip()
-        return SmartRecruitersPostingConnector(
-            identifier,
-            page_size=int(configuration.get("page_size") or 100),
-            max_pages=int(configuration.get("max_pages") or 20),
-            max_jobs=int(configuration.get("max_jobs") or 2000),
-            request_interval_seconds=float(configuration.get("request_interval_seconds") or 0.11),
-            client=client,
-        )
+        return _smartrecruiters_adapter(source, configuration, client=client)
 
     if source_type == JobSourceType.CAREER_SITE:
+        if str(configuration.get("detected_provider") or "").upper() == JobSourceType.SMARTRECRUITERS.value:
+            return _smartrecruiters_adapter(source, configuration, client=client)
         careers_url = str(
             configuration.get("careers_url") or source.careers_url or source.base_url or ""
         ).strip()

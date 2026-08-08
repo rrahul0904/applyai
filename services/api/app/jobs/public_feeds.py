@@ -63,6 +63,11 @@ class USAJobsConnector(JobSourceConnector):
         self.client = client or httpx.Client(timeout=timeout_seconds, follow_redirects=True)
         self._last_fetch_at: datetime | None = None
         self._last_count = 0
+        self._authoritative_snapshot = False
+
+    @property
+    def authoritative_snapshot(self) -> bool:
+        return self._authoritative_snapshot
 
     def source_company_identity(self) -> str:
         return "us-federal-government"
@@ -83,6 +88,8 @@ class USAJobsConnector(JobSourceConnector):
         del checkpoint
         fetched_at = datetime.now(timezone.utc)
         records: list[dict[str, Any]] = []
+        raw_seen = 0
+        exhausted = False
         for page in range(1, self.max_pages + 1):
             response = self.client.get(
                 self.endpoint,
@@ -95,6 +102,7 @@ class USAJobsConnector(JobSourceConnector):
             items = result.get("SearchResultItems") if isinstance(result, dict) else None
             if not isinstance(items, list):
                 raise ValueError("USAJOBS response did not include SearchResultItems")
+            raw_seen += len(items)
             for item in items:
                 if not isinstance(item, dict):
                     continue
@@ -103,8 +111,10 @@ class USAJobsConnector(JobSourceConnector):
                     continue
                 records.append({**item, "_applyai_fetched_at": fetched_at.isoformat()})
             total = _to_int(result.get("SearchResultCountAll")) if isinstance(result, dict) else None
-            if not items or len(items) < self.results_per_page or (total is not None and len(records) >= total):
+            if not items or len(items) < self.results_per_page or (total is not None and raw_seen >= total):
+                exhausted = True
                 break
+        self._authoritative_snapshot = exhausted
         self._last_fetch_at = fetched_at
         self._last_count = len(records)
         return records
@@ -127,7 +137,11 @@ class USAJobsConnector(JobSourceConnector):
         else:
             apply_url = str(apply_uri or descriptor.get("PositionURI") or "")
         position_id = str(descriptor.get("PositionID") or payload.get("MatchedObjectId") or "")
-        organization = str(descriptor.get("OrganizationName") or descriptor.get("DepartmentName") or "US Federal Government")
+        organization = str(
+            descriptor.get("OrganizationName")
+            or descriptor.get("DepartmentName")
+            or "US Federal Government"
+        )
         summary_parts = [
             str(descriptor.get("QualificationSummary") or ""),
             str(details.get("JobSummary") or ""),
@@ -136,7 +150,10 @@ class USAJobsConnector(JobSourceConnector):
         ]
         description = "\n\n".join(part.strip() for part in summary_parts if part and part.strip())
         if len(description) < 40:
-            description = f"Federal job opportunity with {organization}. See the official USAJOBS announcement for full duties and qualifications."
+            description = (
+                f"Federal job opportunity with {organization}. See the official USAJOBS "
+                "announcement for full duties and qualifications."
+            )
         schedule = str(descriptor.get("PositionSchedule") or "")
         offering = str(descriptor.get("PositionOfferingType") or "")
         remote = bool(details.get("RemoteIndicator"))
@@ -213,6 +230,7 @@ class USAJobsConnector(JobSourceConnector):
         return {
             "last_fetch_at": self._last_fetch_at.isoformat() if self._last_fetch_at else None,
             "count": self._last_count,
+            "authoritative_snapshot": self._authoritative_snapshot,
         }
 
     def health(self) -> ConnectorHealth:
@@ -253,6 +271,11 @@ class ReliefWebJobsConnector(JobSourceConnector):
         self.client = client or httpx.Client(timeout=timeout_seconds, follow_redirects=True)
         self._last_fetch_at: datetime | None = None
         self._last_count = 0
+        self._authoritative_snapshot = False
+
+    @property
+    def authoritative_snapshot(self) -> bool:
+        return self._authoritative_snapshot
 
     def source_company_identity(self) -> str:
         return "reliefweb"
@@ -265,6 +288,8 @@ class ReliefWebJobsConnector(JobSourceConnector):
         del checkpoint
         records: list[dict[str, Any]] = []
         fetched_at = datetime.now(timezone.utc)
+        raw_seen = 0
+        exhausted = False
         for page in range(self.max_pages):
             offset = page * self.page_size
             response = self.client.get(
@@ -283,12 +308,15 @@ class ReliefWebJobsConnector(JobSourceConnector):
             data = payload.get("data") if isinstance(payload, dict) else None
             if not isinstance(data, list):
                 raise ValueError("ReliefWeb response did not include a data list")
+            raw_seen += len(data)
             for item in data:
                 if isinstance(item, dict) and item.get("id"):
                     records.append({**item, "_applyai_fetched_at": fetched_at.isoformat()})
             total = _to_int(payload.get("totalCount")) if isinstance(payload, dict) else None
-            if not data or len(data) < self.page_size or (total is not None and len(records) >= total):
+            if not data or len(data) < self.page_size or (total is not None and raw_seen >= total):
+                exhausted = True
                 break
+        self._authoritative_snapshot = exhausted
         self._last_fetch_at = fetched_at
         self._last_count = len(records)
         return records
@@ -317,7 +345,12 @@ class ReliefWebJobsConnector(JobSourceConnector):
         url = str(fields.get("url") or f"https://reliefweb.int/job/{identifier}")
         apply_url = str(fields.get("url_alias") or fields.get("url") or url)
         job_types = fields.get("job_type") if isinstance(fields.get("job_type"), list) else []
-        job_type = str(job_types[0].get("name") or "") if job_types and isinstance(job_types[0], dict) else ""
+        job_type = (
+            str(job_types[0].get("name") or "")
+            if job_types and isinstance(job_types[0], dict)
+            else ""
+        )
+        date_field = fields.get("date") if isinstance(fields.get("date"), dict) else {}
         return RawJobPosting(
             source_type=JobSourceType.RELIEFWEB,
             source_name="reliefweb",
@@ -334,8 +367,8 @@ class ReliefWebJobsConnector(JobSourceConnector):
             locations=locations,
             employment_type=normalize_employment_type(job_type),
             workplace_type=normalize_workplace_type(None, locations),
-            date_posted=_parse_datetime(fields.get("date", {}).get("created") if isinstance(fields.get("date"), dict) else None),
-            valid_through=_parse_datetime(fields.get("date", {}).get("closing") if isinstance(fields.get("date"), dict) else fields.get("closing_date")),
+            date_posted=_parse_datetime(date_field.get("created")),
+            valid_through=_parse_datetime(date_field.get("closing") or fields.get("closing_date")),
             fetched_at=_parse_datetime(payload.get("_applyai_fetched_at")),
             raw_payload=payload,
             source_metadata={
@@ -378,6 +411,7 @@ class ReliefWebJobsConnector(JobSourceConnector):
         return {
             "last_fetch_at": self._last_fetch_at.isoformat() if self._last_fetch_at else None,
             "count": self._last_count,
+            "authoritative_snapshot": self._authoritative_snapshot,
         }
 
     def health(self) -> ConnectorHealth:

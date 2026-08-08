@@ -9,6 +9,7 @@ from app import (  # noqa: F401
     career_memory_models,
     career_models,
     durability_models,
+    global_job_supply_models,
     job_quality_models,
     job_source_models,
     models,

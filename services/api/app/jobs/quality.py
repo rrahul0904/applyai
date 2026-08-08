@@ -83,11 +83,7 @@ def _source_authority_counts(session: Session) -> dict[str, int]:
     for _is_primary, checkpoint in rows:
         checkpoint = dict(checkpoint or {})
         metadata = checkpoint.get("source_metadata") or {}
-        trust = (
-            metadata.get("trust_level")
-            if isinstance(metadata, dict)
-            else None
-        )
+        trust = metadata.get("trust_level") if isinstance(metadata, dict) else None
         counts[str(trust or checkpoint.get("source_type") or "UNKNOWN")] += 1
     return dict(sorted(counts.items()))
 
@@ -126,9 +122,9 @@ def quality_metrics(session: Session, *, window_hours: int = 24) -> dict:
     new_jobs = _count(session, Job, Job.created_at >= since)
     updated_jobs = _count(
         session,
-        JobStatusHistory,
-        JobStatusHistory.created_at >= since,
-        JobStatusHistory.reason == "SOURCE_SEEN_AGAIN",
+        Job,
+        Job.updated_at >= since,
+        Job.created_at < since,
     )
     closed_jobs = _count(
         session,
@@ -175,9 +171,9 @@ def quality_metrics(session: Session, *, window_hours: int = 24) -> dict:
     valid_checks = sum(status in {"VALID", "REDIRECTED"} for status in latest_statuses)
 
     average_verification_age = session.scalar(
-        select(
-            func.avg(func.extract("epoch", utcnow() - JobSource.last_seen_at))
-        ).where(JobSource.last_seen_at.is_not(None))
+        select(func.avg(func.extract("epoch", utcnow() - JobSource.last_seen_at))).where(
+            JobSource.last_seen_at.is_not(None)
+        )
     )
 
     cost = session.execute(
@@ -240,7 +236,8 @@ def quality_metrics(session: Session, *, window_hours: int = 24) -> dict:
     source_blocked = _count(
         session,
         JobSourceRegistry,
-        JobSourceRegistry.crawl_allowed.is_(False),
+        (JobSourceRegistry.crawl_allowed.is_(False))
+        | (JobSourceRegistry.health_status == "BLOCKED"),
     )
 
     return {
@@ -261,11 +258,13 @@ def quality_metrics(session: Session, *, window_hours: int = 24) -> dict:
             OrganizationProfile,
             OrganizationProfile.ats_provider.is_not(None),
         ),
-        "organizations_by_type": {key: int(value) for key, value in organizations_by_type.items()},
+        "organizations_by_type": {
+            key: int(value) for key, value in organizations_by_type.items()
+        },
         "sources_total": _count(session, JobSourceRegistry),
         "sources_enabled": source_enabled,
         "sources_healthy": int(source_health.get("HEALTHY", 0)),
-        "sources_blocked": source_blocked + int(source_health.get("BLOCKED", 0)),
+        "sources_blocked": source_blocked,
         "sources_failing": int(source_health.get("FAILING", 0)),
         "sources_by_type": {key: int(value) for key, value in sources_by_type.items()},
         "raw_jobs_seen": total_raw,
@@ -357,7 +356,9 @@ def source_coverage_metrics(session: Session) -> dict:
     return {
         "companies_total": _count(session, Company),
         "organizations_total": _count(session, OrganizationProfile),
-        "organizations_by_type": {key: int(value) for key, value in organizations_by_type.items()},
+        "organizations_by_type": {
+            key: int(value) for key, value in organizations_by_type.items()
+        },
         "companies_discovered": int(
             session.scalar(
                 select(func.count(distinct(JobSourceDiscovery.company_id))).where(

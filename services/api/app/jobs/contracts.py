@@ -35,6 +35,7 @@ class JobSourceType(StrEnum):
     PAGEUP = "PAGEUP"
     PEOPLEADMIN = "PEOPLEADMIN"
     CORNERSTONE = "CORNERSTONE"
+    NEOGOV = "NEOGOV"
     CAREER_SITE = "CAREER_SITE"
     JSON_LD = "JSON_LD"
     XML_FEED = "XML_FEED"
@@ -243,7 +244,10 @@ def canonicalize_public_url(value: str | None) -> str | None:
     host = parsed.hostname.casefold() if parsed.hostname else ""
     port = parsed.port
     netloc = host
-    if port and not ((parsed.scheme == "http" and port == 80) or (parsed.scheme == "https" and port == 443)):
+    if port and not (
+        (parsed.scheme == "http" and port == 80)
+        or (parsed.scheme == "https" and port == 443)
+    ):
         netloc = f"{host}:{port}"
     path = parsed.path or "/"
     if path != "/":

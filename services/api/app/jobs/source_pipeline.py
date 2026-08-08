@@ -215,9 +215,16 @@ class RegisteredSourceIngestionPipeline:
                 )
 
         if counts["failed"] == 0:
-            freshness = self._apply_registry_freshness(source, seen_external_ids)
-            counts["stale"] += freshness["stale"]
-            counts["closed"] += freshness["closed"]
+            snapshot_complete = bool(getattr(connector, "authoritative_snapshot", True))
+            if snapshot_complete:
+                freshness = self._apply_registry_freshness(source, seen_external_ids)
+                counts["stale"] += freshness["stale"]
+                counts["closed"] += freshness["closed"]
+            else:
+                logger.info(
+                    "job_ingestion_partial_snapshot_freshness_skipped",
+                    extra={"source_id": str(source.id), "fetched": counts["fetched"]},
+                )
             run.status = "COMPLETED"
             source.health_status = SourceHealthStatus.HEALTHY.value
             source.consecutive_failures = 0

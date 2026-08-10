@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import uuid
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import create_engine, select
@@ -89,26 +88,28 @@ def test_full_agent_workflow_is_durable_and_idempotent(database_url: str) -> Non
         with Session(engine) as session:
             user = _seed_candidate(session)
             job = create_job(session)
+            user_id = user.id
+            job_id = job.id
             run = queue_agent_run(
                 session,
-                candidate_id=user.id,
-                job_id=job.id,
+                candidate_id=user_id,
+                job_id=job_id,
                 agent_name="job_scout",
                 input_json={"source": "test"},
                 settings=settings,
             )
             duplicate = queue_agent_run(
                 session,
-                candidate_id=user.id,
-                job_id=job.id,
+                candidate_id=user_id,
+                job_id=job_id,
                 agent_name="job_scout",
                 input_json={"source": "test"},
                 settings=settings,
             )
             assert duplicate.id == run.id
             workflow_id = run.workflow_id
-            session.commit()
             run_id = run.id
+            session.commit()
 
         assert execute_agent_run(run_id, settings, worker_id="worker-a") is True
         assert execute_agent_run(run_id, settings, worker_id="worker-duplicate") is True
@@ -132,7 +133,7 @@ def test_full_agent_workflow_is_durable_and_idempotent(database_url: str) -> Non
             artifacts = list(
                 session.scalars(
                     select(AgentArtifact)
-                    .where(AgentArtifact.candidate_id == user.id, AgentArtifact.job_id == job.id)
+                    .where(AgentArtifact.candidate_id == user_id, AgentArtifact.job_id == job_id)
                     .order_by(AgentArtifact.created_at)
                 )
             )
@@ -148,14 +149,13 @@ def test_full_agent_workflow_is_durable_and_idempotent(database_url: str) -> Non
 
             ready = session.scalar(
                 select(AgentEvent).where(
-                    AgentEvent.candidate_id == user.id,
+                    AgentEvent.candidate_id == user_id,
                     AgentEvent.event_type == "READY_FOR_CANDIDATE",
                 )
             )
             assert ready is not None
-            assert int(session.scalar(select(AgentCostEvent).where(AgentCostEvent.candidate_id == user.id).count()) or 0) if False else True
-            assert len(list(session.scalars(select(AgentCostEvent).where(AgentCostEvent.candidate_id == user.id)))) == 4
-            assert len(list(session.scalars(select(AgentToolCall).where(AgentToolCall.candidate_id == user.id)))) >= 8
+            assert len(list(session.scalars(select(AgentCostEvent).where(AgentCostEvent.candidate_id == user_id)))) == 4
+            assert len(list(session.scalars(select(AgentToolCall).where(AgentToolCall.candidate_id == user_id)))) >= 8
     finally:
         engine.dispose()
 
@@ -175,8 +175,8 @@ def test_agent_lease_blocks_second_worker_and_recovers_after_expiry(database_url
                 input_json={"lease": True},
                 settings=settings,
             )
-            session.commit()
             run_id = run.id
+            session.commit()
 
         with Session(engine) as session:
             claimed = claim_agent_run(session, run_id, worker_id="worker-a", settings=settings)
@@ -204,36 +204,38 @@ def test_resume_verifier_rejects_invented_metric_skill_and_credential(database_u
         with Session(engine) as session:
             user = _seed_candidate(session, clerk_id="verifier_candidate")
             job = create_job(session)
+            user_id = user.id
+            job_id = job.id
             scout = queue_agent_run(
                 session,
-                candidate_id=user.id,
-                job_id=job.id,
+                candidate_id=user_id,
+                job_id=job_id,
                 agent_name="job_scout",
                 input_json={"initial": True},
                 settings=settings,
             )
-            session.commit()
             scout_id = scout.id
+            session.commit()
         assert execute_agent_run(scout_id, settings)
 
         with Session(engine) as session:
             tailor = session.scalar(
                 select(AgentRun).where(
-                    AgentRun.candidate_id == user.id,
-                    AgentRun.job_id == job.id,
+                    AgentRun.candidate_id == user_id,
+                    AgentRun.job_id == job_id,
                     AgentRun.agent_name == "resume_tailor",
                 )
             )
             assert tailor is not None
             experience = session.scalar(
-                select(CandidateExperience).join(CandidateProfile).where(CandidateProfile.user_id == user.id)
+                select(CandidateExperience).join(CandidateProfile).where(CandidateProfile.user_id == user_id)
             )
             assert experience is not None
             session.add(
                 AgentArtifact(
                     run_id=tailor.id,
-                    candidate_id=user.id,
-                    job_id=job.id,
+                    candidate_id=user_id,
+                    job_id=job_id,
                     artifact_type="TAILORED_RESUME",
                     status="NEEDS_VERIFICATION",
                     version=2,
@@ -258,20 +260,19 @@ def test_resume_verifier_rejects_invented_metric_skill_and_credential(database_u
             )
             verifier = queue_agent_run(
                 session,
-                candidate_id=user.id,
-                job_id=job.id,
+                candidate_id=user_id,
+                job_id=job_id,
                 agent_name="resume_verifier",
                 input_json={"adversarial": True},
                 settings=settings,
             )
-            session.commit()
             verifier_id = verifier.id
+            session.commit()
         assert execute_agent_run(verifier_id, settings)
 
         with Session(engine) as session:
             artifact = session.scalar(
-                select(AgentArtifact)
-                .where(
+                select(AgentArtifact).where(
                     AgentArtifact.run_id == verifier_id,
                     AgentArtifact.artifact_type == "RESUME_VERIFICATION",
                 )

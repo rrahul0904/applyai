@@ -10,6 +10,7 @@ from decimal import Decimal
 
 from sqlalchemy import select
 
+from app.agents.triggers import queue_scouts_for_job, source_agent_trigger_config
 from app.core.config import Settings, get_settings
 from app.core.database import SessionLocal
 from app.core.queue import sqs_client
@@ -18,6 +19,7 @@ from app.job_quality_models import IngestionCostObservation
 from app.job_source_models import JobSourceRegistry
 from app.jobs.registry import run_registered_source
 from app.jobs.verifier import verify_job_source_url
+from app.models import Job, JobSource, JobSourceLink
 from app.workers.discovery import process_message as process_discovery_message
 
 
@@ -36,6 +38,46 @@ def _parse_datetime(value: object) -> datetime | None:
     except ValueError:
         return None
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def _queue_new_job_agents(
+    *,
+    session,
+    source: JobSourceRegistry,
+    run: JobIngestionRun,
+    counts: dict[str, int],
+    settings: Settings,
+) -> int:
+    enabled, candidate_limit = source_agent_trigger_config(source.configuration)
+    if not enabled or counts.get("created", 0) <= 0:
+        return 0
+    created_job_ids = list(
+        session.scalars(
+            select(Job.id)
+            .join(JobSourceLink, JobSourceLink.job_id == Job.id)
+            .join(JobSource, JobSource.id == JobSourceLink.job_source_id)
+            .where(
+                JobSource.checkpoint["source_registry_id"].astext == str(source.id),
+                Job.first_seen_at >= run.started_at,
+                Job.status == "ACTIVE",
+            )
+            .distinct()
+            .order_by(Job.id)
+            .limit(max(1, counts.get("created", 0) * 2))
+        )
+    )
+    queued = 0
+    for job_id in created_job_ids:
+        queued += len(
+            queue_scouts_for_job(
+                session,
+                job_id=job_id,
+                trigger_type="JOB_CREATED",
+                settings=settings,
+                max_candidates=candidate_limit,
+            )
+        )
+    return queued
 
 
 def process_source_ingest(payload: dict, settings: Settings) -> bool:
@@ -68,22 +110,47 @@ def process_source_ingest(payload: dict, settings: Settings) -> bool:
         return False
 
     worker_seconds = Decimal(str(round(time.monotonic() - started, 4)))
+    queued_agent_runs = 0
     with SessionLocal() as session:
-        run = session.scalar(select(JobIngestionRun).where(JobIngestionRun.source_id == source_id).order_by(JobIngestionRun.started_at.desc(), JobIngestionRun.id.desc()).limit(1))
+        source = session.get(JobSourceRegistry, source_id)
+        run = session.scalar(
+            select(JobIngestionRun)
+            .where(JobIngestionRun.source_id == source_id)
+            .order_by(JobIngestionRun.started_at.desc(), JobIngestionRun.id.desc())
+            .limit(1)
+        )
         if run is not None:
             existing = session.scalar(select(IngestionCostObservation).where(IngestionCostObservation.run_id == run.id))
             if existing is None:
-                session.add(IngestionCostObservation(
-                    run_id=run.id,
-                    source_id=source_id,
-                    worker_seconds=worker_seconds,
-                    network_bytes=0,
-                    source_postings=counts["fetched"],
-                    canonical_changes=counts["created"] + counts["updated"] + counts["closed"],
-                    estimated_cost_usd=None,
-                ))
-                session.commit()
-    logger.info("source_ingest_completed", extra={"source_id": str(source_id), "duration_seconds": float(worker_seconds), "counts": counts})
+                session.add(
+                    IngestionCostObservation(
+                        run_id=run.id,
+                        source_id=source_id,
+                        worker_seconds=worker_seconds,
+                        network_bytes=0,
+                        source_postings=counts["fetched"],
+                        canonical_changes=counts["created"] + counts["updated"] + counts["closed"],
+                        estimated_cost_usd=None,
+                    )
+                )
+            if source is not None:
+                queued_agent_runs = _queue_new_job_agents(
+                    session=session,
+                    source=source,
+                    run=run,
+                    counts=counts,
+                    settings=settings,
+                )
+            session.commit()
+    logger.info(
+        "source_ingest_completed",
+        extra={
+            "source_id": str(source_id),
+            "duration_seconds": float(worker_seconds),
+            "counts": counts,
+            "queued_agent_runs": queued_agent_runs,
+        },
+    )
     return True
 
 
@@ -144,7 +211,11 @@ def run_worker(settings: Settings | None = None) -> None:
         for message in response.get("Messages", []):
             receipt_handle = message["ReceiptHandle"]
             stop = threading.Event()
-            heartbeat = threading.Thread(target=_heartbeat, args=(client, queue_url, receipt_handle, settings, stop), daemon=True)
+            heartbeat = threading.Thread(
+                target=_heartbeat,
+                args=(client, queue_url, receipt_handle, settings, stop),
+                daemon=True,
+            )
             heartbeat.start()
             acknowledged = False
             try:

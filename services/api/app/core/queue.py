@@ -18,17 +18,27 @@ AI_TASK_TYPES = {
     "AI_APPLICATION_COPILOT",
     "AI_INTERVIEW_PREP",
 }
-SPECIAL_TASK_TYPES = SOURCE_TASK_TYPES | AI_TASK_TYPES
+AGENT_TASK_TYPES = {"AGENT_RUN"}
+SPECIAL_TASK_TYPES = SOURCE_TASK_TYPES | AI_TASK_TYPES | AGENT_TASK_TYPES
 
 
 def sqs_client(*, region: str):
-    """Create the SQS client, honoring a local/emulator endpoint when explicitly set.
-
-    Production does not set SQS_ENDPOINT_URL, so normal AWS endpoint resolution is preserved.
-    Local clean-room runs set it to LocalStack and use disposable development credentials.
-    """
     endpoint_url = os.getenv("SQS_ENDPOINT_URL") or None
     return boto3.client("sqs", region_name=region, endpoint_url=endpoint_url)
+
+
+def resolve_agent_queue_url(settings: Settings) -> str | None:
+    if settings.agent_sqs_queue_url:
+        return settings.agent_sqs_queue_url
+    if settings.task_queue_provider != "sqs":
+        return None
+    if settings.app_env.lower() in {"staging", "production"}:
+        queue_name = f"applyai-{settings.app_env.lower()}-agent-tasks"
+        try:
+            return sqs_client(region=settings.sqs_region).get_queue_url(QueueName=queue_name)["QueueUrl"]
+        except Exception:
+            return None
+    return settings.sqs_queue_url
 
 
 @dataclass(frozen=True)
@@ -75,10 +85,7 @@ class SqsTaskQueue(TaskQueue):
             ),
             "MessageAttributes": {
                 "task_type": {"DataType": "String", "StringValue": task.task_type},
-                "idempotency_key": {
-                    "DataType": "String",
-                    "StringValue": task.idempotency_key,
-                },
+                "idempotency_key": {"DataType": "String", "StringValue": task.idempotency_key},
             },
         }
         if self.queue_url.endswith(".fifo"):
@@ -90,11 +97,14 @@ class SqsTaskQueue(TaskQueue):
 _development_queue = InMemoryTaskQueue()
 _source_development_queue = InMemoryTaskQueue()
 _ai_development_queue = InMemoryTaskQueue()
+_agent_development_queue = InMemoryTaskQueue()
 
 
 def supports_task_type(settings: Settings, task_type: str) -> bool:
     if settings.task_queue_provider != "sqs":
         return True
+    if task_type in AGENT_TASK_TYPES:
+        return bool(resolve_agent_queue_url(settings))
     if task_type in AI_TASK_TYPES:
         return bool(settings.ai_sqs_queue_url)
     if task_type in SOURCE_TASK_TYPES:
@@ -107,16 +117,14 @@ def get_task_queue_for_type(
     *,
     task_type: str | None = None,
 ) -> TaskQueue:
-    """Resolve a queue for a server-owned task type.
-
-    Dedicated source and AI task families fail closed when their queue is absent. This
-    prevents an incorrectly configured publisher from routing specialized work onto the
-    resume queue.
-    """
     is_source_task = task_type in SOURCE_TASK_TYPES
     is_ai_task = task_type in AI_TASK_TYPES
+    is_agent_task = task_type in AGENT_TASK_TYPES
     if settings.task_queue_provider == "sqs":
-        if is_ai_task:
+        if is_agent_task:
+            queue_url = resolve_agent_queue_url(settings)
+            family = "agent"
+        elif is_ai_task:
             queue_url = settings.ai_sqs_queue_url
             family = "AI"
         elif is_source_task:
@@ -128,6 +136,8 @@ def get_task_queue_for_type(
         if not queue_url:
             raise RuntimeError(f"A dedicated {family} queue URL is required")
         return SqsTaskQueue(queue_url, settings.sqs_region)
+    if is_agent_task:
+        return _agent_development_queue
     if is_ai_task:
         return _ai_development_queue
     if is_source_task:
@@ -136,5 +146,4 @@ def get_task_queue_for_type(
 
 
 def get_task_queue(settings: Settings = Depends(get_settings)) -> TaskQueue:
-    """FastAPI dependency for the default candidate task queue."""
     return get_task_queue_for_type(settings)

@@ -6,6 +6,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.api import (
+    agents,
     applications,
     billing_platform,
     candidate_platform,
@@ -17,6 +18,7 @@ from app.api import (
     career_product_polish,
     company_intelligence,
     employer_platform,
+    internal_agents,
     internal_ai_evaluation,
     internal_ai_quality,
     internal_job_discoveries,
@@ -133,12 +135,14 @@ for product_router in (
     career_product_contract.router,
     career_product_polish.router,
     career_product.router,
+    agents.router,
 ):
     app.include_router(product_router, prefix="/api/v1", include_in_schema=False)
 
 app.include_router(job_imports.router, prefix="/api/v1", include_in_schema=False)
 
 for internal_router in (
+    internal_agents.router,
     internal_job_sources.router,
     internal_job_discoveries.router,
     internal_job_quality.router,

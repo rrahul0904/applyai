@@ -51,6 +51,8 @@ class Settings(BaseSettings):
     source_sqs_dlq_url: str | None = None
     ai_sqs_queue_url: str | None = None
     ai_sqs_dlq_url: str | None = None
+    agent_sqs_queue_url: str | None = None
+    agent_sqs_dlq_url: str | None = None
     sqs_region: str = "us-east-1"
     sqs_visibility_timeout_seconds: int = Field(default=300, ge=30, le=43_200)
     sqs_visibility_heartbeat_seconds: int = Field(default=120, ge=10, le=3600)
@@ -58,10 +60,13 @@ class Settings(BaseSettings):
     source_sqs_visibility_heartbeat_seconds: int = Field(default=300, ge=10, le=3600)
     ai_sqs_visibility_timeout_seconds: int = Field(default=600, ge=60, le=43_200)
     ai_sqs_visibility_heartbeat_seconds: int = Field(default=240, ge=10, le=3600)
+    agent_sqs_visibility_timeout_seconds: int = Field(default=600, ge=60, le=43_200)
+    agent_sqs_visibility_heartbeat_seconds: int = Field(default=240, ge=10, le=3600)
     sqs_wait_time_seconds: int = Field(default=20, ge=1, le=20)
     sqs_max_receive_count: int = Field(default=5, ge=1, le=100)
     source_sqs_max_receive_count: int = Field(default=5, ge=1, le=100)
     ai_sqs_max_receive_count: int = Field(default=5, ge=1, le=100)
+    agent_sqs_max_receive_count: int = Field(default=5, ge=1, le=100)
     resume_processing_timeout_seconds: int = Field(default=900, ge=60, le=86_400)
     outbox_batch_size: int = Field(default=25, ge=1, le=100)
     outbox_retry_base_seconds: int = Field(default=5, ge=1, le=300)
@@ -75,6 +80,11 @@ class Settings(BaseSettings):
     ai_request_timeout_seconds: float = Field(default=60.0, ge=5.0, le=300.0)
     ai_input_cost_per_million_usd: float = Field(default=1.0, ge=0.0, le=1000.0)
     ai_output_cost_per_million_usd: float = Field(default=6.0, ge=0.0, le=1000.0)
+
+    agent_lease_seconds: int = Field(default=300, ge=30, le=3600)
+    agent_candidate_daily_cost_limit_usd: float = Field(default=5.0, ge=0.0, le=10_000.0)
+    agent_candidate_daily_run_limit: int = Field(default=200, ge=1, le=100_000)
+    agent_runtime_daily_cost_limit_usd: float = Field(default=500.0, ge=0.0, le=1_000_000.0)
 
     web_origin: str = "http://localhost:3000"
     max_resume_bytes: int = 5 * 1024 * 1024
@@ -190,6 +200,8 @@ class Settings(BaseSettings):
             raise ValueError("Source SQS heartbeat must be shorter than visibility timeout")
         if self.ai_sqs_visibility_heartbeat_seconds >= self.ai_sqs_visibility_timeout_seconds:
             raise ValueError("AI SQS heartbeat must be shorter than visibility timeout")
+        if self.agent_sqs_visibility_heartbeat_seconds >= self.agent_sqs_visibility_timeout_seconds:
+            raise ValueError("Agent SQS heartbeat must be shorter than visibility timeout")
         if self.resume_processing_timeout_seconds < self.sqs_visibility_timeout_seconds:
             raise ValueError(
                 "RESUME_PROCESSING_TIMEOUT_SECONDS must be at least SQS visibility timeout"

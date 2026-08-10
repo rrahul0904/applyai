@@ -1,0 +1,87 @@
+name: Agent Runtime Tests
+
+on:
+  pull_request:
+    paths:
+      - "services/api/app/agents/**"
+      - "services/api/app/agent_models.py"
+      - "services/api/app/agent_policy_models.py"
+      - "services/api/app/api/agents.py"
+      - "services/api/app/api/internal_agents.py"
+      - "services/api/app/workers/agent.py"
+      - "services/api/app/workers/source.py"
+      - "services/api/tests/test_agent_*.py"
+      - "services/api/alembic/**"
+      - ".github/workflows/agent-runtime-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: applyai-agent-runtime-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  agent-runtime-tests:
+    name: PostgreSQL governed agent runtime tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: applyai
+          POSTGRES_PASSWORD: applyai
+          POSTGRES_DB: applyai_agent_test
+        ports:
+          - 55455:5432
+        options: >-
+          --health-cmd "pg_isready -U applyai -d applyai_agent_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      ENVIRONMENT: test
+      DATABASE_URL: postgresql+psycopg://applyai:applyai@127.0.0.1:55455/applyai_agent_test
+      TEST_DATABASE_URL: postgresql+psycopg://applyai:applyai@127.0.0.1:55455/applyai_agent_test
+      AI_PROVIDER: deterministic
+      TASK_QUEUE_PROVIDER: memory
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12.11"
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          enable-cache: true
+      - name: Install API dependencies
+        working-directory: services/api
+        run: uv sync --group dev --locked
+      - name: Apply migrations
+        working-directory: services/api
+        run: uv run alembic upgrade head
+      - name: Prepare diagnostics
+        run: mkdir -p artifacts
+      - name: Run governed agent tests
+        working-directory: services/api
+        shell: bash
+        run: |
+          set -o pipefail
+          uv run pytest \
+            tests/test_agent_runtime.py \
+            tests/test_agent_security.py \
+            tests/test_agent_triggers.py \
+            tests/test_agent_resilience.py \
+            tests/test_agent_worker_circuit.py \
+            -vv 2>&1 | tee ../../artifacts/agent-runtime-tests.log
+      - name: Upload governed agent test report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: governed-agent-runtime-tests
+          path: artifacts/agent-runtime-tests.log
+          retention-days: 30
+          if-no-files-found: warn

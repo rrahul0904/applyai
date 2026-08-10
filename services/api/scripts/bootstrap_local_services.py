@@ -68,7 +68,7 @@ def main() -> None:
     ensure_bucket(s3)
 
     urls: dict[str, str] = {}
-    for family in ("resume", "source", "ai"):
+    for family in ("resume", "source", "ai", "agent"):
         dlq_url = ensure_queue(sqs, f"applyai-local-{family}-dlq")
         urls[f"{family}_dlq"] = dlq_url
         urls[family] = ensure_queue(sqs, f"applyai-local-{family}", dlq_arn=queue_arn(sqs, dlq_url))
@@ -98,6 +98,8 @@ def main() -> None:
         "SOURCE_SQS_DLQ_URL": urls["source_dlq"],
         "AI_SQS_QUEUE_URL": urls["ai"],
         "AI_SQS_DLQ_URL": urls["ai_dlq"],
+        "AGENT_SQS_QUEUE_URL": urls["agent"],
+        "AGENT_SQS_DLQ_URL": urls["agent_dlq"],
         "AWS_ACCESS_KEY_ID": "test",
         "AWS_SECRET_ACCESS_KEY": "test",
         "AWS_DEFAULT_REGION": REGION,
@@ -118,7 +120,7 @@ def main() -> None:
     }
     ENV_FILE.write_text("\n".join(f"export {key}={value}" for key, value in values.items()) + "\n", encoding="utf-8")
     print(f"Local clean-room resources are ready. Environment written to {ENV_FILE}")
-    for family in ("resume", "source", "ai"):
+    for family in ("resume", "source", "ai", "agent"):
         print(f"{family}: {urls[family]}")
 
 

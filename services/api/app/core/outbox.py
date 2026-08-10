@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, get_settings
 from app.core.database import SessionLocal
 from app.core.queue import (
+    AGENT_TASK_TYPES,
     AI_TASK_TYPES,
     SOURCE_TASK_TYPES,
     SPECIAL_TASK_TYPES,
@@ -55,6 +56,8 @@ def _routing_filter(settings: Settings):
         supported.append(TaskOutbox.event_type.in_(SOURCE_TASK_TYPES))
     if settings.ai_sqs_queue_url:
         supported.append(TaskOutbox.event_type.in_(AI_TASK_TYPES))
+    if settings.agent_sqs_queue_url or settings.sqs_queue_url:
+        supported.append(TaskOutbox.event_type.in_(AGENT_TASK_TYPES))
     return or_(*supported)
 
 

@@ -331,8 +331,8 @@ def _deterministic_verify(gateway: ToolGateway, run: AgentRun) -> ResumeVerifica
                 severity="HIGH", claim=claim, issue_type="UNKNOWN_OR_MISSING_EVIDENCE_REF", evidence_refs=refs,
                 recommended_fix="Use only evidence references from the verified candidate evidence catalog.",
             ))
-        source_numbers = set(re.findall(r"(?<!\w)[$]?\d[\d,.%]*(?!\w)", source))
-        claim_numbers = set(re.findall(r"(?<!\w)[$]?\d[\d,.%]*(?!\w)", claim))
+        source_numbers = set(re.findall(r"(?<!\w)[$]?\d[\d,.]*(?:%|[KMBkmb])?(?!\w)", source))
+        claim_numbers = set(re.findall(r"(?<!\w)[$]?\d[\d,.]*(?:%|[KMBkmb])?(?!\w)", claim))
         invented_numbers = sorted(claim_numbers - source_numbers)
         if invented_numbers:
             issues.append(VerificationIssue(

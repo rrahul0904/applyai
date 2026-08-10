@@ -12,8 +12,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.agent_models import AgentArtifact, AgentCostEvent, AgentEvent, AgentRun, AgentStep
-from app.agents.enums import AgentRunStatus, ScoutDecision, VerificationDecision
+from app.agents.enums import AgentRunStatus, ExecutionClass, ScoutDecision, VerificationDecision
 from app.agents.handlers import HANDLERS, HandlerResult
+from app.agents.policy import assert_agent_enabled, effective_max_cost
 from app.agents.registry import get_agent_definition
 from app.agents.state import transition
 from app.agents.tools.gateway import ToolGateway, ToolPermissionError
@@ -70,6 +71,48 @@ def _event(session: Session, *, run: AgentRun, event_type: str, payload: dict[st
     return row
 
 
+def _start_of_day() -> datetime:
+    return utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _daily_candidate_cost(session: Session, candidate_id: uuid.UUID) -> Decimal:
+    value = session.scalar(
+        select(func.coalesce(func.sum(AgentCostEvent.cost_usd), 0)).where(
+            AgentCostEvent.candidate_id == candidate_id,
+            AgentCostEvent.created_at >= _start_of_day(),
+        )
+    )
+    return Decimal(str(value or 0))
+
+
+def _daily_runtime_cost(session: Session) -> Decimal:
+    value = session.scalar(
+        select(func.coalesce(func.sum(AgentCostEvent.cost_usd), 0)).where(
+            AgentCostEvent.created_at >= _start_of_day()
+        )
+    )
+    return Decimal(str(value or 0))
+
+
+def _daily_candidate_run_count(session: Session, candidate_id: uuid.UUID) -> int:
+    value = session.scalar(
+        select(func.count()).select_from(AgentRun).where(
+            AgentRun.candidate_id == candidate_id,
+            AgentRun.created_at >= _start_of_day(),
+        )
+    )
+    return int(value or 0)
+
+
+def _root_workflow_id(
+    *, candidate_id: uuid.UUID, job_id: uuid.UUID | None, agent_name: str, version: str, digest: str
+) -> uuid.UUID:
+    return uuid.uuid5(
+        uuid.NAMESPACE_URL,
+        f"applyai-agent:{candidate_id}:{job_id or 'none'}:{agent_name}:{version}:{digest}",
+    )
+
+
 def queue_agent_run(
     session: Session,
     *,
@@ -83,11 +126,20 @@ def queue_agent_run(
     workflow_id: uuid.UUID | None = None,
     input_json: dict[str, Any] | None = None,
     priority: int | None = None,
+    settings: Settings | None = None,
 ) -> AgentRun:
+    settings = settings or get_settings()
     definition = get_agent_definition(agent_name, version)
+    assert_agent_enabled(session, definition)
     payload = input_json or {}
-    workflow_id = workflow_id or uuid.uuid4()
     digest = _input_hash(payload)
+    workflow_id = workflow_id or _root_workflow_id(
+        candidate_id=candidate_id,
+        job_id=job_id,
+        agent_name=definition.name,
+        version=definition.version,
+        digest=digest,
+    )
     idempotency_key = ":".join(
         [
             "agent",
@@ -103,6 +155,16 @@ def queue_agent_run(
     if existing is not None:
         return existing
 
+    if _daily_candidate_run_count(session, candidate_id) >= settings.agent_candidate_daily_run_limit:
+        raise RuntimeError("CANDIDATE_DAILY_RUN_LIMIT_EXCEEDED")
+    runtime_limit = Decimal(str(settings.agent_runtime_daily_cost_limit_usd))
+    if runtime_limit > 0 and _daily_runtime_cost(session) >= runtime_limit:
+        raise RuntimeError("RUNTIME_DAILY_BUDGET_EXCEEDED")
+    candidate_limit = Decimal(str(settings.agent_candidate_daily_cost_limit_usd))
+    if candidate_limit > 0 and _daily_candidate_cost(session, candidate_id) >= candidate_limit:
+        raise RuntimeError("CANDIDATE_DAILY_BUDGET_EXCEEDED")
+
+    max_cost = effective_max_cost(session, definition)
     run = AgentRun(
         candidate_id=candidate_id,
         job_id=job_id,
@@ -120,13 +182,18 @@ def queue_agent_run(
         input_json=payload,
         max_steps=definition.max_steps,
         timeout_seconds=definition.timeout_seconds,
-        max_cost_usd=definition.max_cost_usd,
+        max_cost_usd=max_cost,
         prompt_version=definition.prompt_version,
         schema_version=definition.schema_version,
     )
     session.add(run)
     session.flush()
-    _event(session, run=run, event_type="AGENT_RUN_REQUESTED", payload={"agent": run.agent_name, "version": run.agent_version})
+    _event(
+        session,
+        run=run,
+        event_type="AGENT_RUN_REQUESTED",
+        payload={"agent": run.agent_name, "version": run.agent_version},
+    )
     add_task_outbox_event(
         session,
         task=Task(
@@ -162,7 +229,6 @@ def claim_agent_run(
     if run.status in {AgentRunStatus.CLAIMED, AgentRunStatus.RUNNING}:
         if run.lease_expires_at and run.lease_expires_at > now and run.lease_owner != worker_id:
             return None
-        # Explicit stale-lease recovery. The old worker is no longer authoritative.
         run.status = AgentRunStatus.CLAIMED
     elif run.status == AgentRunStatus.FAILED_RETRYABLE:
         transition(run, AgentRunStatus.QUEUED)
@@ -186,24 +252,18 @@ def heartbeat_agent_run(run_id: uuid.UUID, *, worker_id: str, settings: Settings
         run = session.scalar(
             select(AgentRun).where(AgentRun.id == run_id, AgentRun.lease_owner == worker_id).with_for_update()
         )
-        if run is None or run.status not in {AgentRunStatus.CLAIMED, AgentRunStatus.RUNNING, AgentRunStatus.WAITING_FOR_TOOL, AgentRunStatus.VALIDATING}:
+        if run is None or run.status not in {
+            AgentRunStatus.CLAIMED,
+            AgentRunStatus.RUNNING,
+            AgentRunStatus.WAITING_FOR_TOOL,
+            AgentRunStatus.VALIDATING,
+        }:
             return False
         now = utcnow()
         run.heartbeat_at = now
         run.lease_expires_at = now + timedelta(seconds=settings.agent_lease_seconds)
         session.commit()
         return True
-
-
-def _daily_candidate_cost(session: Session, candidate_id: uuid.UUID) -> Decimal:
-    start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    value = session.scalar(
-        select(func.coalesce(func.sum(AgentCostEvent.cost_usd), 0)).where(
-            AgentCostEvent.candidate_id == candidate_id,
-            AgentCostEvent.created_at >= start,
-        )
-    )
-    return Decimal(str(value or 0))
 
 
 def _create_step(session: Session, run: AgentRun, *, name: str, position: int) -> AgentStep:
@@ -222,19 +282,42 @@ def _create_step(session: Session, run: AgentRun, *, name: str, position: int) -
     return step
 
 
-def _write_artifact(session: Session, run: AgentRun, result: HandlerResult) -> AgentArtifact:
-    artifact_type = ARTIFACT_TYPES[run.agent_name]
-    latest = session.scalar(
+def _latest_artifact(
+    session: Session,
+    *,
+    candidate_id: uuid.UUID,
+    job_id: uuid.UUID | None,
+    artifact_type: str,
+) -> AgentArtifact | None:
+    return session.scalar(
         select(AgentArtifact)
         .where(
-            AgentArtifact.candidate_id == run.candidate_id,
-            AgentArtifact.job_id == run.job_id,
+            AgentArtifact.candidate_id == candidate_id,
+            AgentArtifact.job_id == job_id,
             AgentArtifact.artifact_type == artifact_type,
         )
         .order_by(AgentArtifact.version.desc(), AgentArtifact.created_at.desc())
         .limit(1)
     )
-    version = (latest.version + 1) if latest else 1
+
+
+def _write_artifact(session: Session, run: AgentRun, result: HandlerResult) -> AgentArtifact:
+    artifact_type = ARTIFACT_TYPES[run.agent_name]
+    previous_same = _latest_artifact(
+        session,
+        candidate_id=run.candidate_id,
+        job_id=run.job_id,
+        artifact_type=artifact_type,
+    )
+    parent: AgentArtifact | None = None
+    if run.agent_name == "resume_verifier":
+        parent = _latest_artifact(
+            session,
+            candidate_id=run.candidate_id,
+            job_id=run.job_id,
+            artifact_type="TAILORED_RESUME",
+        )
+    version = (previous_same.version + 1) if previous_same else 1
     payload = result.output.model_dump(mode="json")
     evidence_refs = payload.get("evidence_refs") or payload.get("source_refs") or []
     status = "READY"
@@ -251,8 +334,8 @@ def _write_artifact(session: Session, run: AgentRun, result: HandlerResult) -> A
         version=version,
         content_json=payload,
         evidence_json={"refs": list(evidence_refs)},
-        parent_artifact_id=latest.id if latest and run.agent_name == "resume_verifier" else None,
-        supersedes_artifact_id=latest.id if latest else None,
+        parent_artifact_id=parent.id if parent else None,
+        supersedes_artifact_id=previous_same.id if previous_same else None,
         prompt_version=run.prompt_version,
         schema_version=run.schema_version,
     )
@@ -267,6 +350,7 @@ def _queue_child(
     parent: AgentRun,
     agent_name: str,
     trigger_type: str,
+    settings: Settings,
 ) -> AgentRun:
     return queue_agent_run(
         session,
@@ -278,33 +362,89 @@ def _queue_child(
         workflow_type=parent.workflow_type or "OPPORTUNITY_PREPARATION",
         workflow_id=parent.workflow_id,
         input_json={"parent_run_id": str(parent.id)},
+        settings=settings,
     )
 
 
-def _orchestrate(session: Session, run: AgentRun, artifact: AgentArtifact) -> list[uuid.UUID]:
+def _orchestrate(
+    session: Session,
+    run: AgentRun,
+    artifact: AgentArtifact,
+    *,
+    settings: Settings,
+) -> list[uuid.UUID]:
     payload = artifact.content_json
     queued: list[uuid.UUID] = []
     if run.agent_name == "job_scout":
         decision = str(payload.get("decision"))
-        if decision in {ScoutDecision.APPLY_NOW, ScoutDecision.STRONG}:
-            queued.append(_queue_child(session, parent=run, agent_name="job_research", trigger_type="JOB_RECOMMENDATION_CREATED").id)
+        if decision in {ScoutDecision.APPLY_NOW.value, ScoutDecision.STRONG.value}:
+            queued.append(
+                _queue_child(
+                    session,
+                    parent=run,
+                    agent_name="job_research",
+                    trigger_type="JOB_RECOMMENDATION_CREATED",
+                    settings=settings,
+                ).id
+            )
     elif run.agent_name == "job_research":
         if str(payload.get("status")) == "VERIFIED":
-            queued.append(_queue_child(session, parent=run, agent_name="resume_tailor", trigger_type="JOB_RESEARCH_COMPLETED").id)
+            queued.append(
+                _queue_child(
+                    session,
+                    parent=run,
+                    agent_name="resume_tailor",
+                    trigger_type="JOB_RESEARCH_COMPLETED",
+                    settings=settings,
+                ).id
+            )
     elif run.agent_name == "resume_tailor":
-        queued.append(_queue_child(session, parent=run, agent_name="resume_verifier", trigger_type="RESUME_DRAFT_CREATED").id)
+        queued.append(
+            _queue_child(
+                session,
+                parent=run,
+                agent_name="resume_verifier",
+                trigger_type="RESUME_DRAFT_CREATED",
+                settings=settings,
+            ).id
+        )
     elif run.agent_name == "resume_verifier":
-        if str(payload.get("decision")) in {VerificationDecision.PASS, VerificationDecision.PASS_WITH_WARNINGS}:
+        if str(payload.get("decision")) in {
+            VerificationDecision.PASS.value,
+            VerificationDecision.PASS_WITH_WARNINGS.value,
+        }:
             _event(
                 session,
                 run=run,
                 event_type="READY_FOR_CANDIDATE",
-                payload={"job_id": str(run.job_id), "artifact_id": str(artifact.id), "workflow_id": str(run.workflow_id)},
+                payload={
+                    "job_id": str(run.job_id),
+                    "artifact_id": str(artifact.id),
+                    "workflow_id": str(run.workflow_id),
+                },
             )
     return queued
 
 
-def _fail_run(run_id: uuid.UUID, *, retryable: bool, code: str, detail: str, settings: Settings) -> bool:
+def _mark_current_step_failed(session: Session, run: AgentRun, *, code: str, detail: str) -> None:
+    step = session.scalar(
+        select(AgentStep)
+        .where(
+            AgentStep.run_id == run.id,
+            AgentStep.attempt == run.attempt_count,
+            AgentStep.status == "RUNNING",
+        )
+        .order_by(AgentStep.position.desc())
+        .limit(1)
+    )
+    if step is not None:
+        step.status = "FAILED"
+        step.error_code = code[:80]
+        step.error_detail = detail[:1000]
+        step.completed_at = utcnow()
+
+
+def _fail_run(run_id: uuid.UUID, *, retryable: bool, code: str, detail: str) -> bool:
     with SessionLocal() as session:
         run = session.scalar(select(AgentRun).where(AgentRun.id == run_id).with_for_update())
         if run is None:
@@ -312,16 +452,30 @@ def _fail_run(run_id: uuid.UUID, *, retryable: bool, code: str, detail: str, set
         definition = get_agent_definition(run.agent_name, run.agent_version)
         should_retry = retryable and run.attempt_count < definition.retry_policy.max_attempts
         target = AgentRunStatus.FAILED_RETRYABLE if should_retry else AgentRunStatus.FAILED_TERMINAL
-        if run.status in {AgentRunStatus.CLAIMED, AgentRunStatus.RUNNING, AgentRunStatus.WAITING_FOR_TOOL, AgentRunStatus.VALIDATING}:
-            if run.status == AgentRunStatus.CLAIMED:
-                transition(run, AgentRunStatus.RUNNING)
+        _mark_current_step_failed(session, run, code=code, detail=detail)
+        if run.status == AgentRunStatus.CLAIMED:
+            transition(run, AgentRunStatus.RUNNING)
+        if run.status in {
+            AgentRunStatus.RUNNING,
+            AgentRunStatus.WAITING_FOR_TOOL,
+            AgentRunStatus.VALIDATING,
+        }:
             transition(run, target)
         else:
             run.status = target
         run.error_code = code[:80]
         run.error_detail = detail[:1000]
-        _event(session, run=run, event_type="AGENT_RUN_FAILED", payload={"retryable": should_retry, "error_code": run.error_code})
+        _event(
+            session,
+            run=run,
+            event_type="AGENT_RUN_FAILED",
+            payload={"retryable": should_retry, "error_code": run.error_code},
+        )
         if should_retry:
+            run.lease_owner = None
+            run.lease_acquired_at = None
+            run.lease_expires_at = None
+            run.heartbeat_at = None
             transition(run, AgentRunStatus.QUEUED)
             add_task_outbox_event(
                 session,
@@ -363,12 +517,15 @@ def execute_agent_run(
             if run is None:
                 return True
             definition = get_agent_definition(run.agent_name, run.agent_version)
-            if not definition.enabled:
-                raise PermissionError("AGENT_DISABLED")
-            if _daily_candidate_cost(session, run.candidate_id) >= Decimal(str(settings.agent_candidate_daily_cost_limit_usd)):
+            assert_agent_enabled(session, definition)
+            candidate_limit = Decimal(str(settings.agent_candidate_daily_cost_limit_usd))
+            runtime_limit = Decimal(str(settings.agent_runtime_daily_cost_limit_usd))
+            if candidate_limit > 0 and _daily_candidate_cost(session, run.candidate_id) >= candidate_limit:
                 raise RuntimeError("CANDIDATE_DAILY_BUDGET_EXCEEDED")
+            if runtime_limit > 0 and _daily_runtime_cost(session) >= runtime_limit:
+                raise RuntimeError("RUNTIME_DAILY_BUDGET_EXCEEDED")
             transition(run, AgentRunStatus.RUNNING)
-            step = _create_step(session, run, name="execute_agent", position=1)
+            _create_step(session, run, name="execute_agent", position=1)
             session.commit()
 
         with SessionLocal() as session:
@@ -376,13 +533,17 @@ def execute_agent_run(
             if run is None:
                 return True
             definition = get_agent_definition(run.agent_name, run.agent_version)
+            assert_agent_enabled(session, definition)
+            if definition.execution_class == ExecutionClass.EXECUTE and definition.requires_human_approval:
+                raise PermissionError("EXECUTE_AGENT_REQUIRES_APPROVAL_GATE")
             gateway = ToolGateway(session, run=run, definition=definition)
             handler = HANDLERS[run.agent_name]
             result = handler(session, run, gateway, definition, settings)
             if result.input_tokens > definition.max_input_tokens or result.output_tokens > definition.max_output_tokens:
                 raise RuntimeError("TOKEN_BUDGET_EXCEEDED")
             cost = _estimated_cost(settings, result.input_tokens, result.output_tokens)
-            if cost > Decimal(str(definition.max_cost_usd)):
+            max_cost = effective_max_cost(session, definition)
+            if cost > max_cost:
                 raise RuntimeError("RUN_COST_BUDGET_EXCEEDED")
             transition(run, AgentRunStatus.VALIDATING)
             run.provider = result.provider
@@ -393,13 +554,20 @@ def execute_agent_run(
             artifact = _write_artifact(session, run, result)
             step = session.scalar(
                 select(AgentStep)
-                .where(AgentStep.run_id == run.id, AgentStep.step_name == "execute_agent", AgentStep.attempt == run.attempt_count)
+                .where(
+                    AgentStep.run_id == run.id,
+                    AgentStep.step_name == "execute_agent",
+                    AgentStep.attempt == run.attempt_count,
+                )
                 .order_by(AgentStep.started_at.desc())
                 .limit(1)
             )
             if step:
                 step.status = "SUCCEEDED"
-                step.output_ref = {"artifact_id": str(artifact.id), "artifact_type": artifact.artifact_type}
+                step.output_ref = {
+                    "artifact_id": str(artifact.id),
+                    "artifact_type": artifact.artifact_type,
+                }
                 step.provider = result.provider
                 step.model = result.model
                 step.input_tokens = result.input_tokens
@@ -423,11 +591,19 @@ def execute_agent_run(
                 session,
                 run=run,
                 event_type=EVENT_TYPES[run.agent_name],
-                payload={"artifact_id": str(artifact.id), "job_id": str(run.job_id) if run.job_id else None},
+                payload={
+                    "artifact_id": str(artifact.id),
+                    "job_id": str(run.job_id) if run.job_id else None,
+                },
             )
-            child_ids = _orchestrate(session, run, artifact)
+            child_ids = _orchestrate(session, run, artifact, settings=settings)
             transition(run, AgentRunStatus.SUCCEEDED)
-            _event(session, run=run, event_type="AGENT_RUN_COMPLETED", payload={"artifact_id": str(artifact.id)})
+            _event(
+                session,
+                run=run,
+                event_type="AGENT_RUN_COMPLETED",
+                payload={"artifact_id": str(artifact.id)},
+            )
             session.commit()
 
         if settings.task_queue_provider == "memory":
@@ -435,15 +611,36 @@ def execute_agent_run(
                 execute_agent_run(child_id, settings)
         return True
     except TransientAIProviderError as exc:
-        return _fail_run(run_id, retryable=True, code="AI_PROVIDER_TRANSIENT", detail=str(exc), settings=settings)
+        return _fail_run(
+            run_id,
+            retryable=True,
+            code="AI_PROVIDER_TRANSIENT",
+            detail=str(exc),
+        )
     except (AIProviderError, ToolPermissionError, PermissionError, ValueError) as exc:
-        return _fail_run(run_id, retryable=False, code=type(exc).__name__, detail=str(exc), settings=settings)
+        return _fail_run(
+            run_id,
+            retryable=False,
+            code=type(exc).__name__,
+            detail=str(exc),
+        )
     except RuntimeError as exc:
         code = str(exc).split(":", 1)[0] or type(exc).__name__
-        retryable = code not in {"CANDIDATE_DAILY_BUDGET_EXCEEDED", "TOKEN_BUDGET_EXCEEDED", "RUN_COST_BUDGET_EXCEEDED"}
-        return _fail_run(run_id, retryable=retryable, code=code, detail=str(exc), settings=settings)
+        retryable = code not in {
+            "CANDIDATE_DAILY_RUN_LIMIT_EXCEEDED",
+            "CANDIDATE_DAILY_BUDGET_EXCEEDED",
+            "RUNTIME_DAILY_BUDGET_EXCEEDED",
+            "TOKEN_BUDGET_EXCEEDED",
+            "RUN_COST_BUDGET_EXCEEDED",
+        }
+        return _fail_run(run_id, retryable=retryable, code=code, detail=str(exc))
     except Exception as exc:
-        return _fail_run(run_id, retryable=True, code=type(exc).__name__, detail="Unexpected governed agent failure", settings=settings)
+        return _fail_run(
+            run_id,
+            retryable=True,
+            code=type(exc).__name__,
+            detail="Unexpected governed agent failure",
+        )
 
 
 def retry_agent_run(session: Session, run: AgentRun) -> AgentRun:
@@ -454,6 +651,10 @@ def retry_agent_run(session: Session, run: AgentRun) -> AgentRun:
     transition(run, AgentRunStatus.QUEUED)
     run.error_code = None
     run.error_detail = None
+    run.lease_owner = None
+    run.lease_acquired_at = None
+    run.lease_expires_at = None
+    run.heartbeat_at = None
     add_task_outbox_event(
         session,
         task=Task(

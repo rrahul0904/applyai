@@ -158,10 +158,10 @@ resource "aws_ecs_task_definition" "agent_worker" {
 
   container_definitions = jsonencode([
     {
-      name        = "agent-worker"
-      image       = local.image_uri
-      essential   = true
-      command     = ["python", "-m", "app.workers.agent"]
+      name      = "agent-worker"
+      image     = local.image_uri
+      essential = true
+      command   = ["python", "-m", "app.workers.agent"]
       environment = concat(
         local.ai_worker_environment,
         [
@@ -172,7 +172,7 @@ resource "aws_ecs_task_definition" "agent_worker" {
           { name = "AGENT_SQS_MAX_RECEIVE_COUNT", value = tostring(var.agent_sqs_max_receive_count) },
         ]
       )
-      secrets     = local.ai_worker_secrets
+      secrets = local.ai_worker_secrets
       logConfiguration = {
         logDriver = "awslogs"
         options = {

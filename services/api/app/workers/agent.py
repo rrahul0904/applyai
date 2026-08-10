@@ -3,14 +3,59 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
 import uuid
 
+from app.agent_models import AgentRun
 from app.agents.runtime import execute_agent_run
 from app.core.config import Settings, get_settings
+from app.core.database import SessionLocal
 from app.core.queue import resolve_agent_queue_url, sqs_client
 
 
 logger = logging.getLogger("applyai.agent_worker")
+_PROVIDER_CIRCUIT_FAILURE_THRESHOLD = 3
+_PROVIDER_CIRCUIT_COOLDOWN_SECONDS = 60.0
+_circuit_lock = threading.Lock()
+_circuit_failures: dict[str, int] = {}
+_circuit_open_until: dict[str, float] = {}
+
+
+def _circuit_is_open(provider: str) -> bool:
+    if provider == "deterministic":
+        return False
+    with _circuit_lock:
+        until = _circuit_open_until.get(provider, 0.0)
+        if until <= time.monotonic():
+            _circuit_open_until.pop(provider, None)
+            if until:
+                _circuit_failures[provider] = 0
+            return False
+        return True
+
+
+def _note_transient_provider_failure(provider: str) -> None:
+    if provider == "deterministic":
+        return
+    with _circuit_lock:
+        failures = _circuit_failures.get(provider, 0) + 1
+        _circuit_failures[provider] = failures
+        if failures >= _PROVIDER_CIRCUIT_FAILURE_THRESHOLD:
+            _circuit_open_until[provider] = time.monotonic() + _PROVIDER_CIRCUIT_COOLDOWN_SECONDS
+
+
+def _note_provider_success(provider: str) -> None:
+    if provider == "deterministic":
+        return
+    with _circuit_lock:
+        _circuit_failures[provider] = 0
+        _circuit_open_until.pop(provider, None)
+
+
+def _run_error_code(run_id: uuid.UUID) -> str | None:
+    with SessionLocal() as session:
+        row = session.get(AgentRun, run_id)
+        return row.error_code if row else None
 
 
 def process_message(body: str, settings: Settings) -> bool:
@@ -28,11 +73,25 @@ def process_message(body: str, settings: Settings) -> bool:
     except (TypeError, ValueError):
         logger.warning("agent_worker_invalid_run_id")
         return False
+
+    if _circuit_is_open(settings.ai_provider):
+        logger.warning("agent_provider_circuit_open", extra={"provider": settings.ai_provider})
+        # Leave the message unacknowledged. SQS visibility supplies backpressure while
+        # the local worker circuit cools down; no model fallback is attempted.
+        return False
+
     worker_id = f"agent-worker:{uuid.uuid4()}"
-    # The runtime owns retry semantics. A retryable failure is persisted and a new
-    # transactional-outbox event is created before execute_agent_run returns.
-    # Acknowledge this delivery so the original SQS message cannot race the durable retry.
-    execute_agent_run(run_id, settings, worker_id=worker_id)
+    completed_or_terminal = execute_agent_run(run_id, settings, worker_id=worker_id)
+    if completed_or_terminal:
+        _note_provider_success(settings.ai_provider)
+        return True
+
+    # The runtime has already persisted a bounded retry and corresponding outbox event.
+    # Inspect only the small error code to decide whether this worker should trip the
+    # provider circuit; never duplicate the run payload in logs or memory.
+    if _run_error_code(run_id) == "AI_PROVIDER_TRANSIENT":
+        _note_transient_provider_failure(settings.ai_provider)
+    # Acknowledge the original delivery so it cannot race the explicit durable retry.
     return True
 
 

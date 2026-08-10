@@ -117,11 +117,19 @@ curl -fsS "$LOCAL_PROVIDER_MOCK_URL/health" >/dev/null
   uv run python -m scripts.local_integration_smoke
 )
 
+echo "==> Running deterministic governed-agent workflow and acceptance"
+(
+  cd services/api
+  AI_PROVIDER=deterministic TASK_QUEUE_PROVIDER=memory uv run python -m scripts.agent_demo
+  AI_PROVIDER=deterministic TASK_QUEUE_PROVIDER=memory uv run python -m scripts.agent_acceptance
+)
+
 echo "==> Launching local outbox and background workers"
 (cd services/api && uv run python -m app.core.outbox >"$ROOT/.local/outbox.log" 2>&1) & PIDS+=("$!")
 (cd services/api && uv run python -m app.workers.resume >"$ROOT/.local/resume-worker.log" 2>&1) & PIDS+=("$!")
 (cd services/api && uv run python -m app.workers.source >"$ROOT/.local/source-worker.log" 2>&1) & PIDS+=("$!")
 (cd services/api && uv run python -m app.workers.ai >"$ROOT/.local/ai-worker.log" 2>&1) & PIDS+=("$!")
+(cd services/api && uv run python -m app.workers.agent >"$ROOT/.local/agent-worker.log" 2>&1) & PIDS+=("$!")
 sleep 2
 for pid in "${PIDS[@]}"; do
   kill -0 "$pid" >/dev/null 2>&1 || { echo "ERROR: a local provider/worker process failed to start; inspect .local/*.log" >&2; exit 1; }
@@ -150,6 +158,8 @@ printf '%s\n' \
   "  - API/web/OpenAPI validation in isolated test configuration" \
   "  - LocalStack S3 direct/presigned object operations" \
   "  - LocalStack SQS + outbox + background workers" \
+  "  - governed Agent Runtime + dedicated agent SQS/DLQ + Agent Worker" \
+  "  - deterministic Scout -> Research -> Resume -> Verifier workflow" \
   "  - Mailpit SMTP delivery" \
   "  - Stripe schema mock health plus checkout/portal protocol + signed webhook persistence" \
   "  - deterministic local AI provider" \
@@ -157,4 +167,4 @@ printf '%s\n' \
   "  - OpenAI Responses + embeddings HTTP protocol through the real provider clients" \
   "  - dev-test local browser authentication" \
   "  - canonical browser workflows and route sweep" \
-  "Live Clerk/OpenAI/Stripe/AWS/email-provider accounts remain a separate credential-backed acceptance gate."
+  "Live Clerk/OpenAI/Stripe/AWS/email-provider/agent staging accounts remain a separate credential-backed acceptance gate."

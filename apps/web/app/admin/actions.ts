@@ -49,3 +49,39 @@ export async function discoverOrganizationJobs(formData: FormData) {
   await operatorApi(`job-supply/organizations/${id}/discover`, { method: "POST" });
   revalidatePath("/admin");
 }
+
+export async function enableAgentDefinition(formData: FormData) {
+  const name = String(formData.get("agent_name") ?? "");
+  const version = String(formData.get("agent_version") ?? "");
+  if (!name || !version) return;
+  await operatorApi(`agents/definitions/${name}/${version}/enabled`, {
+    method: "POST",
+    body: JSON.stringify({ enabled: true, reason: "Operator enabled from admin" }),
+  });
+  revalidatePath("/admin");
+}
+
+export async function disableAgentDefinition(formData: FormData) {
+  const name = String(formData.get("agent_name") ?? "");
+  const version = String(formData.get("agent_version") ?? "");
+  if (!name || !version) return;
+  await operatorApi(`agents/definitions/${name}/${version}/enabled`, {
+    method: "POST",
+    body: JSON.stringify({ enabled: false, reason: "Operator paused from admin" }),
+  });
+  revalidatePath("/admin");
+}
+
+export async function retryAgentRun(formData: FormData) {
+  const id = String(formData.get("run_id") ?? "");
+  if (!id) return;
+  await operatorApi(`agents/runs/${id}/retry`, { method: "POST" });
+  revalidatePath("/admin");
+}
+
+export async function cancelAgentRun(formData: FormData) {
+  const id = String(formData.get("run_id") ?? "");
+  if (!id) return;
+  await operatorApi(`agents/runs/${id}/cancel`, { method: "POST" });
+  revalidatePath("/admin");
+}

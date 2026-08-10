@@ -29,7 +29,11 @@ def process_message(body: str, settings: Settings) -> bool:
         logger.warning("agent_worker_invalid_run_id")
         return False
     worker_id = f"agent-worker:{uuid.uuid4()}"
-    return execute_agent_run(run_id, settings, worker_id=worker_id)
+    # The runtime owns retry semantics. A retryable failure is persisted and a new
+    # transactional-outbox event is created before execute_agent_run returns.
+    # Acknowledge this delivery so the original SQS message cannot race the durable retry.
+    execute_agent_run(run_id, settings, worker_id=worker_id)
+    return True
 
 
 def _visibility_heartbeat(*, client, queue_url: str, receipt_handle: str, settings: Settings, stop: threading.Event) -> None:

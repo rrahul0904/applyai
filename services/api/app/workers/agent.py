@@ -7,7 +7,7 @@ import uuid
 
 from app.agents.runtime import execute_agent_run
 from app.core.config import Settings, get_settings
-from app.core.queue import sqs_client
+from app.core.queue import resolve_agent_queue_url, sqs_client
 
 
 logger = logging.getLogger("applyai.agent_worker")
@@ -47,9 +47,9 @@ def _visibility_heartbeat(*, client, queue_url: str, receipt_handle: str, settin
 
 def run_worker(settings: Settings | None = None) -> None:
     settings = settings or get_settings()
-    queue_url = settings.agent_sqs_queue_url or settings.sqs_queue_url
+    queue_url = resolve_agent_queue_url(settings)
     if settings.task_queue_provider != "sqs" or not queue_url:
-        raise RuntimeError("Agent worker requires TASK_QUEUE_PROVIDER=sqs and an agent/default queue URL")
+        raise RuntimeError("Agent worker requires TASK_QUEUE_PROVIDER=sqs and a resolvable dedicated agent queue")
     client = sqs_client(region=settings.sqs_region)
     logger.info("agent_worker_started", extra={"visibility_timeout": settings.agent_sqs_visibility_timeout_seconds})
     while True:

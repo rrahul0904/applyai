@@ -24,13 +24,12 @@ jobs:
           from pathlib import Path
           path = Path("services/api/app/agents/handlers.py")
           text = path.read_text()
-          old = r'''source_numbers = set(re.findall(r"(?<!\w)[$]?\d[\d,.%]*(?!\w)", source))
-          claim_numbers = set(re.findall(r"(?<!\w)[$]?\d[\d,.%]*(?!\w)", claim))'''
-          new = r'''source_numbers = set(re.findall(r"(?<!\w)[$]?\d[\d,.]*(?:%|[KMBkmb])?(?!\w)", source))
-          claim_numbers = set(re.findall(r"(?<!\w)[$]?\d[\d,.]*(?:%|[KMBkmb])?(?!\w)", claim))'''
-          if old not in text:
-              raise SystemExit("Expected verifier regex block not found; refusing broad rewrite")
-          path.write_text(text.replace(old, new, 1))
+          old = r'r"(?<!\w)[$]?\d[\d,.%]*(?!\w)"'
+          new = r'r"(?<!\w)[$]?\d[\d,.]*(?:%|[KMBkmb])?(?!\w)"'
+          count = text.count(old)
+          if count != 2:
+              raise SystemExit(f"Expected exactly two verifier regexes, found {count}; refusing broad rewrite")
+          path.write_text(text.replace(old, new))
       - name: Commit verifier fix
         shell: bash
         run: |

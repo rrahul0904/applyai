@@ -5,7 +5,7 @@ import logging
 import threading
 import uuid
 
-from app.agents.runtime import execute_agent_run, heartbeat_agent_run
+from app.agents.runtime import execute_agent_run
 from app.core.config import Settings, get_settings
 from app.core.queue import sqs_client
 

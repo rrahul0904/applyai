@@ -11,6 +11,7 @@ from app.agents.registry import AGENT_REGISTRY
 from app.agents.tools.registry import TOOL_REGISTRY
 from app.core.config import get_settings
 from app.core.database import SessionLocal
+from app.core.queue import resolve_agent_queue_url
 from app.models import JobSource, JobSourceLink
 
 
@@ -101,8 +102,12 @@ def build_report() -> dict:
         live_workflow = _workflow_evidence(session, require_openai=True)
 
     definitions = sorted({name for name, _version in AGENT_REGISTRY})
-    queue_configured = bool(settings.agent_sqs_queue_url or settings.sqs_queue_url)
-    dedicated_agent_queue = bool(settings.agent_sqs_queue_url)
+    resolved_agent_queue = resolve_agent_queue_url(settings)
+    queue_configured = bool(resolved_agent_queue)
+    dedicated_agent_queue = bool(
+        settings.agent_sqs_queue_url
+        or (resolved_agent_queue and settings.app_env.lower() in {"staging", "production"})
+    )
     environment = settings.app_env.lower()
     external_blockers: list[str] = []
 
@@ -127,7 +132,6 @@ def build_report() -> dict:
     if environment not in {"staging", "production"} and local_verified:
         status = "LOCAL_RUNTIME_VERIFIED"
     elif environment in {"staging", "production"} and queue_configured and not external_blockers:
-        # PASS requires a real provider-backed four-agent workflow and a non-demo source.
         source_keys = set((live_workflow or {}).get("source_keys") or [])
         real_source = any(key not in {"development-seed", "agent-demo"} for key in source_keys)
         status = "PASS" if live_workflow is not None and real_source else "STAGING_RUNTIME_AVAILABLE"

@@ -1,0 +1,55 @@
+from __future__ import annotations
+
+from enum import StrEnum
+
+
+class ExecutionClass(StrEnum):
+    READ = "READ"
+    PREPARE = "PREPARE"
+    EXECUTE = "EXECUTE"
+
+
+class AgentRunStatus(StrEnum):
+    QUEUED = "QUEUED"
+    CLAIMED = "CLAIMED"
+    RUNNING = "RUNNING"
+    WAITING_FOR_TOOL = "WAITING_FOR_TOOL"
+    VALIDATING = "VALIDATING"
+    WAITING_FOR_APPROVAL = "WAITING_FOR_APPROVAL"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED_RETRYABLE = "FAILED_RETRYABLE"
+    FAILED_TERMINAL = "FAILED_TERMINAL"
+    CANCELLED = "CANCELLED"
+    EXPIRED = "EXPIRED"
+
+
+class ApprovalStatus(StrEnum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    EXPIRED = "EXPIRED"
+    CANCELLED = "CANCELLED"
+
+
+class ScoutDecision(StrEnum):
+    APPLY_NOW = "APPLY_NOW"
+    STRONG = "STRONG"
+    CONSIDER = "CONSIDER"
+    LOW_PRIORITY = "LOW_PRIORITY"
+    REJECT = "REJECT"
+
+
+class VerificationDecision(StrEnum):
+    PASS = "PASS"
+    PASS_WITH_WARNINGS = "PASS_WITH_WARNINGS"
+    REJECT = "REJECT"
+
+
+class MemoryClassification(StrEnum):
+    FACT = "FACT"
+    PREFERENCE = "PREFERENCE"
+    INFERENCE = "INFERENCE"
+    TEMPORARY_STATE = "TEMPORARY_STATE"
+    GOAL = "GOAL"
+    CONSTRAINT = "CONSTRAINT"
+    NEGATIVE_PREFERENCE = "NEGATIVE_PREFERENCE"

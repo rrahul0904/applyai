@@ -42,7 +42,7 @@ from app.core.database import engine
 settings = get_settings()
 app = FastAPI(
     title="ApplyAI API",
-    version="0.5.0",
+    version="0.4.0",
     openapi_url="/api/v1/openapi.json",
     docs_url="/api/docs",
 )
@@ -121,12 +121,11 @@ for router in (
     applications.router,
     career_memory.router,
     career_intelligence_v2.router,
-    agents.router,
     candidate_platform.router,
     semantic_matching.router,
     company_intelligence.router,
-    employer_platform.router,
-    billing_platform.router,
+    employer_platform,
+    billing_platform,
     privacy.router,
 ):
     app.include_router(router, prefix="/api/v1")
@@ -136,6 +135,7 @@ for product_router in (
     career_product_contract.router,
     career_product_polish.router,
     career_product.router,
+    agents.router,
 ):
     app.include_router(product_router, prefix="/api/v1", include_in_schema=False)
 

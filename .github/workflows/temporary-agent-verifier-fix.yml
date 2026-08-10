@@ -1,0 +1,41 @@
+name: Temporary Agent Verifier Fix
+
+on:
+  push:
+    branches:
+      - agent/governed-agent-runtime
+    paths:
+      - ".github/workflows/temporary-agent-verifier-fix.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: agent/governed-agent-runtime
+          fetch-depth: 0
+      - name: Patch quantified-claim detection exactly
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path("services/api/app/agents/handlers.py")
+          text = path.read_text()
+          old = r'''source_numbers = set(re.findall(r"(?<!\\w)[$]?\\d[\\d,.%]*(?!\\w)", source))
+          claim_numbers = set(re.findall(r"(?<!\\w)[$]?\\d[\\d,.%]*(?!\\w)", claim))'''
+          new = r'''source_numbers = set(re.findall(r"(?<!\\w)[$]?\\d[\\d,.]*(?:%|[KMBkmb])?(?!\\w)", source))
+          claim_numbers = set(re.findall(r"(?<!\\w)[$]?\\d[\\d,.]*(?:%|[KMBkmb])?(?!\\w)", claim))'''
+          if old not in text:
+              raise SystemExit("Expected verifier regex block not found; refusing broad rewrite")
+          path.write_text(text.replace(old, new, 1))
+      - name: Commit verifier fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add services/api/app/agents/handlers.py
+          git commit -m "Detect compact unsupported resume metrics"
+          git push origin HEAD:agent/governed-agent-runtime

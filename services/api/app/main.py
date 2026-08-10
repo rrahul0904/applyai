@@ -124,8 +124,8 @@ for router in (
     candidate_platform.router,
     semantic_matching.router,
     company_intelligence.router,
-    employer_platform,
-    billing_platform,
+    employer_platform.router,
+    billing_platform.router,
     privacy.router,
 ):
     app.include_router(router, prefix="/api/v1")

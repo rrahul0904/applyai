@@ -27,6 +27,20 @@ def sqs_client(*, region: str):
     return boto3.client("sqs", region_name=region, endpoint_url=endpoint_url)
 
 
+def resolve_agent_queue_url(settings: Settings) -> str | None:
+    if settings.agent_sqs_queue_url:
+        return settings.agent_sqs_queue_url
+    if settings.task_queue_provider != "sqs":
+        return None
+    if settings.app_env.lower() in {"staging", "production"}:
+        queue_name = f"applyai-{settings.app_env.lower()}-agent-tasks"
+        try:
+            return sqs_client(region=settings.sqs_region).get_queue_url(QueueName=queue_name)["QueueUrl"]
+        except Exception:
+            return None
+    return settings.sqs_queue_url
+
+
 @dataclass(frozen=True)
 class Task:
     task_type: str
@@ -90,7 +104,7 @@ def supports_task_type(settings: Settings, task_type: str) -> bool:
     if settings.task_queue_provider != "sqs":
         return True
     if task_type in AGENT_TASK_TYPES:
-        return bool(settings.agent_sqs_queue_url or settings.sqs_queue_url)
+        return bool(resolve_agent_queue_url(settings))
     if task_type in AI_TASK_TYPES:
         return bool(settings.ai_sqs_queue_url)
     if task_type in SOURCE_TASK_TYPES:
@@ -108,8 +122,8 @@ def get_task_queue_for_type(
     is_agent_task = task_type in AGENT_TASK_TYPES
     if settings.task_queue_provider == "sqs":
         if is_agent_task:
-            queue_url = settings.agent_sqs_queue_url or settings.sqs_queue_url
-            family = "agent/default"
+            queue_url = resolve_agent_queue_url(settings)
+            family = "agent"
         elif is_ai_task:
             queue_url = settings.ai_sqs_queue_url
             family = "AI"

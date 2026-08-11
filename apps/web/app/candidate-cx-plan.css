@@ -1,0 +1,63 @@
+.cx-plan-layout {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(280px, .85fr) minmax(0, 1.15fr);
+}
+
+.cx-current-plan,
+.cx-plan-option {
+  display: grid;
+  gap: 18px;
+  padding: 24px;
+}
+
+.cx-plan-icon {
+  align-items: center;
+  background: var(--sage);
+  border-radius: 10px;
+  color: var(--forest);
+  display: flex;
+  height: 42px;
+  justify-content: center;
+  width: 42px;
+}
+
+.cx-plan-heading {
+  align-items: flex-start;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+}
+
+.cx-plan-heading h2,
+.cx-plan-option h2 {
+  font-size: 27px;
+  letter-spacing: -.04em;
+  margin: 3px 0 0;
+}
+
+.cx-plan-features {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 10px;
+  padding-top: 18px;
+}
+
+.cx-plan-features > div {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  font-size: 13px;
+  gap: 8px;
+}
+
+.cx-plan-features svg { color: var(--forest); }
+.cx-plan-options { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.cx-plan-option { align-content: start; }
+.cx-plan-option p { color: var(--muted); line-height: 1.55; margin: 0; }
+.cx-plan-option .ui-button { margin-top: auto; width: fit-content; }
+
+@media (max-width: 850px) {
+  .cx-plan-layout,
+  .cx-plan-options { grid-template-columns: 1fr; }
+}

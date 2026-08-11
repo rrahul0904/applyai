@@ -1,5 +1,5 @@
-import { BillingWorkspace } from "@/components/platform-workspaces";
+import { CandidateBillingView } from "@/components/candidate-billing-view";
 
 export default function BillingPage() {
-  return <BillingWorkspace />;
+  return <CandidateBillingView />;
 }

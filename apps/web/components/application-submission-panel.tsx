@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation } from "@tanstack/react-query";
-import { ExternalLink, Send } from "lucide-react";
+import { CheckCircle2, ExternalLink, Send, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -18,7 +18,7 @@ export function ApplicationSubmissionPanel({ applicationId, jobId, sourceUrl }: 
       return platformApi.submissions.execute(id);
     },
     onSuccess: (data) => { setState(data); toast.success("Application submitted through ApplyAI"); },
-    onError: () => toast.error("This employer does not accept first-party ApplyAI submission for this role."),
+    onError: () => toast.error("This employer does not accept direct ApplyAI submission for this role."),
   });
   const handoff = useMutation({
     mutationFn: async () => {
@@ -28,14 +28,38 @@ export function ApplicationSubmissionPanel({ applicationId, jobId, sourceUrl }: 
       await platformApi.submissions.approve(id);
       return platformApi.submissions.execute(id);
     },
-    onSuccess: (data) => { setState(data); const url = typeof data.target_url === "string" ? data.target_url : null; if (url) window.open(url, "_blank", "noopener,noreferrer"); },
+    onSuccess: (data) => {
+      setState(data);
+      const url = typeof data.target_url === "string" ? data.target_url : null;
+      if (url) window.open(url, "_blank", "noopener,noreferrer");
+    },
     onError: (error) => toast.error(error.message),
   });
 
-  return <Card className="detail-section">
-    <div className="section-header"><div><h2>Application submission</h2><p>ApplyAI never submits without your explicit approval.</p></div>{state?.status ? <Badge tone={state.status === "SUBMITTED" ? "success" : "info"}>{String(state.status)}</Badge> : null}</div>
-    <p className="muted">First-party employers can receive the reviewed package directly. Other employers open their verified application page after ApplyAI prepares and records the handoff.</p>
-    <div className="button-row"><Button disabled={firstParty.isPending} onClick={() => firstParty.mutate()}><Send size={16}/>Submit through ApplyAI</Button>{sourceUrl ? <Button variant="secondary" disabled={handoff.isPending} onClick={() => handoff.mutate()}><ExternalLink size={16}/>Continue on employer site</Button> : null}</div>
-    <div className="button-row"><Link href={`/resume/studio?jobId=${jobId}`} className="ui-button ui-button-ghost ui-button-small">Resume Studio</Link><Link href={`/interview/${jobId}`} className="ui-button ui-button-ghost ui-button-small">Interview Copilot</Link></div>
-  </Card>;
+  return (
+    <Card className="detail-section cx-submit-card">
+      <div className="section-header">
+        <div>
+          <p className="eyebrow">Final step</p>
+          <h2>Review, then apply</h2>
+          <p>Nothing is sent until you choose how to continue.</p>
+        </div>
+        {state?.status ? <Badge tone={state.status === "SUBMITTED" ? "success" : "info"}>{String(state.status)}</Badge> : null}
+      </div>
+
+      <div className="cx-submit-confidence">
+        <div><CheckCircle2 size={16} /><span>Your application stays attached to this role</span></div>
+        <div><ShieldCheck size={16} /><span>You stay in control of the final submission</span></div>
+      </div>
+
+      <div className="button-row cx-submit-actions">
+        <Button disabled={firstParty.isPending} onClick={() => firstParty.mutate()}><Send size={16}/>{firstParty.isPending ? "Submitting…" : "Submit with ApplyAI"}</Button>
+        {sourceUrl ? <Button variant="secondary" disabled={handoff.isPending} onClick={() => handoff.mutate()}><ExternalLink size={16}/>{handoff.isPending ? "Opening…" : "Continue on employer site"}</Button> : null}
+      </div>
+      <div className="cx-inline-tools">
+        <Link href={`/resume/studio?jobId=${jobId}`}>Review resume</Link>
+        <Link href={`/interview/${jobId}`}>Prepare for interview</Link>
+      </div>
+    </Card>
+  );
 }

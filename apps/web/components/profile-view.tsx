@@ -67,10 +67,10 @@ export function ProfileView() {
 
   return (
     <>
-      <PageHeader eyebrow="Profile" title="Your canonical candidate profile." description="This structured profile—not raw resume text—is the source of truth for future search and matching." action={<Button disabled={save.isPending} onClick={() => save.mutate()}>{save.isPending ? "Saving…" : "Save profile"}</Button>} />
+      <PageHeader eyebrow="Profile" title="Help ApplyAI understand what you want next." description="Keep your experience, skills, and job preferences accurate so recommendations and preparation stay relevant to you." action={<Button disabled={save.isPending} onClick={() => save.mutate()}>{save.isPending ? "Saving…" : "Save profile"}</Button>} />
       <div className="profile-sections">
         <Card className="profile-card">
-          <h2>Professional</h2>
+          <h2>About you</h2>
           <div className="form-grid">
             <Field label="Current title" htmlFor="profile-title"><Input id="profile-title" value={draft.current_title ?? ""} onChange={(event) => setDraft({ ...draft, current_title: event.target.value || null })} /></Field>
             <Field label="Years of experience" htmlFor="profile-years"><Input id="profile-years" type="number" min="0" max="80" value={draft.years_experience ?? ""} onChange={(event) => setDraft({ ...draft, years_experience: event.target.value ? Number(event.target.value) : null })} /></Field>
@@ -80,7 +80,7 @@ export function ProfileView() {
         </Card>
 
         <Card className="profile-card">
-          <div className="section-header"><div><h2>Experience</h2><p>Add or correct the experience employers should evaluate.</p></div><Button variant="secondary" size="small" onClick={() => setDraft({ ...draft, experiences: [...experiences, { company_name: "", title: "", description: null, provenance: "USER_ENTERED" }] })}><Plus size={15} />Add</Button></div>
+          <div className="section-header"><div><h2>Experience</h2><p>Keep the work you want ApplyAI to consider accurate and current.</p></div><Button variant="secondary" size="small" onClick={() => setDraft({ ...draft, experiences: [...experiences, { company_name: "", title: "", description: null, provenance: "USER_ENTERED" }] })}><Plus size={15} />Add</Button></div>
           <div className="list-stack">{experiences.map((item, index) => <div className="repeater-item form-grid" key={item.id ?? `new-experience-${index}`}>
             <Field label="Company" htmlFor={`profile-company-${index}`}><Input id={`profile-company-${index}`} value={item.company_name} onChange={(event) => setDraft({ ...draft, experiences: experiences.map((value, i) => i === index ? { ...value, company_name: event.target.value } : value) })} /></Field>
             <Field label="Title" htmlFor={`profile-role-${index}`}><Input id={`profile-role-${index}`} value={item.title} onChange={(event) => setDraft({ ...draft, experiences: experiences.map((value, i) => i === index ? { ...value, title: event.target.value } : value) })} /></Field>
@@ -90,7 +90,7 @@ export function ProfileView() {
         </Card>
 
         <Card className="profile-card">
-          <div className="section-header"><div><h2>Education</h2><p>Keep education structured and candidate verified.</p></div><Button variant="secondary" size="small" onClick={() => setDraft({ ...draft, education: [...education, { institution: "", degree: null, field_of_study: null, provenance: "USER_ENTERED" }] })}><Plus size={15} />Add</Button></div>
+          <div className="section-header"><div><h2>Education</h2><p>Add the education you want included in your career profile.</p></div><Button variant="secondary" size="small" onClick={() => setDraft({ ...draft, education: [...education, { institution: "", degree: null, field_of_study: null, provenance: "USER_ENTERED" }] })}><Plus size={15} />Add</Button></div>
           <div className="list-stack">{education.map((item, index) => <div className="repeater-item form-grid" key={item.id ?? `new-education-${index}`}>
             <Field className="full-width" label="Institution" htmlFor={`profile-institution-${index}`}><Input id={`profile-institution-${index}`} value={item.institution} onChange={(event) => setDraft({ ...draft, education: education.map((value, i) => i === index ? { ...value, institution: event.target.value } : value) })} /></Field>
             <Field label="Degree" htmlFor={`profile-degree-${index}`}><Input id={`profile-degree-${index}`} value={item.degree ?? ""} onChange={(event) => setDraft({ ...draft, education: education.map((value, i) => i === index ? { ...value, degree: event.target.value || null, provenance: "USER_ENTERED" } : value) })} /></Field>
@@ -106,7 +106,7 @@ export function ProfileView() {
         </Card>
 
         <Card className="profile-card">
-          <h2>Job preferences</h2>
+          <h2>What you’re looking for</h2>
           <div className="form-stack">
             <Field label="Preferred location" htmlFor="profile-location"><Input id="profile-location" value={draft.location_text ?? ""} onChange={(event) => setDraft({ ...draft, location_text: event.target.value || null })} /></Field>
             <div><strong>Work modes</strong><div className="choice-grid" style={{ marginTop: 8 }}>{["REMOTE", "HYBRID", "ONSITE"].map((mode) => <label className="choice" key={mode}><input type="checkbox" checked={workModes.includes(mode)} onChange={(event) => setDraft({ ...draft, work_modes: event.target.checked ? [...workModes, mode] : workModes.filter((value) => value !== mode) })} />{mode}</label>)}</div></div>

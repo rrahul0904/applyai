@@ -1,5 +1,5 @@
-import { AlertsWorkspace } from "@/components/platform-workspaces";
+import { CandidateAlertsView } from "@/components/candidate-alerts-view";
 
 export default function AlertsPage() {
-  return <AlertsWorkspace />;
+  return <CandidateAlertsView />;
 }

@@ -89,7 +89,7 @@ describe("ApplicationsView", () => {
       });
 
     renderApplications();
-    fireEvent.click(await screen.findByRole("button", { name: "Load more applications" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Show more applications" }));
 
     expect(await screen.findByText("Data Platform Manager")).toBeDefined();
     await waitFor(() => expect(api.applications.list).toHaveBeenLastCalledWith(expect.anything(), "cursor-2"));

@@ -74,29 +74,29 @@ describe("JobDetailView", () => {
     vi.mocked(api.applications.create).mockResolvedValue({ id: "application-1" } as Awaited<ReturnType<typeof api.applications.create>>);
   });
 
-  it("renders canonical job details from the API", async () => {
+  it("renders job details from the API", async () => {
     renderJobDetail();
 
     expect(await screen.findByRole("heading", { name: "Senior Data Engineer" })).toBeDefined();
     expect(screen.getAllByText("ApplyAI Labs").length).toBeGreaterThan(0);
     expect(screen.getByText("Boston, MA")).toBeDefined();
     expect(screen.getByText("Build reliable data products.")).toBeDefined();
-    expect(screen.getByRole("link", { name: "Open source listing" }).getAttribute("href")).toBe(job.source_url);
+    expect(screen.getByRole("link", { name: "View original listing" }).getAttribute("href")).toBe(job.source_url);
   });
 
   it("persists a saved job through the real mutation boundary", async () => {
     renderJobDetail();
 
-    fireEvent.click(await screen.findByRole("button", { name: /save job/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /save for later/i }));
 
     await waitFor(() => expect(api.savedJobs.save).toHaveBeenCalledWith("job-1"));
     expect(successMock).toHaveBeenCalledWith("Job saved");
   });
 
-  it("creates an application and routes to its workspace", async () => {
+  it("starts application preparation and routes to its workspace", async () => {
     renderJobDetail();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Track application" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Prepare application" }));
 
     await waitFor(() => expect(api.applications.create).toHaveBeenCalledWith("job-1"));
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/applications/application-1"));

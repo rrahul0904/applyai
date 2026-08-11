@@ -4,6 +4,7 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { SlidersHorizontal } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { JobWorkspaceTabs } from "@/components/candidate-workspace-tabs";
 import { Dialog, DialogContent, Button, EmptyState, ErrorState, Field, NativeSelect, PageHeader, Skeleton } from "@/components/ui";
 import { JobCard } from "@/components/job-card";
 import { api } from "@/lib/api/client";
@@ -106,12 +107,13 @@ export function JobsView() {
 
   return (
     <>
+      <JobWorkspaceTabs activeHref="/jobs" />
       <PageHeader
-        eyebrow="Job discovery"
-        title="Find work worth pursuing."
-        description="Search real backend records and refine the results around what matters to you."
+        eyebrow="Discover"
+        title="Find work worth your time."
+        description="Search fresh roles, then let ApplyAI help you understand the fit and prepare when one deserves your attention."
       />
-      <div className="jobs-toolbar">
+      <div className="jobs-toolbar cx-jobs-toolbar">
         <div className="search-input-wrap">
           <label className="sr-only" htmlFor="job-search">Search jobs</label>
           <span aria-hidden="true">⌕</span>
@@ -125,7 +127,7 @@ export function JobsView() {
           />
         </div>
         <NativeSelect aria-label="Sort jobs" defaultValue="recent">
-          <option value="recent">Most recent</option>
+          <option value="recent">Newest first</option>
         </NativeSelect>
         <Button className="filter-mobile-button" variant="secondary" size="icon" aria-label="Open job filters" onClick={() => setFiltersOpen(true)}>
           <SlidersHorizontal size={18} />
@@ -133,7 +135,7 @@ export function JobsView() {
       </div>
       <div className="job-layout">
         <aside className="ui-card filter-panel" aria-label="Job filters">
-          <h2>Refine results</h2>
+          <h2>What matters to you</h2>
           <SearchFilters
             values={values}
             onChange={replaceParam}
@@ -142,8 +144,8 @@ export function JobsView() {
         </aside>
         <section aria-label="Job search results">
           <div className="results-meta">
-            <span>{query.isLoading ? "Searching…" : `${jobs.length}${query.hasNextPage ? "+" : ""} jobs shown`}</span>
-            <span>Newest first</span>
+            <span>{query.isLoading ? "Finding roles…" : `${jobs.length}${query.hasNextPage ? "+" : ""} roles`}</span>
+            <span>Freshest first</span>
           </div>
           {query.isError ? (
             <ErrorState message={query.error.message} retry={() => query.refetch()} />
@@ -157,7 +159,7 @@ export function JobsView() {
               {query.hasNextPage ? (
                 <div className="load-more">
                   <Button variant="secondary" disabled={query.isFetchingNextPage} onClick={() => query.fetchNextPage()}>
-                    {query.isFetchingNextPage ? "Loading…" : "Load more jobs"}
+                    {query.isFetchingNextPage ? "Loading…" : "Show more roles"}
                   </Button>
                 </div>
               ) : null}
@@ -168,7 +170,7 @@ export function JobsView() {
         </section>
       </div>
       <Dialog open={filtersOpen} onOpenChange={setFiltersOpen}>
-        <DialogContent title="Filter jobs" description="Narrow the catalog. Changes are saved in the page URL.">
+        <DialogContent title="Filter jobs" description="Narrow the results around what matters to you.">
           <SearchFilters values={values} onChange={replaceParam} onClear={() => router.replace(pathname)} />
         </DialogContent>
       </Dialog>
@@ -181,8 +183,8 @@ function CardEmpty({ onClear }: { onClear: () => void }) {
     <div className="ui-card">
       <EmptyState
         icon={<SlidersHorizontal size={22} />}
-        title="No jobs match these filters"
-        description="Try a broader keyword, another location, or clear the current filters."
+        title="No roles match yet"
+        description="Try a broader keyword, another location, or clear your filters."
         action={<Button onClick={onClear}>Clear filters</Button>}
       />
     </div>

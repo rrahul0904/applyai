@@ -74,7 +74,7 @@ test("candidate MVP persists resume, profile, saved job, application, status, an
   await captureDemo(page, "07-onboarding-complete");
   await page.getByRole("button", { name: /Complete onboarding/i }).click();
   await page.waitForURL(/\/dashboard$/);
-  await expect(page.getByRole("heading", { name: "Make your next move count." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your next best moves." })).toBeVisible();
   await captureDemo(page, "08-dashboard");
 
   await page.goto("/jobs");
@@ -96,16 +96,16 @@ test("candidate MVP persists resume, profile, saved job, application, status, an
   await expect(page.getByRole("heading", { name: "Data Analyst" })).toBeVisible();
   await captureDemo(page, "10-job-detail");
 
-  await page.getByRole("button", { name: "Save job" }).click();
+  await page.getByRole("button", { name: "Save for later" }).click();
   await expect(page.getByRole("button", { name: "Saved" })).toBeVisible();
-  await page.getByRole("button", { name: "Track application" }).click();
+  await page.getByRole("button", { name: "Prepare application", exact: true }).click();
   await page.waitForURL(/\/applications\/[0-9a-f-]+$/i);
   const applicationPath = new URL(page.url()).pathname;
 
   await page.locator("#application-status").selectOption("APPLIED");
   await expect(page.getByText("Applied", { exact: true }).first()).toBeVisible();
   await page.locator("#application-note").fill(persistenceNote);
-  await page.getByRole("button", { name: "Add note" }).click();
+  await page.getByRole("button", { name: "Save note" }).click();
   await expect(page.getByText(persistenceNote)).toBeVisible();
   await captureDemo(page, "11-application-workspace");
 

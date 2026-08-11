@@ -29,21 +29,21 @@ test("retired beta entry resolves into the canonical candidate platform", async 
 
   await page.goto("/beta");
   await page.waitForURL(/\/matches$/);
-  await expect(page.getByRole("heading", { name: "AI Matches" })).toBeVisible();
-  await expect(page.getByText(/Scores prioritize your search/i)).toBeVisible();
-  await captureDemo(page, "17-ai-match-prioritization");
+  await expect(page.getByRole("heading", { name: "Start with the roles that fit best." })).toBeVisible();
+  await expect(page.getByText(/combine your goals, preferences, and verified experience/i)).toBeVisible();
+  await captureDemo(page, "17-recommended-jobs");
 
   await page.goto("/resume/studio");
-  await expect(page.getByRole("heading", { name: "Resume Studio" })).toBeVisible();
-  await page.getByRole("button", { name: "New variant" }).click();
-  await expect(page.getByRole("heading", { name: "New resume variant" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "A strong resume, grounded in what you've actually done." })).toBeVisible();
+  await page.getByRole("button", { name: "New resume" }).click();
+  await expect(page.getByRole("heading", { name: "New resume" })).toBeVisible();
   await page.getByLabel("Professional summary").fill("Evidence-backed platform leadership summary.");
-  await page.getByRole("button", { name: "Save revision" }).click();
-  await expect(page.getByText(/Version 2/)).toBeVisible();
-  await captureDemo(page, "18-evidence-locked-resume-studio");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByLabel("Professional summary")).toHaveValue("Evidence-backed platform leadership summary.");
+  await captureDemo(page, "18-resume-workspace");
 
   await page.goto("/alerts");
-  await expect(page.getByRole("heading", { name: "Alerts & Follow-ups" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Let the right opportunities come to you." })).toBeVisible();
   await page.getByLabel("Alert name").fill("Data platform leadership");
   await page.getByLabel("Keyword").fill("Data");
   await page.getByRole("button", { name: "Create alert" }).click();

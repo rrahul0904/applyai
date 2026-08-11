@@ -1,5 +1,5 @@
-import { AnalyticsWorkspace } from "@/components/platform-workspaces";
+import { CandidateProgressView } from "@/components/candidate-progress-view";
 
 export default function AnalyticsPage() {
-  return <AnalyticsWorkspace />;
+  return <CandidateProgressView />;
 }

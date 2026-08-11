@@ -29,26 +29,25 @@ test("canonical candidate product persists cross-workspace career state", async 
 
   await page.goto("/demo");
   await page.waitForURL(/\/dashboard$/);
-  await expect(page.getByRole("heading", { name: "Make your next move count." })).toBeVisible();
-  await captureDemo(page, "13-canonical-workspace-overview");
+  await expect(page.getByRole("heading", { name: "Your next best moves." })).toBeVisible();
+  await captureDemo(page, "13-candidate-home");
 
   await page.goto("/applications");
-  await expect(page.getByRole("heading", { name: "Track every opportunity in one place." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Keep every opportunity moving." })).toBeVisible();
   const firstApplication = page.locator("a.application-row").first();
   await expect(firstApplication).toBeVisible();
   await firstApplication.click();
   await expect(page.getByText("E2E persistence note for the candidate application.")).toBeVisible();
-  await captureDemo(page, "14-application-command-center");
+  await captureDemo(page, "14-application-workspace");
 
   await page.goto("/resume/studio");
-  await expect(page.getByRole("heading", { name: "Resume Studio" })).toBeVisible();
-  await page.getByRole("button", { name: "New variant" }).click();
+  await expect(page.getByRole("heading", { name: "A strong resume, grounded in what you've actually done." })).toBeVisible();
+  await page.getByRole("button", { name: "New resume" }).click();
   await page.getByLabel("Professional summary").fill("Verified E2E data engineer focused on reliable data platforms.");
-  await page.getByRole("button", { name: "Save revision" }).click();
-  await expect(page.getByText(/Version 2/)).toBeVisible();
+  await page.getByRole("button", { name: "Save changes" }).click();
   await page.reload();
   await expect(page.getByLabel("Professional summary")).toHaveValue("Verified E2E data engineer focused on reliable data platforms.");
-  await captureDemo(page, "15-resume-studio-persistence");
+  await captureDemo(page, "15-resume-workspace-persistence");
 
   await page.goto("/network");
   await page.getByLabel("Name").fill("E2E Hiring Manager");
@@ -59,8 +58,8 @@ test("canonical candidate product persists cross-workspace career state", async 
   await expect(page.getByText("E2E Hiring Manager")).toBeVisible();
 
   await page.goto("/analytics");
-  await expect(page.getByRole("heading", { name: "Candidate Analytics" })).toBeVisible();
-  await expect(page.getByText("Resume variants")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "See where your search is moving." })).toBeVisible();
+  await expect(page.getByText("Resume versions")).toBeVisible();
   await expect(page.getByText("Network contacts")).toBeVisible();
-  await captureDemo(page, "16-candidate-analytics");
+  await captureDemo(page, "16-candidate-progress");
 });

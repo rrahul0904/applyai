@@ -285,7 +285,7 @@ export function CareerIntelligencePanel({ jobId }: { jobId: string }) {
         </div>
       ) : (
         <p className={styles.muted}>
-          Choose a step above when you're ready. ApplyAI will keep the result attached to this role for you to review.
+          Choose a step above when you are ready. ApplyAI will keep the result attached to this role for you to review.
         </p>
       )}
     </Card>

@@ -49,11 +49,11 @@ describe("SavedJobsView", () => {
     });
   });
 
-  it("renders an actionable empty state", async () => {
+  it("renders an actionable empty shortlist", async () => {
     renderSavedJobs();
 
-    expect(await screen.findByText("No saved jobs yet")).toBeDefined();
-    expect(screen.getByRole("link", { name: "Search jobs" }).getAttribute("href")).toBe("/jobs");
+    expect(await screen.findByText("Your shortlist is empty")).toBeDefined();
+    expect(screen.getByRole("link", { name: "Explore jobs" }).getAttribute("href")).toBe("/jobs");
   });
 
   it("renders persisted saved jobs", async () => {
@@ -83,7 +83,7 @@ describe("SavedJobsView", () => {
     renderSavedJobs();
     expect(await screen.findByText("Senior Data Engineer")).toBeDefined();
 
-    fireEvent.click(screen.getByRole("button", { name: "Load more saved jobs" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show more saved roles" }));
 
     expect(await screen.findByText("Staff Data Engineer")).toBeDefined();
     expect(screen.getByText("Senior Data Engineer")).toBeDefined();

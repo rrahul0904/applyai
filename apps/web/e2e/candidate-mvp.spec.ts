@@ -98,7 +98,7 @@ test("candidate MVP persists resume, profile, saved job, application, status, an
 
   await page.getByRole("button", { name: "Save for later" }).click();
   await expect(page.getByRole("button", { name: "Saved" })).toBeVisible();
-  await page.getByRole("button", { name: "Prepare application" }).click();
+  await page.getByRole("button", { name: "Prepare application", exact: true }).click();
   await page.waitForURL(/\/applications\/[0-9a-f-]+$/i);
   const applicationPath = new URL(page.url()).pathname;
 

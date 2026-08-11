@@ -16,6 +16,21 @@ export type ApplicationAgentField = {
   status: string;
 };
 
+export type ApplicationDocumentMetadata = {
+  id?: string | null;
+  artifact_id?: string | null;
+  status?: string;
+  body?: string | null;
+  candidate_verified?: boolean;
+  storage_key?: string;
+  content_type?: string;
+  size?: number;
+  filename?: string;
+  truth_policy?: string;
+  generated_at?: string;
+  reviewed_at?: string;
+};
+
 export type ApplicationExecution = {
   id: string;
   application_id: string;
@@ -28,7 +43,7 @@ export type ApplicationExecution = {
   fields: ApplicationAgentField[];
   review_items: Array<Record<string, unknown>>;
   missing_fields: Array<Record<string, unknown>>;
-  documents: Record<string, Record<string, unknown>>;
+  documents: Record<string, ApplicationDocumentMetadata>;
   validation: Record<string, unknown>;
   browser_handoff: Record<string, unknown>;
   confirmation_url: string | null;
@@ -81,6 +96,13 @@ export const applicationAgentApi = {
     }),
   latest: (applicationId: string, signal?: AbortSignal) =>
     request<ApplicationExecution>(`/application-agent/applications/${applicationId}/executions/latest`, { signal }),
+  generateDocuments: (executionId: string) =>
+    request<ApplicationExecution>(`/application-agent/executions/${executionId}/documents/generate`, { method: "POST" }),
+  reviewDocument: (executionId: string, documentType: "resume" | "cover_letter", candidateVerified = true) =>
+    request<ApplicationExecution>(`/application-agent/executions/${executionId}/documents/${documentType}`, {
+      method: "PATCH",
+      body: JSON.stringify({ candidate_verified: candidateVerified }),
+    }),
   reviewField: (executionId: string, fieldId: string, value: unknown, remember: boolean) =>
     request<ApplicationExecution>(`/application-agent/executions/${executionId}/fields/${encodeURIComponent(fieldId)}`, {
       method: "PATCH",

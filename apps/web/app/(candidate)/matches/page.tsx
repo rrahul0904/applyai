@@ -1,5 +1,5 @@
-import { MatchesWorkspace } from "@/components/platform-workspaces";
+import { RecommendedJobsView } from "@/components/recommended-jobs-view";
 
 export default function MatchesPage() {
-  return <MatchesWorkspace />;
+  return <RecommendedJobsView />;
 }

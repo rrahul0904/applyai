@@ -18,7 +18,12 @@ export function ApplicationsView() {
 
   return (
     <>
-      <PageHeader eyebrow="Applications" title="Track every opportunity in one place." description="Status changes and notes are persisted to your account and survive future sessions." />
+      <PageHeader
+        eyebrow="Applications"
+        title="Keep every opportunity moving."
+        description="See what needs attention, what changed, and where to pick up next."
+        action={<Link className="ui-button ui-button-primary" href="/jobs">Find roles</Link>}
+      />
       {applications.isError ? <ErrorState message={applications.error.message} retry={() => applications.refetch()} /> : applications.isLoading ? (
         <div className="ui-card application-list">{[1, 2, 3].map((item) => <Skeleton className="skeleton-row" key={item} />)}</div>
       ) : items.length ? (
@@ -36,13 +41,13 @@ export function ApplicationsView() {
           {applications.hasNextPage ? (
             <div className="button-row" style={{ marginTop: 16 }}>
               <Button variant="secondary" disabled={applications.isFetchingNextPage} onClick={() => applications.fetchNextPage()}>
-                {applications.isFetchingNextPage ? "Loading…" : "Load more applications"}
+                {applications.isFetchingNextPage ? "Loading…" : "Show more applications"}
               </Button>
             </div>
           ) : null}
         </>
       ) : (
-        <div className="ui-card"><EmptyState icon={<BriefcaseBusiness size={22} />} title="No applications yet" description="Open a job and start tracking your application." action={<Link className="ui-button ui-button-primary" href="/jobs">Explore jobs</Link>} /></div>
+        <div className="ui-card"><EmptyState icon={<BriefcaseBusiness size={22} />} title="No applications yet" description="When a role looks promising, choose Prepare application from the job page and it will appear here." action={<Link className="ui-button ui-button-primary" href="/jobs">Explore jobs</Link>} /></div>
       )}
     </>
   );

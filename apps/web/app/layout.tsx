@@ -7,6 +7,7 @@ import "./platform-overrides.css";
 import "./candidate-cx.css";
 import "./candidate-cx-progress.css";
 import "./candidate-cx-application.css";
+import "./candidate-cx-resume.css";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 const geistMono = Geist_Mono({

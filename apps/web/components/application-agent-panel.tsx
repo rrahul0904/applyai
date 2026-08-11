@@ -30,7 +30,7 @@ async function waitForRun(run: AIJobRun): Promise<AIJobRun> {
 
 function toneForState(state: string): "neutral" | "success" | "warning" | "info" | "danger" {
   if (state === "CONFIRMED") return "success";
-  if (["FAILED"].includes(state)) return "danger";
+  if (state === "FAILED") return "danger";
   if (["NEEDS_INPUT", "REVIEW_REQUIRED", "HUMAN_ACTION_REQUIRED", "SUBMITTED"].includes(state)) return "warning";
   if (["READY_FOR_APPROVAL", "READY_FOR_EXECUTION", "BROWSER_QUEUED", "BROWSER_RUNNING"].includes(state)) return "info";
   return "neutral";
@@ -62,13 +62,13 @@ function FieldEditor({
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "We couldn't save this answer."),
   });
-  const needsAction = item.status === "NEEDS_INPUT" || item.requires_review || !item.candidate_verified;
+  const needsAction = item.status === "NEEDS_INPUT" || item.status === "REVIEW_REQUIRED" || item.requires_review;
   if (!needsAction) {
     return (
       <div className="note" style={{ display: "grid", gap: 6 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
           <strong>{item.label}</strong>
-          <Badge tone={item.sensitive ? "warning" : "success"}>{item.sensitive ? "Pre-approved" : "Verified"}</Badge>
+          <Badge tone={item.sensitive ? "warning" : "success"}>{item.sensitive ? "Pre-approved" : "Verified source"}</Badge>
         </div>
         <p>{valueText(item.value) || "—"}</p>
         <span className="muted">{titleCase(item.source_kind)} · {Math.round(item.confidence * 100)}% confidence</span>
@@ -127,11 +127,12 @@ export function ApplicationAgentPanel({ applicationId, jobId }: { applicationId:
     mutationFn: async () => {
       await waitForRun(await api.careerV2.start(jobId, "resume-tailoring"));
       await waitForRun(await api.careerV2.start(jobId, "application-copilot"));
-      return applicationAgentApi.prepare(applicationId, "SMART");
+      const prepared = await applicationAgentApi.prepare(applicationId, "SMART");
+      return applicationAgentApi.generateDocuments(prepared.id);
     },
     onSuccess: (data) => {
       setExecution(data);
-      toast.success("Application package prepared");
+      toast.success("Application package and documents prepared");
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "We couldn't prepare this application."),
   });
@@ -152,6 +153,16 @@ export function ApplicationAgentPanel({ applicationId, jobId }: { applicationId:
       toast.success("Application sent to the browser agent");
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "We couldn't start browser execution."),
+  });
+
+  const documentReview = useMutation({
+    mutationFn: ({ executionId, documentType }: { executionId: string; documentType: "resume" | "cover_letter" }) =>
+      applicationAgentApi.reviewDocument(executionId, documentType, true),
+    onSuccess: (data) => {
+      setExecution(data);
+      toast.success("Document approved for application upload");
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "We couldn't approve this document."),
   });
 
   if (execution.isLoading) {
@@ -186,7 +197,7 @@ export function ApplicationAgentPanel({ applicationId, jobId }: { applicationId:
     );
   }
 
-  const actionableFields = item.fields.filter((field) => field.status === "NEEDS_INPUT" || field.requires_review || !field.candidate_verified);
+  const actionableFields = item.fields.filter((field) => field.status === "NEEDS_INPUT" || field.status === "REVIEW_REQUIRED" || field.requires_review);
   const readyFields = item.fields.filter((field) => !actionableFields.includes(field));
   const canApprove = item.missing_fields.length === 0 && item.review_items.length === 0 && item.state === "READY_FOR_APPROVAL";
   const humanAction = item.browser_handoff?.human_action as Record<string, unknown> | undefined;
@@ -224,15 +235,34 @@ export function ApplicationAgentPanel({ applicationId, jobId }: { applicationId:
         <div>
           <h3>Documents</h3>
           <div className="list-stack" style={{ marginTop: 8 }}>
-            <div className="note">
+            <div className="note" style={{ display: "grid", gap: 6 }}>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}><FileText size={17} /><strong>Tailored resume</strong></div>
-              <p>{resume?.artifact_id ? `Prepared · ${String(resume.status || "review required")}` : "Not available"}</p>
+              <p>{resume?.storage_key ? `${resume.filename || "Tailored resume"} · ready for secure upload` : "Resume document has not been generated."}</p>
+              <span className="muted">Canonical profile + candidate-approved tailoring only.</span>
               <Link href={`/jobs/${jobId}`}>Review resume evidence and tailoring</Link>
             </div>
-            <details className="note">
-              <summary><strong>Cover letter</strong></summary>
-              <p style={{ whiteSpace: "pre-wrap", marginTop: 10 }}>{String(cover?.body || "Cover letter not available")}</p>
-            </details>
+            <div className="note" style={{ display: "grid", gap: 8 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+                <strong>Cover letter</strong>
+                <Badge tone={cover?.candidate_verified ? "success" : "warning"}>{cover?.candidate_verified ? "Approved" : "Review before upload"}</Badge>
+              </div>
+              <details>
+                <summary>Read cover letter</summary>
+                <p style={{ whiteSpace: "pre-wrap", marginTop: 10 }}>{String(cover?.body || "Cover letter not available")}</p>
+              </details>
+              {cover?.body && !cover?.candidate_verified ? (
+                <div className="button-row">
+                  <Button
+                    size="small"
+                    variant="secondary"
+                    onClick={() => documentReview.mutate({ executionId: item.id, documentType: "cover_letter" })}
+                    disabled={documentReview.isPending}
+                  >
+                    <ShieldCheck size={15} />Approve cover letter for upload
+                  </Button>
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
 
@@ -248,7 +278,7 @@ export function ApplicationAgentPanel({ applicationId, jobId }: { applicationId:
 
         {readyFields.length ? (
           <details>
-            <summary><strong>{readyFields.length} verified fields ready</strong></summary>
+            <summary><strong>{readyFields.length} verified-source fields ready</strong></summary>
             <div className="list-stack" style={{ marginTop: 8 }}>
               {readyFields.map((field) => <FieldEditor key={field.field_id} execution={item} item={field} onSaved={setExecution} />)}
             </div>

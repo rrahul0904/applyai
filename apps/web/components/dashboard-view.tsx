@@ -1,21 +1,30 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Bookmark, BriefcaseBusiness, Search } from "lucide-react";
+import {
+  ArrowRight,
+  Bookmark,
+  BriefcaseBusiness,
+  CheckCircle2,
+  Search,
+  Sparkles,
+  Target,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import {
-  Badge,
-  Card,
-  EmptyState,
-  ErrorState,
-  PageHeader,
-  SectionHeader,
-  Skeleton,
-} from "@/components/ui";
+import { useEffect, useMemo, useState } from "react";
+import { Badge, Card, ErrorState, PageHeader, Skeleton } from "@/components/ui";
 import { api } from "@/lib/api/client";
 import { formatDate, titleCase } from "@/lib/utils";
+
+function matchLabel(decision?: string) {
+  if (!decision) return "Worth a look";
+  const normalized = decision.toUpperCase();
+  if (normalized === "APPLY_NOW") return "Apply now";
+  if (normalized === "STRONG") return "Strong fit";
+  if (normalized === "CONSIDER") return "Worth considering";
+  return titleCase(decision);
+}
 
 export function DashboardView() {
   const router = useRouter();
@@ -23,7 +32,12 @@ export function DashboardView() {
   const me = useQuery({ queryKey: ["me"], queryFn: ({ signal }) => api.auth.me(signal) });
   const jobs = useQuery({
     queryKey: ["jobs", "dashboard"],
-    queryFn: ({ signal }) => api.jobs.search(new URLSearchParams({ limit: "4" }), signal),
+    queryFn: ({ signal }) => api.jobs.search(new URLSearchParams({ limit: "6" }), signal),
+  });
+  const matches = useQuery({
+    queryKey: ["career-v2-matches", "dashboard"],
+    queryFn: ({ signal }) => api.careerV2.matches(signal),
+    retry: false,
   });
   const saved = useQuery({
     queryKey: ["saved-jobs", "dashboard"],
@@ -33,128 +47,167 @@ export function DashboardView() {
     queryKey: ["applications", "dashboard"],
     queryFn: ({ signal }) => api.applications.list(signal),
   });
-  const savedItems = saved.data?.items ?? [];
-  const applicationItems = applications.data?.items ?? [];
 
   useEffect(() => {
     if (me.data && !me.data.onboarding_completed) router.replace("/onboarding");
   }, [me.data, router]);
 
+  const savedItems = saved.data?.items ?? [];
+  const applicationItems = applications.data?.items ?? [];
+  const matchByJob = useMemo(
+    () => new Map((matches.data?.items ?? []).map((item) => [item.job_id, item])),
+    [matches.data?.items],
+  );
+  const recommendedCount = (matches.data?.items ?? []).filter((item) =>
+    ["APPLY_NOW", "STRONG"].includes(item.decision.toUpperCase()),
+  ).length;
+  const topJob = jobs.data?.items.find((job) => {
+    const match = matchByJob.get(job.id);
+    return match && ["APPLY_NOW", "STRONG", "CONSIDER"].includes(match.decision.toUpperCase());
+  }) ?? jobs.data?.items[0];
+  const topMatch = topJob ? matchByJob.get(topJob.id) : undefined;
+  const activeApplication = applicationItems.find((item) =>
+    !["REJECTED", "WITHDRAWN", "OFFER"].includes(item.current_status.toUpperCase()),
+  ) ?? applicationItems[0];
+
   if (me.isError || jobs.isError || saved.isError || applications.isError) {
     return <ErrorState retry={() => location.reload()} />;
   }
+
   return (
     <>
       <PageHeader
-        eyebrow="Your workspace"
-        title="Make your next move count."
-        description="Pick up your search, revisit promising roles, and keep applications moving."
+        eyebrow="Your search"
+        title="Your next best moves."
+        description="ApplyAI keeps the opportunities, preparation, and follow-ups that matter most in one calm workspace."
+        action={<Link className="ui-button ui-button-primary" href="/jobs"><Search size={17} />Explore jobs</Link>}
       />
-      <div className="dashboard-grid">
-        <div className="dashboard-stack">
-          <Card className="dashboard-panel">
-            <SectionHeader
-              title="Continue your search"
-              description="Search the current canonical job catalog."
-            />
-            <form
-              className="quick-search"
-              onSubmit={(event) => {
-                event.preventDefault();
-                router.push(query ? `/jobs?keyword=${encodeURIComponent(query)}` : "/jobs");
-              }}
-            >
-              <label className="sr-only" htmlFor="dashboard-search">Search jobs</label>
-              <input
-                className="ui-input"
-                id="dashboard-search"
-                placeholder="Job title, skill, or company"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-              <button className="ui-button ui-button-primary" type="submit">
-                <Search size={17} /> Search
-              </button>
-            </form>
-          </Card>
 
-          <Card className="dashboard-panel">
-            <SectionHeader
-              title="Recent jobs"
-              description="Fresh roles from the searchable catalog."
-              action={<Link href="/jobs" className="text-button">View all <ArrowRight size={14} /></Link>}
-            />
-            {jobs.isLoading ? (
-              <div className="list-stack">
-                {[1, 2, 3].map((item) => <Skeleton key={item} className="skeleton-row" />)}
-              </div>
-            ) : (
-              <div className="list-stack">
-                {jobs.data?.items.map((job) => (
-                  <Link className="application-row" href={`/jobs/${job.id}`} key={job.id}>
-                    <div>
-                      <strong className="role">{job.title}</strong>
-                      <span className="company">{job.company_name} · {job.location ?? "Location flexible"}</span>
-                    </div>
-                    <Badge tone="info">{titleCase(job.work_mode ?? "Flexible")}</Badge>
-                    <span className="activity">{formatDate(job.posted_at)}</span>
-                    <ArrowRight size={17} />
-                  </Link>
-                ))}
-              </div>
-            )}
-          </Card>
-        </div>
-
-        <div className="dashboard-stack">
-          <Card className="dashboard-panel">
-            <SectionHeader
-              title="Saved jobs"
-              action={<Link href="/saved" className="text-button">See all</Link>}
-            />
-            {saved.isLoading ? <Skeleton className="skeleton-tall" /> : savedItems.length ? (
-              <div className="list-stack">
-                {savedItems.slice(0, 3).map((job) => (
-                  <Link className="nav-link" href={`/jobs/${job.id}`} key={job.id}>
-                    <Bookmark size={17} />
-                    <span>{job.title}<small className="muted"> · {job.company_name}</small></span>
-                  </Link>
-                ))}
-              </div>
-            ) : (
-              <EmptyState
-                icon={<Bookmark size={22} />}
-                title="No saved jobs yet"
-                description="Save promising opportunities and they’ll appear here."
-                action={<Link className="ui-button ui-button-secondary ui-button-small" href="/jobs">Browse jobs</Link>}
-              />
-            )}
-          </Card>
-          <Card className="dashboard-panel">
-            <SectionHeader
-              title="Applications"
-              action={<Link href="/applications" className="text-button">See all</Link>}
-            />
-            {applications.isLoading ? <Skeleton className="skeleton-tall" /> : applicationItems.length ? (
-              <div className="list-stack">
-                {applicationItems.slice(0, 4).map((application) => (
-                  <Link className="nav-link" href={`/applications/${application.id}`} key={application.id}>
-                    <BriefcaseBusiness size={17} />
-                    <span>{titleCase(application.current_status)}<small className="muted"> · updated {formatDate(application.updated_at)}</small></span>
-                  </Link>
-                ))}
-              </div>
-            ) : (
-              <EmptyState
-                icon={<BriefcaseBusiness size={22} />}
-                title="No applications yet"
-                description="Track every opportunity from preparation through offer."
-                action={<Link className="ui-button ui-button-secondary ui-button-small" href="/jobs">Explore jobs</Link>}
-              />
-            )}
-          </Card>
-        </div>
+      <div className="cx-home-metrics" aria-label="Job search overview">
+        <div><strong>{matches.isLoading ? "—" : recommendedCount}</strong><span>strong matches</span></div>
+        <div><strong>{applicationItems.length}</strong><span>applications</span></div>
+        <div><strong>{savedItems.length}</strong><span>saved roles</span></div>
       </div>
+
+      <section className="cx-next-section" aria-labelledby="next-best-moves">
+        <div className="cx-section-heading">
+          <div>
+            <p className="eyebrow">Recommended today</p>
+            <h2 id="next-best-moves">Focus on these first</h2>
+          </div>
+          <Link href="/matches" className="text-button">See recommendations <ArrowRight size={14} /></Link>
+        </div>
+
+        <div className="cx-action-grid">
+          {jobs.isLoading ? (
+            <Skeleton className="cx-action-card cx-action-card-featured" />
+          ) : topJob ? (
+            <Card className="cx-action-card cx-action-card-featured">
+              <div className="cx-action-icon"><Sparkles size={20} /></div>
+              <div className="cx-action-copy">
+                <div className="cx-action-kicker">
+                  <span>Best opportunity to review</span>
+                  {topMatch ? <Badge tone="success">{Math.round(topMatch.final_score)}% match</Badge> : <Badge tone="info">Fresh role</Badge>}
+                </div>
+                <h3>{topJob.title}</h3>
+                <p className="cx-action-meta">{topJob.company_name} · {topJob.location ?? "Location flexible"}</p>
+                <p>{topMatch ? `${matchLabel(topMatch.decision)} · ${titleCase(topMatch.fit_band)} fit based on your verified profile and preferences.` : "A fresh role from your current job search."}</p>
+              </div>
+              <Link className="ui-button ui-button-primary" href={`/jobs/${topJob.id}`}>Review & prepare <ArrowRight size={16} /></Link>
+            </Card>
+          ) : (
+            <Card className="cx-action-card cx-action-card-featured">
+              <div className="cx-action-icon"><Search size={20} /></div>
+              <div className="cx-action-copy"><h3>Find your next opportunity</h3><p>Set your search in motion and ApplyAI will keep the strongest roles easy to find.</p></div>
+              <Link className="ui-button ui-button-primary" href="/jobs">Browse jobs</Link>
+            </Card>
+          )}
+
+          <Card className="cx-action-card">
+            <div className="cx-action-icon"><BriefcaseBusiness size={20} /></div>
+            <div className="cx-action-copy">
+              <span className="cx-action-label">Application momentum</span>
+              {activeApplication ? (
+                <>
+                  <h3>{activeApplication.job.title}</h3>
+                  <p className="cx-action-meta">{activeApplication.job.company_name}</p>
+                  <p>{titleCase(activeApplication.current_status)} · updated {formatDate(activeApplication.updated_at)}</p>
+                </>
+              ) : (
+                <><h3>No applications yet</h3><p>When a role feels right, start preparation from the job page and keep everything together.</p></>
+              )}
+            </div>
+            <Link className="ui-button ui-button-secondary" href={activeApplication ? `/applications/${activeApplication.id}` : "/jobs"}>{activeApplication ? "Continue" : "Find a role"}<ArrowRight size={16} /></Link>
+          </Card>
+
+          <Card className="cx-action-card">
+            <div className="cx-action-icon"><Target size={20} /></div>
+            <div className="cx-action-copy">
+              <span className="cx-action-label">Career Coach</span>
+              <h3>Make your evidence work harder</h3>
+              <p>Your verified achievements power matching, resume tailoring, and interview preparation without inventing experience.</p>
+            </div>
+            <Link className="ui-button ui-button-secondary" href="/career">Open Career Coach <ArrowRight size={16} /></Link>
+          </Card>
+        </div>
+      </section>
+
+      <section className="cx-home-lower" aria-label="More opportunities and saved work">
+        <Card className="cx-home-panel">
+          <div className="cx-section-heading compact">
+            <div><p className="eyebrow">More opportunities</p><h2>Fresh roles</h2></div>
+            <Link href="/jobs" className="text-button">View all <ArrowRight size={14} /></Link>
+          </div>
+          <div className="cx-clean-list">
+            {(jobs.data?.items ?? []).slice(0, 4).map((job) => {
+              const career = matchByJob.get(job.id);
+              return (
+                <Link href={`/jobs/${job.id}`} className="cx-clean-row" key={job.id}>
+                  <div className="cx-company-avatar" aria-hidden="true">{job.company_name.charAt(0)}</div>
+                  <div><strong>{job.title}</strong><span>{job.company_name} · {job.location ?? "Location flexible"}</span></div>
+                  {career ? <Badge tone="success">{Math.round(career.final_score)}%</Badge> : null}
+                  <ArrowRight size={17} />
+                </Link>
+              );
+            })}
+          </div>
+        </Card>
+
+        <Card className="cx-home-panel">
+          <div className="cx-section-heading compact">
+            <div><p className="eyebrow">Saved for later</p><h2>Your shortlist</h2></div>
+            <Link href="/saved" className="text-button">See saved</Link>
+          </div>
+          {savedItems.length ? (
+            <div className="cx-shortlist">
+              {savedItems.slice(0, 4).map((job) => (
+                <Link href={`/jobs/${job.id}`} key={job.id}>
+                  <Bookmark size={16} />
+                  <span><strong>{job.title}</strong><small>{job.company_name}</small></span>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <div className="cx-gentle-empty">
+              <CheckCircle2 size={20} />
+              <p>Save roles you want to compare later. Your shortlist will stay here without cluttering today's priorities.</p>
+            </div>
+          )}
+        </Card>
+      </section>
+
+      <Card className="cx-search-strip">
+        <div><strong>Looking for something specific?</strong><span>Search by title, skill, or company.</span></div>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            router.push(query ? `/jobs?keyword=${encodeURIComponent(query)}` : "/jobs");
+          }}
+        >
+          <input className="ui-input" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="e.g. Data Engineering Manager" aria-label="Search jobs" />
+          <button className="ui-button ui-button-primary" type="submit"><Search size={17} />Search</button>
+        </form>
+      </Card>
     </>
   );
 }

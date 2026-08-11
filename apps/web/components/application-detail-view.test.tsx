@@ -111,7 +111,7 @@ describe("ApplicationDetailView", () => {
     vi.mocked(api.applications.deleteNote).mockResolvedValue(undefined);
   });
 
-  it("renders immutable timeline and persisted notes", async () => {
+  it("renders timeline and persisted notes", async () => {
     renderApplicationDetail();
 
     expect(await screen.findByRole("heading", { name: "Senior Data Engineer" })).toBeDefined();
@@ -122,7 +122,7 @@ describe("ApplicationDetailView", () => {
   it("persists a status change", async () => {
     renderApplicationDetail();
 
-    const status = await screen.findByLabelText("Application status");
+    const status = await screen.findByLabelText("Application stage");
     fireEvent.change(status, { target: { value: "INTERVIEW" } });
 
     await waitFor(() => expect(api.applications.updateStatus).toHaveBeenCalledWith("application-1", "INTERVIEW"));
@@ -134,7 +134,7 @@ describe("ApplicationDetailView", () => {
 
     const note = await screen.findByLabelText("Add a private note");
     fireEvent.change(note, { target: { value: "  Send portfolio  " } });
-    fireEvent.click(screen.getByRole("button", { name: "Add note" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save note" }));
 
     await waitFor(() => expect(api.applications.addNote).toHaveBeenCalledWith("application-1", "Send portfolio"));
     expect(successMock).toHaveBeenCalledWith("Note added");

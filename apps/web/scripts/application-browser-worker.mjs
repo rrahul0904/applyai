@@ -31,6 +31,17 @@ async function api(path, init = {}) {
   return response.status === 204 ? null : response.json();
 }
 
+async function apiBuffer(path) {
+  const response = await fetch(`${API_URL}${path}`, {
+    headers: { "x-applyai-internal-token": INTERNAL_TOKEN },
+  });
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`ApplyAI document API ${response.status}: ${body.slice(0, 1000)}`);
+  }
+  return Buffer.from(await response.arrayBuffer());
+}
+
 async function hasSecurityChallenge(page) {
   for (const selector of [
     'iframe[src*="recaptcha"]',
@@ -50,6 +61,24 @@ async function hasSecurityChallenge(page) {
     "captcha verification",
     "cloudflare verification",
   ].some((phrase) => body.includes(phrase));
+}
+
+async function controlHints(control) {
+  return control.evaluate((element) => {
+    const id = element.getAttribute("id") || "";
+    const directLabel = id ? document.querySelector(`label[for=${JSON.stringify(id)}]`)?.textContent || "" : "";
+    const wrappingLabel = element.closest("label")?.textContent || "";
+    const group = element.closest("fieldset")?.querySelector("legend")?.textContent || "";
+    return [
+      directLabel,
+      wrappingLabel,
+      group,
+      element.getAttribute("name") || "",
+      id,
+      element.getAttribute("placeholder") || "",
+      element.getAttribute("aria-label") || "",
+    ].join(" ");
+  }).catch(() => "");
 }
 
 async function findControl(page, field) {
@@ -76,13 +105,7 @@ async function findControl(page, field) {
   const count = Math.min(await controls.count(), 250);
   for (let index = 0; index < count; index += 1) {
     const control = controls.nth(index);
-    const hints = await control.evaluate((element) => [
-      element.getAttribute("name") || "",
-      element.getAttribute("id") || "",
-      element.getAttribute("placeholder") || "",
-      element.getAttribute("aria-label") || "",
-    ].join(" ")).catch(() => "");
-    const haystack = norm(hints);
+    const haystack = norm(await controlHints(control));
     if (haystack && (haystack.includes(needle) || needle.includes(haystack))) return control;
   }
   return null;
@@ -112,7 +135,7 @@ async function fillField(page, field) {
   const type = (await control.getAttribute("type")) || "";
   const value = String(field.value);
 
-  if (type === "file") return { field_id: field.field_id, status: "FILE_UPLOAD_REQUIRED" };
+  if (type === "file") return { field_id: field.field_id, status: "FILE_CONTROL" };
   if (tag === "select") {
     return { field_id: field.field_id, status: (await selectOption(control, value)) ? "FILLED" : "OPTION_NOT_FOUND" };
   }
@@ -132,6 +155,70 @@ async function fillField(page, field) {
   }
   await control.fill(value);
   return { field_id: field.field_id, status: "FILLED" };
+}
+
+function classifyFileControl(hints, index) {
+  const value = norm(hints);
+  if (value.includes("cover") || value.includes("letter")) return "cover_letter";
+  if (value.includes("resume") || value.includes("résumé") || value.includes("cv") || value.includes("curriculum vitae")) return "resume";
+  return index === 0 ? "resume" : null;
+}
+
+async function uploadVerifiedDocuments(page, execution, alreadyUploaded) {
+  const inputs = page.locator('input[type="file"]');
+  const count = Math.min(await inputs.count(), 20);
+  const results = [];
+  for (let index = 0; index < count; index += 1) {
+    const input = inputs.nth(index);
+    if (!(await input.isVisible().catch(() => false))) continue;
+    const hints = await controlHints(input);
+    const kind = classifyFileControl(hints, index);
+    if (!kind || alreadyUploaded.has(`${kind}:${index}`)) continue;
+    const metadata = execution.documents?.[kind] || {};
+    const required = await input.getAttribute("required") !== null || await input.getAttribute("aria-required") === "true";
+    if (!metadata.storage_key || !metadata.candidate_verified) {
+      if (required || kind === "resume") {
+        return {
+          humanAction: {
+            reason: "DOCUMENT_REVIEW_REQUIRED",
+            message: `${kind === "resume" ? "Resume" : "Cover letter"} upload requires a generated, candidate-verified document.`,
+            document_type: kind,
+          },
+          results,
+        };
+      }
+      continue;
+    }
+    const buffer = await apiBuffer(`/api/v1/internal/application-agent/executions/${execution.id}/documents/${kind}`);
+    await input.setInputFiles({
+      name: String(metadata.filename || (kind === "resume" ? "tailored-resume.docx" : "cover-letter.docx")),
+      mimeType: String(metadata.content_type || "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+      buffer,
+    });
+    alreadyUploaded.add(`${kind}:${index}`);
+    results.push({ field_id: `document:${kind}`, status: "UPLOADED", document_type: kind });
+  }
+  return { humanAction: null, results };
+}
+
+async function unmappedRequiredControls(page, fields) {
+  const mappedLabels = fields.map((field) => norm(`${field.label || ""} ${field.field_id || ""}`)).filter(Boolean);
+  const controls = page.locator("input, textarea, select");
+  const count = Math.min(await controls.count(), 250);
+  const missing = [];
+  for (let index = 0; index < count; index += 1) {
+    const control = controls.nth(index);
+    if (!(await control.isVisible().catch(() => false))) continue;
+    const type = norm(await control.getAttribute("type"));
+    if (["hidden", "submit", "button", "reset", "image", "file"].includes(type)) continue;
+    const required = await control.getAttribute("required") !== null || await control.getAttribute("aria-required") === "true";
+    if (!required) continue;
+    const hints = norm(await controlHints(control));
+    if (!hints) continue;
+    const mapped = mappedLabels.some((label) => label.includes(hints) || hints.includes(label) || label.split(" ").filter(Boolean).some((word) => word.length > 4 && hints.includes(word)));
+    if (!mapped) missing.push({ label: hints.slice(0, 300), type: type || await control.evaluate((element) => element.tagName.toLowerCase()) });
+  }
+  return missing.slice(0, 25);
 }
 
 async function prepareProvider(page, provider) {
@@ -202,6 +289,7 @@ async function executeOne(browser, execution) {
   const context = await browser.newContext();
   const page = await context.newPage();
   const results = [];
+  const uploadedDocuments = new Set();
   let submitted = false;
   try {
     await page.goto(execution.target_url, { waitUntil: "domcontentloaded", timeout: 45000 });
@@ -209,18 +297,19 @@ async function executeOne(browser, execution) {
 
     for (let pageNumber = 0; pageNumber < 12; pageNumber += 1) {
       if (await hasSecurityChallenge(page)) {
-        return human("SECURITY_CHALLENGE", "Complete the CAPTCHA or security challenge in the browser, then resume the application.", page, results, { page_number: pageNumber });
+        return human("SECURITY_CHALLENGE", "A CAPTCHA or security challenge requires manual completion. ApplyAI will not bypass access controls.", page, results, { page_number: pageNumber });
+      }
+
+      const uploads = await uploadVerifiedDocuments(page, execution, uploadedDocuments);
+      results.push(...uploads.results);
+      if (uploads.humanAction) {
+        return human(uploads.humanAction.reason, uploads.humanAction.message, page, results, uploads.humanAction);
       }
 
       for (const field of execution.fields) {
         if (results.some((item) => item.field_id === field.field_id && item.status === "FILLED")) continue;
         const result = await fillField(page, field);
-        if (!["OPTIONAL_NOT_FOUND", "MISSING_CONTROL"].includes(result.status)) results.push(result);
-      }
-
-      const upload = results.find((item) => item.status === "FILE_UPLOAD_REQUIRED");
-      if (upload) {
-        return human("FILE_UPLOAD_REQUIRED", "This employer requires a file upload that is not yet available to the browser worker as a secure file handle.", page, results, { field_id: upload.field_id });
+        if (result.status !== "OPTIONAL_NOT_FOUND") results.push(result);
       }
 
       const failedRequired = execution.fields.filter((field) => field.required).filter((field) =>
@@ -230,6 +319,11 @@ async function executeOne(browser, execution) {
         return human("REQUIRED_FIELD_MAPPING_FAILED", "One or more required employer fields could not be mapped safely.", page, results, {
           fields: failedRequired.map((field) => ({ field_id: field.field_id, label: field.label })),
         });
+      }
+
+      const unknownRequired = await unmappedRequiredControls(page, execution.fields);
+      if (unknownRequired.length) {
+        return human("UNMAPPED_REQUIRED_FIELDS", "The employer added required fields that ApplyAI does not have verified answers for.", page, results, { fields: unknownRequired });
       }
 
       const priorUrl = page.url();
@@ -257,7 +351,7 @@ async function executeOne(browser, execution) {
       }
     }
 
-    return human("NO_SAFE_SUBMIT_CONTROL", "ApplyAI filled the fields it could verify, but could not identify a safe next or submit action.", page, results);
+    return human("NO_SAFE_SUBMIT_CONTROL", "ApplyAI filled the verified fields but could not identify a safe next or submit action.", page, results);
   } catch (error) {
     return {
       status: "FAILED",

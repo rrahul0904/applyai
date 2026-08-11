@@ -22,34 +22,34 @@ const actions: Array<{
 }> = [
   {
     task: "deep-match",
-    label: "Analyze fit",
-    description: "Combine the explainable baseline with evidence-grounded career intelligence.",
+    label: "Review fit",
+    description: "See the strengths and gaps that matter most for this role.",
     icon: BrainCircuit,
   },
   {
     task: "resume-tailoring",
     label: "Tailor resume",
-    description: "Create evidence-locked suggestions that require your review.",
+    description: "Focus your resume on relevant experience you can support.",
     icon: FilePenLine,
   },
   {
     task: "application-copilot",
     label: "Prepare application",
-    description: "Draft reviewable cover-letter, answer, and recruiter-outreach material.",
+    description: "Draft cover-letter and application material for your review.",
     icon: Sparkles,
   },
   {
     task: "interview-prep",
-    label: "Prepare interview",
-    description: "Build role-specific questions and answer outlines from verified evidence.",
+    label: "Practice interview",
+    description: "Prepare role-specific questions and answer outlines from your experience.",
     icon: MessageSquareText,
   },
 ];
 
 const artifactTitle: Record<string, string> = {
-  DEEP_MATCH: "Fit analysis",
-  RESUME_TAILORING: "Resume tailoring",
-  APPLICATION_COPILOT: "Application copilot",
+  DEEP_MATCH: "Role fit",
+  RESUME_TAILORING: "Tailored resume",
+  APPLICATION_COPILOT: "Application preparation",
   INTERVIEW_PREP: "Interview preparation",
 };
 
@@ -57,6 +57,21 @@ function textList(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
     : [];
+}
+
+function matchDecisionLabel(value: string) {
+  switch (value.toUpperCase()) {
+    case "PRIORITIZE":
+      return "Strong fit";
+    case "CONSIDER":
+      return "Worth considering";
+    case "DEPRIORITIZE":
+      return "Lower priority";
+    case "SKIP":
+      return "Not recommended";
+    default:
+      return titleCase(value);
+  }
 }
 
 function ArtifactPreview({ artifact }: { artifact: AIArtifact }) {
@@ -70,6 +85,7 @@ function ArtifactPreview({ artifact }: { artifact: AIArtifact }) {
   const questions = Array.isArray(content.likely_questions)
     ? content.likely_questions
     : [];
+  const evidenceCount = Array.isArray(artifact.evidence.refs) ? artifact.evidence.refs.length : 0;
 
   return (
     <div className={styles.artifact}>
@@ -78,16 +94,16 @@ function ArtifactPreview({ artifact }: { artifact: AIArtifact }) {
           <p className="eyebrow">
             {artifactTitle[artifact.artifact_type] ?? titleCase(artifact.artifact_type)}
           </p>
-          <strong>Version {artifact.version}</strong>
+          <strong>Ready to review</strong>
         </div>
         <Badge tone={artifact.candidate_verified ? "success" : "warning"}>
-          {artifact.candidate_verified ? "Verified" : "Review required"}
+          {artifact.candidate_verified ? "Reviewed" : "Needs review"}
         </Badge>
       </div>
       {summary ? <p className={styles.description}>{summary}</p> : null}
       {strengths.length ? (
         <div>
-          <strong>Strengths</strong>
+          <strong>What lines up well</strong>
           <ul>
             {strengths.slice(0, 4).map((item) => <li key={item}>{item}</li>)}
           </ul>
@@ -95,7 +111,7 @@ function ArtifactPreview({ artifact }: { artifact: AIArtifact }) {
       ) : null}
       {gaps.length ? (
         <div>
-          <strong>Gaps to review</strong>
+          <strong>What to think through</strong>
           <ul>
             {gaps.slice(0, 4).map((item) => <li key={item}>{item}</li>)}
           </ul>
@@ -105,7 +121,7 @@ function ArtifactPreview({ artifact }: { artifact: AIArtifact }) {
         <p className={styles.muted}>{questions.length} interview questions prepared.</p>
       ) : null}
       <p className={styles.muted}>
-        Grounded in {Array.isArray(artifact.evidence.refs) ? artifact.evidence.refs.length : 0} verified evidence references.
+        Based on {evidenceCount} verified {evidenceCount === 1 ? "fact" : "facts"} from your career profile.
       </p>
     </div>
   );
@@ -155,9 +171,9 @@ export function CareerIntelligencePanel({ jobId }: { jobId: string }) {
     if (result.status === "COMPLETED") {
       queryClient.invalidateQueries({ queryKey: ["career-v2-artifacts", jobId] });
       queryClient.invalidateQueries({ queryKey: ["career-v2-match", jobId] });
-      toast.success("Career intelligence is ready for review.");
+      toast.success("Your preparation is ready to review.");
     } else {
-      toast.error("Career intelligence could not complete this request.");
+      toast.error("We couldn't complete that preparation. Please try again.");
     }
   }, [jobId, queryClient, run.data]);
 
@@ -169,13 +185,13 @@ export function CareerIntelligencePanel({ jobId }: { jobId: string }) {
       if (result.status === "COMPLETED") {
         queryClient.invalidateQueries({ queryKey: ["career-v2-artifacts", jobId] });
         queryClient.invalidateQueries({ queryKey: ["career-v2-match", jobId] });
-        toast.success("Career intelligence is ready for review.");
+        toast.success("Your preparation is ready to review.");
       } else {
         setActiveRunId(result.id);
-        toast.message("Career intelligence request queued.");
+        toast.message("Preparing this for you…");
       }
     },
-    onError: () => toast.error("We couldn't start this career intelligence request."),
+    onError: () => toast.error("We couldn't start that preparation."),
   });
 
   const latestArtifacts = useMemo(() => {
@@ -197,10 +213,10 @@ export function CareerIntelligencePanel({ jobId }: { jobId: string }) {
     <Card className={`detail-section ${styles.panel}`}>
       <div className={styles.header}>
         <div>
-          <p className="eyebrow">Career Intelligence V2</p>
-          <h2>Turn this job into an evidence-backed plan</h2>
+          <p className="eyebrow">Why this role might fit</p>
+          <h2>Understand the fit, then prepare with confidence.</h2>
           <p className={styles.description}>
-            ApplyAI uses your verified profile, career memory, and job evidence. Suggestions never represent a hiring probability or an external application submission.
+            Use your verified experience to compare the role, strengthen your resume, prepare application material, and practice for interviews. Nothing is submitted without you.
           </p>
         </div>
         {match.data ? (
@@ -211,7 +227,7 @@ export function CareerIntelligencePanel({ jobId }: { jobId: string }) {
             <strong>{match.data.final_score}</strong>
             <span>/100</span>
             <Badge tone={match.data.decision === "PRIORITIZE" ? "success" : "info"}>
-              {titleCase(match.data.decision)}
+              {matchDecisionLabel(match.data.decision)}
             </Badge>
           </div>
         ) : null}
@@ -238,11 +254,11 @@ export function CareerIntelligencePanel({ jobId }: { jobId: string }) {
       {currentRun && currentRun.status !== "COMPLETED" ? (
         <div className={styles.runStatus} role="status">
           <span className={styles.dot} aria-hidden="true" />
-          <strong>{titleCase(currentRun.status)}</strong>
+          <strong>{currentRun.status === "FAILED" ? "Needs attention" : "Working on it"}</strong>
           <span>
             {currentRun.status === "FAILED"
-              ? currentRun.error_code ?? "Request failed"
-              : "Your evidence is being processed."}
+              ? currentRun.error_code ?? "Preparation failed"
+              : "Using your verified experience to prepare this step."}
           </span>
           {currentRun.status === "FAILED" ? (
             <Button
@@ -255,7 +271,7 @@ export function CareerIntelligencePanel({ jobId }: { jobId: string }) {
                 if (retried.status !== "COMPLETED") setActiveRunId(retried.id);
               }}
             >
-              Retry
+              Try again
             </Button>
           ) : null}
         </div>
@@ -269,7 +285,7 @@ export function CareerIntelligencePanel({ jobId }: { jobId: string }) {
         </div>
       ) : (
         <p className={styles.muted}>
-          No AI artifacts yet. Start with Analyze fit to create the hybrid match baseline.
+          Choose a step above when you're ready. ApplyAI will keep the result attached to this role for you to review.
         </p>
       )}
     </Card>

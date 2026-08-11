@@ -30,7 +30,7 @@ test("retired beta entry resolves into the canonical candidate platform", async 
   await page.goto("/beta");
   await page.waitForURL(/\/matches$/);
   await expect(page.getByRole("heading", { name: "Start with the roles that fit best." })).toBeVisible();
-  await expect(page.getByText(/verified profile and preferences/i).first()).toBeVisible();
+  await expect(page.getByText(/combine your goals, preferences, and verified experience/i)).toBeVisible();
   await captureDemo(page, "17-recommended-jobs");
 
   await page.goto("/resume/studio");

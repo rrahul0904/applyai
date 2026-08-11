@@ -1,11 +1,11 @@
 import { CareerWorkspaceTabs } from "@/components/candidate-workspace-tabs";
-import { ResumeStudioWorkspace } from "@/components/platform-workspaces";
+import { CandidateResumeStudioView } from "@/components/candidate-resume-studio-view";
 
 export default function ResumeStudioPage() {
   return (
     <>
       <CareerWorkspaceTabs activeHref="/resume/studio" />
-      <ResumeStudioWorkspace />
+      <CandidateResumeStudioView />
     </>
   );
 }

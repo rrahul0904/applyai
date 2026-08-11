@@ -82,7 +82,7 @@ export function JobImportWorkspace() {
         <Badge tone={result.status === "COMPLETED" ? "success" : result.status === "FAILED" || result.status === "REJECTED" ? "danger" : "info"}>{result.status}</Badge>
       </div>
       {result.job_id ? <>
-        <p className="muted" style={{ marginBottom: 14 }}>The job is normalized and ready for ApplyAI's fit, resume, cover-letter, answer-review and browser-application workflow.</p>
+        <p className="muted" style={{ marginBottom: 14 }}>The job is normalized and ready for fit analysis, resume tailoring, cover-letter generation, answer review and browser application.</p>
         <div className="button-row">
           <Button onClick={() => apply.mutate(result.job_id!)} disabled={apply.isPending}>
             <Sparkles size={16}/>{apply.isPending ? "Opening application…" : "Continue to AI application"}

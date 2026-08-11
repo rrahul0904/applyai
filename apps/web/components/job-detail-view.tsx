@@ -64,7 +64,7 @@ export function JobDetailView({ jobId }: { jobId: string }) {
           <CareerIntelligencePanel jobId={jobId} />
           <CompanyIntelligenceCard jobId={jobId} />
           <Card className="detail-section"><h2>About the role</h2><div className="detail-copy">{item.description}</div></Card>
-          {item.requirements.length ? <Card className="detail-section"><h2>What they're looking for</h2><ul>{item.requirements.map((requirement) => <li key={requirement}>{requirement}</li>)}</ul></Card> : null}
+          {item.requirements.length ? <Card className="detail-section"><h2>What they’re looking for</h2><ul>{item.requirements.map((requirement) => <li key={requirement}>{requirement}</li>)}</ul></Card> : null}
           {item.skills.length ? <Card className="detail-section"><h2>Skills</h2><div className="chips">{item.skills.map((skill) => <Badge key={skill}>{skill}</Badge>)}</div></Card> : null}
         </div>
 

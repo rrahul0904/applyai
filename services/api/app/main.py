@@ -121,8 +121,6 @@ for router in (
     resumes.router,
     jobs.router,
     applications.router,
-    application_agent.router,
-    application_agent_documents.router,
     career_memory.router,
     career_intelligence_v2.router,
     candidate_platform.router,
@@ -140,6 +138,8 @@ for product_router in (
     career_product_polish.router,
     career_product.router,
     agents.router,
+    application_agent.router,
+    application_agent_documents.router,
 ):
     app.include_router(product_router, prefix="/api/v1", include_in_schema=False)
 

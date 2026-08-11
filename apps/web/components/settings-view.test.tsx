@@ -48,7 +48,7 @@ describe("SettingsView", () => {
     });
   });
 
-  it("shows persisted account and profile state alongside platform controls", async () => {
+  it("shows persisted account and profile state alongside customer controls", async () => {
     renderSettings();
     expect(await screen.findByText("candidate@example.test")).toBeDefined();
     expect(screen.getByText("ACTIVE")).toBeDefined();
@@ -56,22 +56,22 @@ describe("SettingsView", () => {
     expect(screen.getByText("Staff Data Engineer, Data Platform Lead")).toBeDefined();
     expect(screen.getByText("Boston, MA")).toBeDefined();
     expect(screen.getByText("REMOTE, HYBRID")).toBeDefined();
-    expect(screen.getByRole("heading", { name: "Notifications" })).toBeDefined();
-    expect(screen.getByRole("heading", { name: "Subscription" })).toBeDefined();
-    expect(screen.getByRole("heading", { name: "Privacy and data" })).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Alerts" })).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Plan" })).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Your data" })).toBeDefined();
   });
 
-  it("links preference editing and completed platform controls to canonical workspaces", async () => {
+  it("links preferences, alerts and plan to their customer workspaces", async () => {
     renderSettings();
-    expect((await screen.findByRole("link", { name: "Edit profile and preferences" })).getAttribute("href")).toBe("/profile");
+    expect((await screen.findByRole("link", { name: "Edit profile" })).getAttribute("href")).toBe("/profile");
     expect(screen.getByRole("link", { name: "Manage alerts" }).getAttribute("href")).toBe("/alerts");
-    expect(screen.getByRole("link", { name: "Manage billing" }).getAttribute("href")).toBe("/billing");
+    expect(screen.getByRole("link", { name: "View plan" }).getAttribute("href")).toBe("/billing");
   });
 
-  it("exposes real privacy export and deletion controls", async () => {
+  it("keeps privacy export and deletion controls easy to understand", async () => {
     renderSettings();
-    expect(await screen.findByText(/Download a machine-readable copy/)).toBeDefined();
-    expect(screen.getByRole("button", { name: "Export my data" })).toBeDefined();
-    expect(screen.getByRole("button", { name: "Delete ApplyAI data" })).toBeDefined();
+    expect(await screen.findByText(/Download a copy of your ApplyAI data/)).toBeDefined();
+    expect(screen.getByRole("button", { name: "Download my data" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Delete my data" })).toBeDefined();
   });
 });

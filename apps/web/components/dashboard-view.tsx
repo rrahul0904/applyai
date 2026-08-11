@@ -190,7 +190,7 @@ export function DashboardView() {
           ) : (
             <div className="cx-gentle-empty">
               <CheckCircle2 size={20} />
-              <p>Save roles you want to compare later. Your shortlist will stay here without cluttering today's priorities.</p>
+              <p>Save roles you want to compare later. Your shortlist will stay here without cluttering today’s priorities.</p>
             </div>
           )}
         </Card>

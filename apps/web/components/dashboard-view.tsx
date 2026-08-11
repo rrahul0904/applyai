@@ -13,7 +13,7 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { Badge, Card, ErrorState, PageHeader, Skeleton } from "@/components/ui";
+import { Badge, Card, ErrorState, PageHeader } from "@/components/ui";
 import { api } from "@/lib/api/client";
 import { formatDate, titleCase } from "@/lib/utils";
 
@@ -100,7 +100,15 @@ export function DashboardView() {
 
         <div className="cx-action-grid">
           {jobs.isLoading ? (
-            <Skeleton className="cx-action-card cx-action-card-featured" />
+            <Card className="cx-action-card cx-action-card-featured">
+              <div className="cx-action-icon"><Sparkles size={20} /></div>
+              <div className="cx-action-copy">
+                <div className="cx-action-kicker"><span>Working on your shortlist</span></div>
+                <h3>Finding the opportunities worth your attention.</h3>
+                <p>We’re checking fresh roles against your profile and preferences. You can keep using ApplyAI while this finishes.</p>
+              </div>
+              <Link className="ui-button ui-button-secondary" href="/jobs">Browse all jobs <ArrowRight size={16} /></Link>
+            </Card>
           ) : topJob ? (
             <Card className="cx-action-card cx-action-card-featured">
               <div className="cx-action-icon"><Sparkles size={20} /></div>

@@ -56,21 +56,31 @@ export function ApplicationDetailView({ applicationId }: { applicationId: string
   const posting = job.data;
   return (
     <>
-      <PageHeader eyebrow="Application command center" title={posting.title} description={`${posting.company_name} · ${posting.location ?? "Location flexible"}`} action={<Link className="ui-button ui-button-secondary ui-button-small" href={`/jobs/${posting.id}`}>View job</Link>} />
+      <PageHeader
+        eyebrow="Your application"
+        title={posting.title}
+        description={`${posting.company_name} · ${posting.location ?? "Location flexible"}`}
+        action={<Link className="ui-button ui-button-secondary ui-button-small" href={`/jobs/${posting.id}`}>View job</Link>}
+      />
+      <div className="cx-application-status-strip">
+        <span>Current stage</span>
+        <Badge tone={app.current_status === "OFFER" ? "success" : app.current_status === "REJECTED" ? "danger" : "info"}>{titleCase(app.current_status)}</Badge>
+        <span>Last updated {formatDate(app.updated_at)}</span>
+      </div>
       <div className="detail-grid">
         <div className="detail-main">
           <ApplicationSubmissionPanel applicationId={applicationId} jobId={posting.id} sourceUrl={posting.source_url} />
           <Card className="detail-section">
-            <div className="section-header"><div><h2>Timeline</h2><p>Application history is append-only.</p></div><Badge tone="info">{titleCase(app.current_status)}</Badge></div>
+            <div className="section-header"><div><h2>Progress</h2><p>A simple history of how this opportunity has moved.</p></div></div>
             <ol className="timeline">
-              {(app.events ?? []).map((event) => <li key={event.id}><span className="timeline-dot" aria-hidden="true" /><div><strong>{event.from_status ? `${titleCase(event.from_status)} → ${titleCase(event.to_status)}` : `Application created as ${titleCase(event.to_status)}`}</strong><time>{formatDate(event.created_at)}</time></div></li>)}
+              {(app.events ?? []).map((event) => <li key={event.id}><span className="timeline-dot" aria-hidden="true" /><div><strong>{event.from_status ? `${titleCase(event.from_status)} → ${titleCase(event.to_status)}` : `Started as ${titleCase(event.to_status)}`}</strong><time>{formatDate(event.created_at)}</time></div></li>)}
             </ol>
           </Card>
           <Card className="detail-section">
-            <h2>Notes and follow-ups</h2>
+            <h2>Notes & follow-ups</h2>
             <form className="form-stack" onSubmit={(event) => { event.preventDefault(); if (note.trim()) noteMutation.mutate(note.trim()); }}>
-              <Field label="Add a private note" htmlFor="application-note"><Textarea id="application-note" value={note} onChange={(event) => setNote(event.target.value)} placeholder="Interview follow-up, recruiter details, next steps…" /></Field>
-              <div className="button-row"><Button disabled={!note.trim() || noteMutation.isPending} type="submit">Add note</Button></div>
+              <Field label="Add a private note" htmlFor="application-note"><Textarea id="application-note" value={note} onChange={(event) => setNote(event.target.value)} placeholder="Recruiter details, interview notes, follow-up reminders…" /></Field>
+              <div className="button-row"><Button disabled={!note.trim() || noteMutation.isPending} type="submit">Save note</Button></div>
             </form>
             <div className="list-stack" style={{ marginTop: 20 }}>
               {(app.notes ?? []).map((item) => <div className="note" key={item.id}><p>{item.body}</p><div className="note-footer"><span>Updated {formatDate(item.updated_at)}</span><Button variant="ghost" size="small" aria-label="Delete note" onClick={() => deleteNote.mutate(item.id)}><Trash2 size={15} />Delete</Button></div></div>)}
@@ -79,10 +89,12 @@ export function ApplicationDetailView({ applicationId }: { applicationId: string
           </Card>
         </div>
         <aside className="detail-aside">
-          <Card className="sticky-actions">
-            <Field label="Application status" htmlFor="application-status"><NativeSelect id="application-status" value={app.current_status} disabled={statusMutation.isPending} onChange={(event) => statusMutation.mutate(event.target.value)}>{statuses.map((status) => <option value={status} key={status}>{titleCase(status)}</option>)}</NativeSelect></Field>
+          <Card className="sticky-actions cx-application-side">
+            <h2>Keep it current</h2>
+            <p className="muted">Update the stage when something changes so ApplyAI can keep the right next steps visible.</p>
+            <Field label="Application stage" htmlFor="application-status"><NativeSelect id="application-status" value={app.current_status} disabled={statusMutation.isPending} onChange={(event) => statusMutation.mutate(event.target.value)}>{statuses.map((status) => <option value={status} key={status}>{titleCase(status)}</option>)}</NativeSelect></Field>
             <div className="facts-list">
-              <div className="fact-row"><CalendarDays size={17} /><div><strong>Tracking started</strong><span>{formatDate(app.created_at)}</span></div></div>
+              <div className="fact-row"><CalendarDays size={17} /><div><strong>Started</strong><span>{formatDate(app.created_at)}</span></div></div>
               <div className="fact-row"><CalendarDays size={17} /><div><strong>Last updated</strong><span>{formatDate(app.updated_at)}</span></div></div>
             </div>
             <div className="button-row"><Link className="ui-button ui-button-secondary ui-button-small" href={`/interview/${posting.id}`}>Interview prep</Link><Link className="ui-button ui-button-secondary ui-button-small" href="/network">Recruiter contacts</Link></div>

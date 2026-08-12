@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api/client";
+import { ApplicationAgentPanel } from "@/components/application-agent-panel";
 import { ApplicationSubmissionPanel } from "@/components/application-submission-panel";
 import { Badge, Button, Card, ErrorState, Field, NativeSelect, PageHeader, Skeleton, Textarea } from "@/components/ui";
 import { formatDate, titleCase } from "@/lib/utils";
@@ -69,6 +70,7 @@ export function ApplicationDetailView({ applicationId }: { applicationId: string
       </div>
       <div className="detail-grid">
         <div className="detail-main">
+          <ApplicationAgentPanel applicationId={applicationId} jobId={posting.id} />
           <ApplicationSubmissionPanel applicationId={applicationId} jobId={posting.id} sourceUrl={posting.source_url} />
           <Card className="detail-section">
             <div className="section-header"><div><h2>Progress</h2><p>A simple history of how this opportunity has moved.</p></div></div>

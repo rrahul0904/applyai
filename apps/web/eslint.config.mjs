@@ -27,5 +27,14 @@ export default defineConfig([
       "@next/next/no-html-link-for-pages": "off",
     },
   },
+  {
+    files: ["scripts/**/*.mjs"],
+    languageOptions: {
+      globals: {
+        Buffer: "readonly",
+        process: "readonly",
+      },
+    },
+  },
   globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts"]),
 ]);

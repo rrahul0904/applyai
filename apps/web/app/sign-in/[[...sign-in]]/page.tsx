@@ -1,8 +1,15 @@
 import { SignIn } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { CandidateAuthShell } from "@/components/candidate-auth-shell";
+
+export const metadata: Metadata = {
+  title: "Sign in | ApplyAI",
+  description: "Sign in to your private ApplyAI candidate workspace.",
+  robots: { index: false, follow: false },
+};
 
 export default async function SignInPage() {
   const clerkConfigured = Boolean(

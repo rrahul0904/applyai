@@ -125,7 +125,7 @@ describe("ResumeShareIntelligenceView", () => {
     expect(screen.getByText("Deep Read")).toBeDefined();
     expect(screen.getByText(/does not store raw viewer IP addresses/i)).toBeDefined();
     expect(screen.getByText(/never hiring probability/i)).toBeDefined();
-    expect(screen.getByText("Viewer abcdef12")).toBeDefined();
+    expect(screen.getAllByText("Viewer abcdef12")).toHaveLength(2);
   });
 
   it("prefills a job-specific smart link and creates it", async () => {

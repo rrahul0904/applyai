@@ -12,7 +12,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
@@ -108,7 +108,12 @@ def _safe_event_value(event_type: str, value: int | None) -> int | None:
     return max(0, min(value, 10_000))
 
 
-def _latest_version(session: Session, *, user_id: uuid.UUID, resume_id: uuid.UUID | None = None) -> ResumeVersion | None:
+def _latest_version(
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    resume_id: uuid.UUID | None = None,
+) -> ResumeVersion | None:
     statement = select(ResumeVersion).where(
         ResumeVersion.user_id == user_id,
         ResumeVersion.upload_status == "UPLOADED",
@@ -116,7 +121,9 @@ def _latest_version(session: Session, *, user_id: uuid.UUID, resume_id: uuid.UUI
     if resume_id is not None:
         statement = statement.where(ResumeVersion.resume_id == resume_id)
     return session.scalar(
-        statement.order_by(ResumeVersion.created_at.desc(), ResumeVersion.version_number.desc()).limit(1)
+        statement.order_by(
+            ResumeVersion.created_at.desc(), ResumeVersion.version_number.desc()
+        ).limit(1)
     )
 
 
@@ -147,11 +154,16 @@ def _owned_share(session: Session, *, share_id: uuid.UUID, user: User) -> Resume
 
 
 def _public_share(session: Session, token: str) -> ResumeShareLink:
-    share = session.scalar(select(ResumeShareLink).where(ResumeShareLink.public_token == token))
+    share = session.scalar(
+        select(ResumeShareLink).where(ResumeShareLink.public_token == token)
+    )
     if share is None:
         raise HTTPException(status_code=404, detail="Resume share link not found")
     if not _share_active(share):
-        raise HTTPException(status_code=410, detail="This resume share link is no longer active")
+        raise HTTPException(
+            status_code=410,
+            detail="This resume share link is no longer active",
+        )
     return share
 
 
@@ -164,7 +176,11 @@ def _job_context(session: Session, share: ResumeShareLink) -> dict[str, str | No
         .where(Job.id == share.job_id)
     ).first()
     if row is None:
-        return {"job_id": str(share.job_id), "job_title": None, "company_name": None}
+        return {
+            "job_id": str(share.job_id),
+            "job_title": None,
+            "company_name": None,
+        }
     job, company = row
     return {
         "job_id": str(job.id),
@@ -173,13 +189,21 @@ def _job_context(session: Session, share: ResumeShareLink) -> dict[str, str | No
     }
 
 
-def _score_session(events: list[ResumeShareEvent]) -> tuple[int, str, dict[str, int]]:
+def _score_session(
+    events: list[ResumeShareEvent],
+) -> tuple[int, str, dict[str, int]]:
     views = sum(1 for event in events if event.event_type == "VIEW")
     downloads = sum(1 for event in events if event.event_type == "DOWNLOAD")
     clicks = sum(1 for event in events if event.event_type == "LINK_CLICK")
     copies = sum(1 for event in events if event.event_type == "COPY")
-    dwell_ms = max((event.event_value or 0 for event in events if event.event_type == "DWELL"), default=0)
-    scroll = max((event.event_value or 0 for event in events if event.event_type == "SCROLL"), default=0)
+    dwell_ms = max(
+        (event.event_value or 0 for event in events if event.event_type == "DWELL"),
+        default=0,
+    )
+    scroll = max(
+        (event.event_value or 0 for event in events if event.event_type == "SCROLL"),
+        default=0,
+    )
 
     score = 0.0
     if views:
@@ -193,7 +217,13 @@ def _score_session(events: list[ResumeShareEvent]) -> tuple[int, str, dict[str, 
     if views > 1:
         score += 10
     final_score = min(100, round(score))
-    intent = "DEEP_READ" if final_score >= 75 else "ENGAGED" if final_score >= 45 else "BROWSED"
+    intent = (
+        "DEEP_READ"
+        if final_score >= 75
+        else "ENGAGED"
+        if final_score >= 45
+        else "BROWSED"
+    )
     return final_score, intent, {
         "views": views,
         "dwell_ms": dwell_ms,
@@ -234,7 +264,11 @@ def _analytics(session: Session, share: ResumeShareLink) -> dict[str, Any]:
         )
     sessions.sort(key=lambda item: item["last_seen_at"], reverse=True)
     view_events = [event for event in human_events if event.event_type == "VIEW"]
-    returning_viewers = sum(1 for events_for_session in grouped.values() if sum(1 for e in events_for_session if e.event_type == "VIEW") > 1)
+    returning_viewers = sum(
+        1
+        for events_for_session in grouped.values()
+        if sum(1 for event in events_for_session if event.event_type == "VIEW") > 1
+    )
     scores = [item["interest_score"] for item in sessions]
 
     timeline = [
@@ -242,7 +276,11 @@ def _analytics(session: Session, share: ResumeShareLink) -> dict[str, Any]:
             "viewer": f"Viewer {event.session_hash[:8]}",
             "event_type": event.event_type,
             "value": event.event_value,
-            "target": event.metadata_json.get("target") if isinstance(event.metadata_json, dict) else None,
+            "target": (
+                event.metadata_json.get("target")
+                if isinstance(event.metadata_json, dict)
+                else None
+            ),
             "occurred_at": event.occurred_at.isoformat(),
         }
         for event in reversed(human_events[-100:])
@@ -251,10 +289,16 @@ def _analytics(session: Session, share: ResumeShareLink) -> dict[str, Any]:
         "views": len(view_events),
         "unique_viewers": len({event.session_hash for event in view_events}),
         "returning_viewers": returning_viewers,
-        "downloads": sum(1 for event in human_events if event.event_type == "DOWNLOAD"),
-        "link_clicks": sum(1 for event in human_events if event.event_type == "LINK_CLICK"),
+        "downloads": sum(
+            1 for event in human_events if event.event_type == "DOWNLOAD"
+        ),
+        "link_clicks": sum(
+            1 for event in human_events if event.event_type == "LINK_CLICK"
+        ),
         "copies": sum(1 for event in human_events if event.event_type == "COPY"),
-        "average_interest_score": round(sum(scores) / len(scores)) if scores else 0,
+        "average_interest_score": (
+            round(sum(scores) / len(scores)) if scores else 0
+        ),
         "suspected_bot_events": bot_events,
         "sessions": sessions,
         "timeline": timeline,
@@ -274,7 +318,9 @@ def _owner_payload(session: Session, share: ResumeShareLink) -> dict[str, Any]:
         "always_current": share.always_current,
         "allow_download": share.allow_download,
         "expires_at": share.expires_at.isoformat() if share.expires_at else None,
-        "application_id": str(share.application_id) if share.application_id else None,
+        "application_id": (
+            str(share.application_id) if share.application_id else None
+        ),
         "resume_version_id": str(version.id) if version else None,
         "filename": version.filename if version else None,
         "created_at": share.created_at.isoformat(),
@@ -304,17 +350,14 @@ def _record_event(
         raise HTTPException(status_code=422, detail="Unsupported resume share event")
     session_hash = _session_hash(share, client_session_id)
     bot = _suspected_bot(request)
-    prior_same_type = session.scalar(
-        select(ResumeShareEvent)
-        .where(
+    prior_same_type_count = session.scalar(
+        select(func.count(ResumeShareEvent.id)).where(
             ResumeShareEvent.share_id == share.id,
             ResumeShareEvent.session_hash == session_hash,
             ResumeShareEvent.event_type == event_type,
             ResumeShareEvent.suspected_bot.is_(False),
         )
-        .order_by(ResumeShareEvent.occurred_at.desc())
-        .limit(1)
-    )
+    ) or 0
     event = ResumeShareEvent(
         share_id=share.id,
         session_hash=session_hash,
@@ -326,8 +369,15 @@ def _record_event(
     session.add(event)
 
     if not bot and event_type == "VIEW":
-        notification_type = "RESUME_SHARE_VIEWED" if prior_same_type is None else "RESUME_SHARE_RETURNED"
-        if prior_same_type is None or notification_type == "RESUME_SHARE_RETURNED":
+        # Keep notifications useful rather than turning reloads/heartbeats into spam.
+        # The first human view gets VIEWED and the first observed return gets one
+        # RETURNED notification. Further views remain visible in analytics only.
+        notification_type = None
+        if prior_same_type_count == 0:
+            notification_type = "RESUME_SHARE_VIEWED"
+        elif prior_same_type_count == 1:
+            notification_type = "RESUME_SHARE_RETURNED"
+        if notification_type is not None:
             session.add(
                 Notification(
                     user_id=share.user_id,
@@ -336,11 +386,19 @@ def _record_event(
                         "share_id": str(share.id),
                         "label": share.label,
                         "job_id": str(share.job_id) if share.job_id else None,
-                        "application_id": str(share.application_id) if share.application_id else None,
+                        "application_id": (
+                            str(share.application_id)
+                            if share.application_id
+                            else None
+                        ),
                     },
                 )
             )
-    elif not bot and event_type == "DOWNLOAD" and prior_same_type is None:
+    elif (
+        not bot
+        and event_type == "DOWNLOAD"
+        and prior_same_type_count == 0
+    ):
         session.add(
             Notification(
                 user_id=share.user_id,
@@ -349,7 +407,9 @@ def _record_event(
                     "share_id": str(share.id),
                     "label": share.label,
                     "job_id": str(share.job_id) if share.job_id else None,
-                    "application_id": str(share.application_id) if share.application_id else None,
+                    "application_id": (
+                        str(share.application_id) if share.application_id else None
+                    ),
                 },
             )
         )
@@ -376,9 +436,14 @@ def create_resume_share(
     else:
         version = _latest_version(session, user_id=user.id)
     if version is None:
-        raise HTTPException(status_code=409, detail="Upload a resume before creating a share link")
+        raise HTTPException(
+            status_code=409,
+            detail="Upload a resume before creating a share link",
+        )
 
-    resume = session.scalar(select(Resume).where(Resume.id == version.resume_id, Resume.user_id == user.id))
+    resume = session.scalar(
+        select(Resume).where(Resume.id == version.resume_id, Resume.user_id == user.id)
+    )
     if resume is None:
         raise HTTPException(status_code=404, detail="Resume not found")
 
@@ -394,7 +459,10 @@ def create_resume_share(
         if application is None:
             raise HTTPException(status_code=404, detail="Application not found")
         if job_id is not None and application.job_id != job_id:
-            raise HTTPException(status_code=422, detail="Application does not belong to the selected job")
+            raise HTTPException(
+                status_code=422,
+                detail="Application does not belong to the selected job",
+            )
         job_id = application.job_id
     if job_id is not None and session.get(Job, job_id) is None:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -446,7 +514,10 @@ def get_resume_share(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
-    return _owner_payload(session, _owned_share(session, share_id=share_id, user=user))
+    return _owner_payload(
+        session,
+        _owned_share(session, share_id=share_id, user=user),
+    )
 
 
 @router.patch("/{share_id}")
@@ -500,17 +571,43 @@ def export_resume_share_csv(
     analytics = _analytics(session, share)
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["viewer", "intent", "interest_score", "views", "dwell_ms", "scroll_depth", "downloads", "link_clicks", "copies", "first_seen_at", "last_seen_at"])
+    writer.writerow(
+        [
+            "viewer",
+            "intent",
+            "interest_score",
+            "views",
+            "dwell_ms",
+            "scroll_depth",
+            "downloads",
+            "link_clicks",
+            "copies",
+            "first_seen_at",
+            "last_seen_at",
+        ]
+    )
     for item in analytics["sessions"]:
-        writer.writerow([
-            item["viewer"], item["intent"], item["interest_score"], item["views"], item["dwell_ms"],
-            item["scroll_depth"], item["downloads"], item["link_clicks"], item["copies"],
-            item["first_seen_at"], item["last_seen_at"],
-        ])
+        writer.writerow(
+            [
+                item["viewer"],
+                item["intent"],
+                item["interest_score"],
+                item["views"],
+                item["dwell_ms"],
+                item["scroll_depth"],
+                item["downloads"],
+                item["link_clicks"],
+                item["copies"],
+                item["first_seen_at"],
+                item["last_seen_at"],
+            ]
+        )
     return Response(
         content=output.getvalue(),
         media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="resume-share-{share.id}.csv"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="resume-share-{share.id}.csv"'
+        },
     )
 
 
@@ -524,10 +621,14 @@ def public_resume_share(
     if version is None:
         raise HTTPException(status_code=410, detail="The shared resume is unavailable")
     owner = session.get(User, share.user_id)
-    profile = session.scalar(select(CandidateProfile).where(CandidateProfile.user_id == share.user_id))
+    profile = session.scalar(
+        select(CandidateProfile).where(CandidateProfile.user_id == share.user_id)
+    )
     display_name = "Candidate"
     if owner is not None:
-        name = " ".join(part for part in (owner.first_name, owner.last_name) if part).strip()
+        name = " ".join(
+            part for part in (owner.first_name, owner.last_name) if part
+        ).strip()
         display_name = name or "Candidate"
     return {
         "label": share.label,
@@ -538,7 +639,11 @@ def public_resume_share(
         "allow_download": share.allow_download,
         "file_path": f"/api/public-backend/resume-shares/public/{share.public_token}/file",
         "download_path": f"/api/public-backend/resume-shares/public/{share.public_token}/download",
-        "privacy_notice": "This link records privacy-preserving engagement events for the resume owner. ApplyAI does not store raw IP addresses or use cross-link viewer fingerprinting for Resume Share Intelligence.",
+        "privacy_notice": (
+            "This link records privacy-preserving engagement events for the resume owner. "
+            "ApplyAI does not store raw IP addresses or use cross-link viewer fingerprinting "
+            "for Resume Share Intelligence."
+        ),
     }
 
 
@@ -593,7 +698,10 @@ def download_public_resume(
 ) -> Response:
     share = _public_share(session, token)
     if not share.allow_download:
-        raise HTTPException(status_code=403, detail="Downloads are disabled for this resume link")
+        raise HTTPException(
+            status_code=403,
+            detail="Downloads are disabled for this resume link",
+        )
     version = _resolved_version(session, share)
     if version is None:
         raise HTTPException(status_code=410, detail="The shared resume is unavailable")

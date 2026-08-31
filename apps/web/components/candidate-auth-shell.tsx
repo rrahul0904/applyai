@@ -108,7 +108,7 @@ export function CandidateAuthShell({ children, mode }: CandidateAuthShellProps) 
       <footer className={styles.footer}>
         <span>ApplyAI is a candidate preparation tool. Readiness signals are not hiring probabilities.</span>
         <div>
-          <Link href="/settings">Privacy</Link>
+          <Link href="/demo">Product demo</Link>
           <Link href="/">Home</Link>
         </div>
       </footer>

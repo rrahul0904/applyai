@@ -1,13 +1,15 @@
 # ApplyAI
 
-ApplyAI is a source-complete career platform spanning candidate job search, Career Intelligence,
+ApplyAI is a career platform spanning candidate job search, Career Intelligence,
 resume/application/interview workflows, employer recruiting, billing, mobile and job capture.
 
 The repository deliberately separates **source/platform completion** from **real external deployment
 and provider acceptance**. Cloud accounts, provider secrets, signing identities and store
 publication are never fabricated from repository source.
 
-## Platform architecture
+## Production architecture
+
+The canonical first production launch is the **lean profile**:
 
 ```text
 Candidate Web: Next.js App Router + Clerk on Vercel
@@ -17,30 +19,43 @@ Browser Extension: Manifest V3 public-job URL handoff
                          HTTPS
                            |
                            v
-                    AWS ALB / FastAPI
+                    Railway / FastAPI
                            |
           +----------------+----------------+
           |                |                |
           v                v                v
-  Aurora PostgreSQL   private resume S3   task_outbox
-                                             |
-                                  queue-aware publishers
-                                    /       |       \
-                                   v        v        v
-                              resume SQS source SQS AI SQS
-                                   |        |        |
-                                   v        v        v
-                              resume    source    AI workers
-                              worker    worker       |
-                                |         |       model provider
-                               DLQ       DLQ        DLQ
-
-EventBridge -> bounded source dispatcher
-CloudWatch  -> logs + alarms
+ Railway PostgreSQL   Cloudflare R2      task_outbox
+                                            |
+                                            v
+                                      postgres_tasks
+                                            |
+                                  Railway durable worker
+                                  /        |        \
+                                 v         v         v
+                              resume     source      AI/agent
+                              tasks      tasks       tasks
 ```
 
 The backend remains a modular monolith. ApplyAI does not add Kafka, Kubernetes, Redis or a
 microservice split merely to simulate scale.
+
+`DEPLOYMENT_PROFILE=lean` is the launch profile. It uses one PostgreSQL database for canonical
+application data and durable background-task state. The transactional outbox remains the first
+commit boundary, while workers claim `postgres_tasks` with `FOR UPDATE SKIP LOCKED`, leases,
+heartbeat, retry/backoff, dead-task visibility and crash recovery.
+
+The existing AWS infrastructure is preserved as `DEPLOYMENT_PROFILE=aws` for future scale or
+enterprise needs. It continues to support ALB/ECS/Fargate, Aurora PostgreSQL, private S3, SQS,
+EventBridge and CloudWatch, but AWS is **not required** to launch the lean production product.
+
+See:
+
+- [`docs/LEAN_PRODUCTION_ARCHITECTURE.md`](docs/LEAN_PRODUCTION_ARCHITECTURE.md)
+- [`DEPLOYMENT.md`](DEPLOYMENT.md)
+- [`docs/RAILWAY_DEPLOYMENT.md`](docs/RAILWAY_DEPLOYMENT.md)
+- [`docs/R2_STORAGE.md`](docs/R2_STORAGE.md)
+- [`docs/PRODUCTION_RELEASE_CHECKLIST.md`](docs/PRODUCTION_RELEASE_CHECKLIST.md)
+- [`docs/PRODUCTION_RUNBOOK.md`](docs/PRODUCTION_RUNBOOK.md)
 
 ## Repository layout
 
@@ -49,8 +64,8 @@ apps/web/               canonical Next.js candidate/employer/admin web
 apps/extension/         Manifest V3 job-import extension
 mobile/                 Expo / React Native candidate application
 services/api/           FastAPI API + workers + migrations + evaluation
-infra/bootstrap/        AWS/GitHub OIDC + Terraform-state bootstrap
-infra/staging/          AWS staging Terraform
+infra/bootstrap/        optional AWS/GitHub OIDC + Terraform-state bootstrap
+infra/staging/          optional AWS scale-profile Terraform
 services/api/evals/     Career Intelligence golden evaluation data
 docs/                   architecture, status and deployment/recovery runbooks
 ```
@@ -69,6 +84,7 @@ Canonical candidate surfaces:
 /applications/[id]
 /resume
 /resume/studio
+/resume/signals
 /career
 /interview/[jobId]
 /network
@@ -88,7 +104,8 @@ Implemented candidate capabilities include:
 - durable private resume upload, parsing, review and version history;
 - Resume Studio with editable job-specific variants and export;
 - PostgreSQL job search, filters, saved jobs and saved searches;
-- AI Matches using semantic + explainable Career Intelligence ranking;
+- explainable Career Intelligence ranking with deterministic evidence-bound baseline;
+- candidate-side Recruiter Lens with supported/partial/not-evidenced criteria;
 - application command center with status history and notes;
 - candidate-approved application submission orchestration;
 - Career Memory;
@@ -96,6 +113,7 @@ Implemented candidate capabilities include:
 - interview practice history and feedback;
 - recruiter/referral contacts and follow-ups;
 - job alerts, interview reminders and notification inbox;
+- privacy-preserving Resume Share Intelligence;
 - candidate analytics;
 - company intelligence derived from known posting evidence;
 - billing/entitlement controls;
@@ -120,7 +138,7 @@ verified candidate/job evidence
 AIJobRun + transactional outbox
         |
         v
-AI SQS -> AI worker -> reviewed provider
+durable task queue -> AI worker -> reviewed provider
         |
         v
 strict schema + evidence-reference validation
@@ -131,6 +149,9 @@ versioned domain artifacts
         v
 candidate review + feedback
 ```
+
+In lean production the durable task queue is PostgreSQL. In the optional AWS profile the same
+application task families can be delivered through SQS.
 
 First-class persistence includes AI runs/artifacts, career matches, resume-tailoring revisions,
 cover letters, application-question drafts, candidate feedback and verified Career Memory.
@@ -193,18 +214,42 @@ Source includes:
 - signed Stripe webhook verification;
 - billing ledger and candidate billing UI.
 
-Stripe account IDs, price IDs and secrets are real-environment configuration.
+Stripe account IDs, price IDs and secrets are real-environment configuration. The free candidate
+journey must remain usable when paid checkout has not yet passed provider acceptance; unavailable
+paid actions must be hidden or safely disabled rather than exposed as broken CTAs.
 
 ## Job-data platform
 
-Dedicated adapters support Greenhouse, Lever and Ashby. The discovery layer recognizes Greenhouse,
-Lever, Ashby, Workday, SmartRecruiters, Workable, iCIMS, Oracle and SuccessFactors, and can use the
-bounded structured public-page importer when no reviewed public board API is available.
+Dedicated adapters support Greenhouse, Lever, Ashby and SmartRecruiters plus the public Open Jobs
+coverage source. The discovery layer also recognizes other public career technologies and can use
+the bounded structured public-page importer when no reviewed public board API is available.
+
+Open Jobs is a lower-authority discovery/coverage source. Employer-origin ATS observations retain
+higher authority for canonical fields and closure evidence.
 
 Source ingestion includes registry/scheduling/leasing, transactional dispatch, authority/provenance,
 deduplication, freshness, closure evidence, apply-URL verification and quality metrics. Public-page
 import enforces robots, redirect, SSRF and response-size controls. No authentication or anti-bot
 circumvention is used to claim provider coverage.
+
+For first production activation use bounded Open Jobs ingestion and run:
+
+```bash
+pnpm job-supply:initial-acceptance
+```
+
+The mature `pnpm job-supply:acceptance` gate remains strict and is not weakened for launch.
+
+## Resume storage and sharing
+
+Lean production stores private résumé objects in Cloudflare R2 through the existing S3-compatible
+storage boundary. The production bucket remains private; R2 credentials stay server-side and raw
+private object URLs are never exposed through Resume Share Intelligence.
+
+Resume Share Intelligence records privacy-preserving engagement events without storing raw IP
+addresses or cross-link browser fingerprints. A first human view creates one viewed notification;
+the first observed return creates one returned notification; later repeat views remain analytics
+only rather than generating notification spam.
 
 ## Mobile
 
@@ -236,8 +281,8 @@ tombstones where referential integrity must remain, and a deleted-identity hash 
 recreation from the same external identity.
 
 Durable engagement includes saved-search job alerts, interview reminders, recruiter follow-ups,
-notification preferences and inbox/read state. Real email/push delivery providers remain deployment
-integrations.
+notification preferences and inbox/read state. Real email/push delivery providers remain optional
+deployment integrations and must not make the core candidate journey unavailable.
 
 ## Local development
 
@@ -286,45 +331,52 @@ uv run alembic check
 uv run pytest
 ```
 
-Infrastructure and repository gates also include Terraform validation, CloudFormation/bootstrap
-linting, GitHub workflow validation, screenshot/demo capture and 10K/50K/250K PostgreSQL job-search
-benchmarks.
+Lean-production validation additionally checks PostgreSQL durable-queue semantics, R2/AWS storage
+compatibility, production fail-closed configuration, Railway bootstrap syntax and a production API
+container build.
+
+Infrastructure and repository gates also retain Terraform validation, CloudFormation/bootstrap
+linting, GitHub workflow validation, screenshot/demo capture and PostgreSQL job-search/source
+benchmarks so the optional AWS profile does not rot.
 
 Do not reuse a historical PASS for a newer source-changing head.
 
-## AWS staging and release source
+## Deployment source
 
-Start with:
+For the launch profile start with:
+
+- [`DEPLOYMENT.md`](DEPLOYMENT.md)
+- [`docs/RAILWAY_DEPLOYMENT.md`](docs/RAILWAY_DEPLOYMENT.md)
+- [`docs/R2_STORAGE.md`](docs/R2_STORAGE.md)
+- [`docs/deployment/VERCEL.md`](docs/deployment/VERCEL.md)
+- [`docs/PRODUCTION_RELEASE_CHECKLIST.md`](docs/PRODUCTION_RELEASE_CHECKLIST.md)
+- [`docs/PRODUCTION_RUNBOOK.md`](docs/PRODUCTION_RUNBOOK.md)
+
+For the optional AWS scale profile see:
 
 - [`infra/bootstrap/README.md`](infra/bootstrap/README.md)
 - [`infra/staging/README.md`](infra/staging/README.md)
 - [`docs/AWS_STAGING_DEPLOYMENT.md`](docs/AWS_STAGING_DEPLOYMENT.md)
-- [`docs/CAREER_INTELLIGENCE_STAGING_ACCEPTANCE.md`](docs/CAREER_INTELLIGENCE_STAGING_ACCEPTANCE.md)
-- [`docs/PRODUCTION_PROMOTION_CHECKLIST.md`](docs/PRODUCTION_PROMOTION_CHECKLIST.md)
-
-The source-controlled runtime includes ALB, ECS/Fargate, Aurora, S3, ECR, resume/source/AI queues and
-DLQs, workers, outbox publishers, migration task, source dispatcher, IAM and CloudWatch. Releases use
-immutable full-SHA images and execute migrations before service activation.
 
 ## External boundary
 
-The repository/source platform is complete. The remaining gates require genuine external resources
-or distribution identities:
+The lean source/runtime path is implemented, but live production evidence still requires genuine
+provider resources. Do not infer deployment from source support.
+
+Critical launch provider acceptance includes:
 
 ```text
-AWS/Vercel/Clerk staging activation
-real Candidate/S3/SQS/ECS/Aurora acceptance
-real ATS-provider throughput/freshness/cost measurements
-live OpenAI model + embedding acceptance
-live Stripe checkout + webhook acceptance
-real email/push provider delivery
-production promotion + backup/restore/failure drills
-Apple/Google signing + App Store/Play Store publication
-browser-extension store publication
-external Clerk identity deletion/revocation
+Railway project + PostgreSQL + API/worker deployment
+Cloudflare R2 private bucket + live object acceptance
+Clerk real signup/signin/JWT validation
+Vercel dedicated ApplyAI Preview and Production deployment
+real Open Jobs ingestion into the production database
+full Preview and Production candidate journeys
 ```
 
-Those are tracked as deployment/runtime/distribution blockers, not missing product source. See
-[`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md),
-[`docs/CURRENT_REPOSITORY_STATE.md`](docs/CURRENT_REPOSITORY_STATE.md) and
-[`docs/PLATFORM_COMPLETION.md`](docs/PLATFORM_COMPLETION.md).
+Optional integrations such as Stripe, Resend, PostHog, Sentry and browser auto-submit may remain
+disabled for the first free candidate launch, but the UI must not expose broken provider-dependent
+actions.
+
+See [`docs/PRODUCTION_RELEASE_CHECKLIST.md`](docs/PRODUCTION_RELEASE_CHECKLIST.md) for the exact
+`LIVE_PREVIEW_VERIFIED` and `LIVE_PRODUCTION_VERIFIED` gates.

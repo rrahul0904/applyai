@@ -1,0 +1,62 @@
+name: Open Jobs Live Acceptance
+
+on:
+  push:
+    branches:
+      - agent/production-activation-wave-1
+    paths:
+      - services/api/app/jobs/open_jobs.py
+      - services/api/tests/test_open_jobs_live.py
+      - .github/workflows/open-jobs-live-acceptance.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: applyai-open-jobs-live-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  bounded-live-source:
+    name: Verify public Open Jobs corpus
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+        with:
+          version: '0.9.21'
+
+      - name: Install API dependencies
+        working-directory: services/api
+        run: uv sync --frozen
+
+      - name: Run bounded public-source acceptance
+        working-directory: services/api
+        env:
+          APPLYAI_RUN_LIVE_OPEN_JOBS_TESTS: '1'
+        run: uv run pytest tests/test_open_jobs_live.py -q
+
+      - name: Record evidence boundary
+        if: ${{ success() }}
+        run: |
+          {
+            echo '## Open Jobs live acceptance'
+            echo
+            echo '- Public manifest: reachable'
+            echo '- Public leaf group: reachable'
+            echo '- Maximum groups fetched: 1'
+            echo '- Maximum postings evaluated: 25'
+            echo '- Apply URL / employer identity / normalization contract: verified'
+            echo '- Upstream vector persistence: rejected by connector'
+            echo '- Database ingestion counts: not asserted by this network-only gate'
+          } >> "$GITHUB_STEP_SUMMARY"

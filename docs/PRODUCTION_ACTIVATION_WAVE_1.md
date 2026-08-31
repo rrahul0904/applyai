@@ -2,17 +2,41 @@
 
 Updated: 2026-08-31
 
-## Mission
+## Status
 
-Move ApplyAI from source-complete product code toward a real preview/staging candidate journey without fabricating external-provider success.
+Production Activation Wave 1 delivered the candidate first-value dashboard, Open Jobs integration, source-authority hardening, candidate entry/auth packaging and the release evidence model. Its product stack is now merged into `main` through PR #26.
 
-The target path is:
+The original AWS-first activation plan in this document is **superseded for the initial launch** by PR #27, the Lean Production release vehicle.
+
+Canonical launch documentation is now:
+
+- `DEPLOYMENT.md`
+- `docs/LEAN_PRODUCTION_ARCHITECTURE.md`
+- `docs/RAILWAY_DEPLOYMENT.md`
+- `docs/R2_STORAGE.md`
+- `docs/deployment/VERCEL.md`
+- `docs/PRODUCTION_RELEASE_CHECKLIST.md`
+- `docs/PRODUCTION_RUNBOOK.md`
+
+AWS infrastructure remains preserved as an optional future scale/enterprise profile. It is not required for the first public ApplyAI candidate launch.
+
+## Product path delivered by this wave
 
 ```text
-sign up -> resume -> reviewed career profile -> real jobs -> Career Intelligence
-        -> Recruiter Lens -> application workspace -> interview prep
-        -> tracked resume -> engagement -> return to persistent workspace
+sign up
+  -> resume
+  -> reviewed career profile
+  -> real jobs
+  -> Career Intelligence
+  -> Recruiter Lens
+  -> application workspace
+  -> interview prep
+  -> tracked resume
+  -> engagement
+  -> persistent returning-user workspace
 ```
+
+The real deployed version of this path remains the final production acceptance target.
 
 ## Evidence vocabulary
 
@@ -20,85 +44,64 @@ Use these states literally:
 
 - `SOURCE_IMPLEMENTED` — production-path repository code exists.
 - `SOURCE_TESTED` — exact-head automated tests exercise the implementation.
-- `LOCAL_RUNTIME_VERIFIED` — clean-room/local runtime evidence passed.
-- `LIVE_PREVIEW_VERIFIED` — a real hosted Preview environment passed the documented candidate journey.
-- `LIVE_STAGING_VERIFIED` — staging infrastructure plus real provider/data acceptance passed.
-- `PRODUCTION_VERIFIED` — production operation was separately proven.
-- `BLOCKED_EXTERNAL_CONFIGURATION` — remaining evidence depends on a real account, secret, provider approval, billing confirmation, or cloud resource not available to source control.
+- `LOCAL_RUNTIME_VERIFIED` — local/clean-room runtime evidence passed.
+- `LIVE_PREVIEW_VERIFIED` — real hosted Preview plus provider-backed candidate journey passed.
+- `LIVE_PRODUCTION_VERIFIED` — real Production deployment plus persistent candidate journey passed.
+- `BLOCKED_EXTERNAL_CONFIGURATION` — remaining evidence depends on a real account, secret, provider authorization or resource not available to source control/current tooling.
 
 Do not collapse these states into `DONE`.
 
-## Current evidence matrix
+## Current launch architecture
 
-This table records the highest evidence level proven by this branch. It must be revised only from measured evidence.
+```text
+Candidate
+  -> Vercel / Next.js
+  -> Clerk
+  -> Railway / FastAPI
+       -> Railway PostgreSQL
+       -> Cloudflare R2
+       -> TaskOutbox -> postgres_tasks -> Railway worker
+```
 
-| Subsystem | Evidence | Notes |
-| --- | --- | --- |
-| Candidate dashboard | `SOURCE_TESTED` | Next Best Action, Jobs For You, Career Readiness and Active Opportunities covered by web/Playwright tests. |
-| Clerk auth source | `SOURCE_TESTED` | Dedicated sign-in/sign-up routes and redirect behavior exist; live tenant acceptance is still external. |
-| Database | `SOURCE_TESTED` | Alembic zero-to-head and drift validation pass against CI PostgreSQL; AWS staging is configured for private Aurora PostgreSQL. |
-| Resume storage | `SOURCE_TESTED` | Private S3 architecture and source tests exist; live AWS bucket acceptance is external. |
-| Resume parsing | `SOURCE_TESTED` | PDF/DOCX security limits and durable processing tests exist. |
-| Job ingestion | `SOURCE_TESTED` | Canonicalization, provenance, authority, dedupe and source scheduling tested. |
-| Open Jobs | `SOURCE_TESTED` | Mocked connector tests plus bounded real-network public corpus acceptance (1 group, <=25 postings) pass. Live DB insertion awaits staging runtime. |
-| Job search | `SOURCE_TESTED` | Scale benchmark passes on production-shaped synthetic inventory; real inventory acceptance awaits staging. |
-| Career Intelligence | `SOURCE_TESTED` | Deterministic evidence-bound product path tested; no hiring-probability claim. |
-| Recruiter Lens | `SOURCE_TESTED` | Candidate-side, evidence-only screening mirror tested. |
-| Career System | `SOURCE_TESTED` | Unified per-role workspace tested. |
-| Application workspace | `SOURCE_TESTED` | Candidate ownership/persistence and Playwright path tested. |
-| Interview prep | `SOURCE_TESTED` | Evidence-bound artifact path tested. |
-| Resume Share Intelligence | `SOURCE_TESTED` | Smart-link/privacy/engagement path tested; live public hosting awaits deployed web/API. |
-| AI durable runtime | `SOURCE_TESTED` | Durable deterministic/provider path source-tested; live provider acceptance is separate. |
-| Source scheduler | `SOURCE_TESTED` | Scheduler scale benchmark passes. |
-| Source worker | `SOURCE_TESTED` | Worker/source pipeline tested; live ECS runtime awaits AWS staging variables. |
-| Application executor | `SOURCE_TESTED` | Candidate approval and stop/handoff safeguards tested; live employer execution remains intentionally gated. |
-| Vercel | `BLOCKED_EXTERNAL_CONFIGURATION` | Dedicated workflow is ready; required Vercel/API/Clerk GitHub secrets are absent. |
-| FastAPI AWS runtime | `BLOCKED_EXTERNAL_CONFIGURATION` | Terraform/ECS release source exists; staging AWS/API/Clerk variables are absent. |
-| Observability | `SOURCE_IMPLEMENTED` | CloudWatch/runtime source exists; live logs require deployed AWS services. |
-| Production candidate journey | `BLOCKED_EXTERNAL_CONFIGURATION` | Cannot be promoted beyond local/source evidence until the real web, API, DB and Clerk environment exists. |
+Launch settings:
 
-`LOCAL_RUNTIME_VERIFIED` is assigned only after the exact current branch head completes the repository clean-room certification. A prior head passing clean-room must not be used to promote a newer commit.
+```text
+DEPLOYMENT_PROFILE=lean
+TASK_QUEUE_PROVIDER=postgres
+AUTH_PROVIDER=clerk
+OBJECT_STORAGE_PROVIDER=s3
+DATABASE_URL=<Railway PostgreSQL>
+```
+
+AWS scale settings remain supported through `DEPLOYMENT_PROFILE=aws` and the existing Terraform/ECS/Aurora/SQS/S3 source.
 
 ## Candidate first-value dashboard
 
 The candidate Home experience is intentionally organized around four questions rather than feature inventory:
 
-1. **Next Best Action** — one primary action based on resume/profile/application state.
-2. **Jobs For You** — strongest available roles with explainable fit context and a clear path into Recruiter Lens.
-3. **Career Readiness** — preparation foundations only; explicitly not employer interest or hiring probability.
-4. **Active Opportunities** — application state plus linked Resume Share Intelligence activity when present.
+1. **Next Best Action** — one primary action based on résumé/profile/application state.
+2. **Jobs For You** — strongest available roles with explainable fit context and a path into Recruiter Lens.
+3. **Career Readiness** — preparation foundations only; not employer interest or hiring probability.
+4. **Active Opportunities** — application state plus linked Resume Share Intelligence activity.
 
-Resume engagement remains observational. `BROWSED`, `ENGAGED`, and `DEEP_READ` never mean recruiter approval, interview selection, or hiring probability.
+Resume engagement remains observational. `BROWSED`, `ENGAGED`, and `DEEP_READ` never mean recruiter approval, interview selection or hiring probability.
 
-## Open Jobs upstream source
+## Open Jobs
 
-Public source:
+ApplyAI uses an original bounded connector for the public CC0 Open Jobs corpus.
 
-- repository: `https://github.com/elliottdehn/open-jobs`
-- dataset license: CC0 1.0 Universal
-- public data surface: `https://backend.dehnbostele.workers.dev/data`
-- upstream publishes a manifest and bounded leaf-group JSON files for its local-first client, in addition to a large Parquet snapshot.
-
-ApplyAI uses an original connector and does not copy the upstream crawler implementation.
-
-### Why the group data path
-
-The upstream Parquet snapshot is multi-GB and roughly million-row scale. Loading it into the API process would violate ApplyAI's bounded-source design.
-
-`OpenJobsConnector` therefore reads:
+Public data path:
 
 ```text
-/data/manifest.json
-/data/groups/<leaf>.json
+manifest.json
+  -> groups/<leaf>.json
+  -> bounded ApplyAI normalization
+  -> provenance / authority / dedupe / canonical job
 ```
 
-and processes a bounded number of groups per source run.
+The upstream embedding is discarded. ApplyAI retains its own semantic-provider boundary.
 
-The upstream embedding field is deliberately discarded during ingestion. ApplyAI retains its own semantic-ranking/provider boundary.
-
-### Authority and provenance
-
-Open Jobs is registered as:
+Open Jobs remains:
 
 ```text
 source_type = AUTHORIZED_AGGREGATOR_FEED
@@ -111,225 +114,152 @@ Employer-origin observations remain higher authority:
 
 ```text
 ApplyAI first party / employer direct
-        > employer official API / ATS
-        > employer structured page / career site
+        > employer official ATS/API
+        > employer structured career page
         > Open Jobs discovery observation
 ```
 
-The registered-source pipeline preserves the raw posting's per-record company/board identity. This is required for any multi-company feed and prevents one aggregator registry row from collapsing unrelated employers into one canonical company.
+The connector preserves per-record employer/board identity so a multi-company feed cannot collapse unrelated employers into one canonical company.
 
-### Cursor semantics
+### Real-network evidence
 
-Each Open Jobs run is bounded by configured group count. The connector stages a pending cursor and promotes it on the next run only when the previous source-completeness evidence recorded zero failed postings.
+A bounded real-network acceptance has already verified the public manifest/group surface with one group and no more than 25 postings, including application URLs, employer/board identity, normalization and vector stripping.
 
-A partial run therefore replays the same bounded slice. Canonical source identity makes the replay idempotent.
+This is source acceptance, not proof that a production database contains real jobs.
 
-Group ids may change when the upstream index is rebuilt. If a stored leaf id disappears, ApplyAI safely restarts the corpus walk rather than guessing a replacement cursor.
+## Lean durable queue
 
-### Registration
+PR #27 replaces SQS as a **launch requirement**, not as the only supported queue provider.
 
-```bash
-cd services/api
-uv run python -m scripts.register_public_job_sources --open-jobs
-```
-
-`--all` also registers it along with the other implemented public feeds.
-
-Default Open Jobs activation settings:
-
-- 25 groups per run
-- maximum 1000 records accepted from one group
-- 30 second request timeout
-- minimum 15 minute source cadence
-- non-authoritative freshness semantics
-
-These are operational bounds, not claims about real runtime throughput.
-
-### Real-network acceptance
-
-The dedicated `Open Jobs Live Acceptance` workflow runs an opt-in bounded public-network test with:
+Lean path:
 
 ```text
-max_groups = 1
-max_jobs_per_group = 25
-timeout_seconds = 30
+business transaction
+     +
+TaskOutbox
+     ↓ commit
+postgres_tasks
+     ↓
+Railway worker
 ```
 
-It verifies a real manifest and leaf group, HTTPS application URLs, employer/board identity, normalization and vector stripping. It intentionally does **not** claim database ingestion counts.
+Required semantics implemented/tested include:
 
-## Real job inventory boundary
+- unique idempotency keys;
+- `FOR UPDATE SKIP LOCKED`;
+- concurrent workers;
+- lease owner/expiry;
+- heartbeat;
+- expired-lease recovery;
+- retry/backoff;
+- `RETRY_WAIT`;
+- `DEAD`;
+- cancellation;
+- explicit résumé/source/AI/agent routing;
+- fail-closed unknown task types.
 
-Repository/source support includes Greenhouse, Lever, Ashby, SmartRecruiters, USAJOBS, ReliefWeb, permitted employer career pages/JSON-LD, authorized feeds, and Open Jobs discovery coverage.
+The optional AWS profile keeps SQS.
 
-The AWS staging source bootstrap now permits Open Jobs as the credential-free initial real source while reviewed direct ATS boards remain optional, higher-authority additions.
+## Private résumé storage
 
-This wave must not claim real inventory counts until a real database/source worker run measures them.
-
-Required live metrics remain:
-
-- organizations loaded
-- organizations with domains/career sources
-- active source count
-- successful real source runs
-- canonical active jobs
-- Open Jobs observations
-- direct ATS observations
-- deduplication rate
-- apply URL validity
-- freshness distribution
-- stale/closed jobs
-- salary/location coverage
-- source failure rate
-
-`pnpm job-supply:acceptance` remains fail-closed and must not be weakened to accept deterministic seed or synthetic benchmark data.
-
-## Database activation decision
-
-The production-activation prompt preferred Supabase PostgreSQL only when the existing infrastructure did not clearly require another managed PostgreSQL platform. Repository inspection establishes that ApplyAI's canonical AWS staging/release path already provisions:
-
-- private Aurora PostgreSQL Serverless v2;
-- private DB subnets/security groups;
-- AWS-managed master-user secret rotation/storage;
-- ECS task injection of `DATABASE_HOST`, `DATABASE_USER` and `DATABASE_PASSWORD`;
-- one migration task plus API/resume/source/AI/agent workers sharing that private database boundary.
-
-Therefore this wave keeps **Aurora PostgreSQL** instead of introducing a second Supabase database and rewriting Terraform/ECS secret plumbing.
-
-This is an infrastructure choice only. Application ownership remains:
+Lean production uses Cloudflare R2 through the existing S3-compatible adapter.
 
 ```text
-Clerk                -> identity / session / authentication
-FastAPI              -> authorization / ownership / business logic
-SQLAlchemy + Alembic -> canonical database access/schema
-Aurora PostgreSQL    -> managed durable PostgreSQL
+S3_ENDPOINT_URL=https://<account-id>.r2.cloudflarestorage.com
+S3_BUCKET=applyai-resumes
+S3_REGION=auto
+S3_SERVER_SIDE_ENCRYPTION=none
 ```
 
-Supabase Auth is not introduced.
+AWS S3 mode retains `AES256` behavior.
 
-A separate existing Supabase project is unrelated to ApplyAI and remains untouched.
+Resume Share Intelligence never exposes the raw private object key or permanent R2/S3 object URL.
 
-Real database activation is currently `BLOCKED_EXTERNAL_CONFIGURATION` because the GitHub `staging` environment lacks the AWS state/deploy variables required to provision the existing Terraform stack.
-
-## Vercel activation
-
-Target project:
-
-- project: `applyai`
-- team: `rrahul0904-5013s-projects`
-- repository: `rrahul0904/applyai`
-- root: `apps/web`
-- framework: Next.js
-
-As of 2026-08-31, the connected Vercel team does not contain an `applyai` project. Existing projects are unrelated and must not be reused as a fallback.
-
-The branch deployment workflow can create the dedicated project, sync environment variables, build, deploy and probe a Preview when these GitHub Actions secrets exist:
+Return-view notification behavior has also been bounded:
 
 ```text
-VERCEL_TOKEN
-APPLYAI_VERCEL_API_URL
-APPLYAI_VERCEL_CLERK_PUBLISHABLE_KEY
-APPLYAI_VERCEL_CLERK_SECRET_KEY
+first human VIEW   -> RESUME_SHARE_VIEWED
+first later VIEW   -> one RESUME_SHARE_RETURNED
+later repeat VIEWs -> analytics only
 ```
 
-The automatic preflight proved all four are currently absent, so no Vercel project was created or modified. This is `BLOCKED_EXTERNAL_CONFIGURATION`, not a source-code failure.
+This prevents refresh-driven notification spam while preserving engagement history.
 
-Server-only secrets must never be exposed under `NEXT_PUBLIC_*`.
+## Current source evidence
 
-## Clerk boundary
+Repository-side evidence includes:
 
-Clerk remains the sole candidate identity provider.
+| Subsystem | Current source evidence |
+| --- | --- |
+| Candidate entry/auth UX | `SOURCE_TESTED` |
+| Candidate first-value dashboard | `SOURCE_TESTED` |
+| Resume parser/security | `SOURCE_TESTED` |
+| Career System | `SOURCE_TESTED` |
+| Recruiter Lens | `SOURCE_TESTED` |
+| Resume Share Intelligence | `SOURCE_TESTED` |
+| Open Jobs connector | real public-source acceptance + source tests |
+| Career Intelligence | `SOURCE_TESTED` |
+| Application workspace | `SOURCE_TESTED` |
+| Interview preparation | `SOURCE_TESTED` |
+| Postgres durable queue | `SOURCE_TESTED` / Lean Production Validation |
+| R2 adapter | `SOURCE_TESTED`; real provider acceptance still required |
+| Railway packaging | `SOURCE_TESTED`; real provider deployment still required |
+| AWS scale profile | retained repository validation |
 
-Source routes:
+Exact-head workflow evidence must always be rechecked after the final source-changing commit.
+
+## Current live-provider boundary
+
+### Railway
+
+Provider: Railway
+
+Missing item: authorized Railway account session/API token.
+
+Exact action required: authenticate Railway for the dedicated `applyai` project. The repository can then run `scripts/railway-bootstrap.sh` to create/reuse:
 
 ```text
-/sign-in/[[...sign-in]]
-/sign-up/[[...sign-up]]
+Postgres
+applyai-api
+applyai-worker
+applyai-browser-worker
 ```
 
-Expected behavior:
+Launch cannot be fully verified without the Railway PostgreSQL/API/normal worker. The browser worker may remain safely disabled if browser auto-submit is not part of the initial free candidate launch.
 
-- new account -> `/onboarding`
-- returning sign-in -> `/dashboard`
-- signed-in auth-page visit -> `/dashboard`
-- protected candidate route while signed out -> branded sign-in
+### Cloudflare R2
 
-Live signup/social login/JWT/JWKS acceptance requires a real configured tenant and is not proven by local protocol tests alone.
+Provider: Cloudflare R2
 
-## AWS staging activation boundary
+Missing item: authorized account plus private bucket credentials.
 
-The non-mutating staging readiness audit currently proves the GitHub `staging` environment is missing these required values:
+Exact action required: create/use a dedicated private `applyai-resumes` bucket and provide the endpoint, access key and secret to Railway plus the R2 acceptance workflow.
 
-```text
-AWS_DEPLOY_ROLE_ARN
-TF_STATE_BUCKET
-WEB_ORIGIN
-API_BASE_URL
-API_CERTIFICATE_ARN
-CLERK_ISSUER
-CLERK_JWKS_URL
-CLERK_AUDIENCE
-```
+What runs afterward: real PUT/HEAD/GET/presigned-PUT/DELETE acceptance, then synthetic candidate résumé upload/processing.
 
-`ENABLE_OPEN_JOBS` defaults to `true`, so public job-source availability itself is no longer an AWS staging prerequisite.
+### Clerk
 
-The repository already contains the canonical release path:
+Provider: Clerk
 
-```text
-GitHub OIDC -> Terraform -> ECR -> ECS/Fargate
-            -> Alembic migration task
-            -> API/workers/source scheduler
-            -> private Aurora + S3 + SQS + CloudWatch
-```
+Missing item: real ApplyAI Clerk instance credentials/configuration.
 
-Do not create a second backend deployment architecture merely to avoid configuring those provider-owned values.
+Required values include the frontend publishable key/server secret and backend issuer/JWKS values (plus audience when configured).
 
-## Long-running runtime boundary
+What runs afterward: real signup, FastAPI JWT validation, `/me`, logout/login persistence and cross-user isolation.
 
-Vercel hosts the Next.js web surface only.
-
-Long-running workloads remain outside Vercel Functions:
-
-- job/source workers
-- resume worker
-- AI/agent workers
-- Playwright application executor
-
-Canonical durable path remains:
-
-```text
-PostgreSQL transactional outbox -> SQS -> worker
-```
-
-The Playwright executor remains candidate-approved and must stop for unknown/sensitive required fields, CAPTCHA, authentication challenges, or other employer controls. No bypass behavior is permitted.
-
-## Definition of done for this wave
-
-Repository completion requires:
-
-- candidate first-value dashboard implemented and tested
-- Open Jobs connector/registration implemented and tested
-- bounded real-network Open Jobs acceptance green
-- aggregate-feed company identity preserved
-- source authority remains employer-first
-- existing migrations stay drift-free
-- existing web/API/OpenAPI/container/Terraform/Playwright gates stay green
-- exact-head clean-room stays green
-- job-scale/source-scheduler gates remain green
-- external blockers reported exactly
-
-Live-preview completion additionally requires the real candidate journey from the implementation prompt. Source completion alone cannot promote this wave to `LIVE_PREVIEW_VERIFIED`.
-
-## Exact external actions still required
-
-### Vercel / web Preview
+### Vercel
 
 Provider: Vercel + GitHub Actions
 
-Resource: dedicated `applyai` project under team `rrahul0904-5013s-projects`
+Target:
 
-Why blocked: the deployment workflow has no credential/API/auth values to create and configure the project.
+```text
+project = applyai
+team = rrahul0904-5013s-projects
+root = apps/web
+```
 
-Exact values required in GitHub Actions secrets:
+The connected team currently has no dedicated `applyai` project. The deployment workflow is prepared to create/configure it when these values exist:
 
 ```text
 VERCEL_TOKEN
@@ -338,27 +268,37 @@ APPLYAI_VERCEL_CLERK_PUBLISHABLE_KEY
 APPLYAI_VERCEL_CLERK_SECRET_KEY
 ```
 
-What runs afterward: the existing workflow creates/patches `applyai`, syncs Preview variables, builds, deploys and probes the URL.
+The latest preflight confirmed those values are absent, so project creation/deployment was intentionally skipped rather than fabricating a Preview.
 
-### AWS backend/database/workers
+## Preview merge gate for PR #27
 
-Provider: AWS + GitHub Actions `staging` environment
+Do not merge PR #27 until all critical items pass:
 
-Resource: ApplyAI Terraform/ECS staging stack
+1. exact-head repository CI/Lean Production/clean-room/scale gates are green;
+2. Railway PostgreSQL is real and Alembic is current with zero drift;
+3. Railway API `/health` and `/ready` pass;
+4. Railway Postgres worker processes real tasks without AWS/SQS dependency;
+5. R2 live acceptance passes and the résumé bucket is private;
+6. Clerk real signup/JWT/user-isolation acceptance passes;
+7. Open Jobs performs a bounded real database ingestion;
+8. `pnpm job-supply:initial-acceptance` passes;
+9. dedicated Vercel ApplyAI Preview is healthy;
+10. the full Preview candidate journey passes through logout/login persistence.
 
-Why blocked: required provider-owned deployment/state/domain/Clerk variables are absent.
-
-Exact GitHub environment variables required:
+After that:
 
 ```text
-AWS_DEPLOY_ROLE_ARN
-TF_STATE_BUCKET
-WEB_ORIGIN
-API_BASE_URL
-API_CERTIFICATE_ARN
-CLERK_ISSUER
-CLERK_JWKS_URL
-CLERK_AUDIENCE
+merge PR #27 -> main
+run exact-main release gate
+deploy Railway production release
+deploy Vercel production release
+run bounded production job ingestion
+repeat complete candidate journey on Production
+inspect production errors
 ```
 
-What runs afterward: staging preflight -> Terraform plan/apply -> ECR image -> Alembic task -> ECS API/workers -> source bootstrap including Open Jobs -> staging verification.
+Only then may ApplyAI be classified `LIVE_PRODUCTION_VERIFIED`.
+
+## Final authority
+
+This document preserves the product and evidence decisions from Production Activation Wave 1, but the detailed operator instructions now live in the lean launch documentation listed at the top of this file. Do not resurrect the earlier AWS-first launch path solely because historical sections or old PR descriptions mention Aurora/ECS/SQS.

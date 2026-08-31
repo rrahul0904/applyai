@@ -55,10 +55,30 @@ const snapshot: CareerSystemSnapshot = {
     { id: "profile", label: "Verified career profile", complete: true, weight: 15 },
     { id: "resume", label: "Processed master resume", complete: false, weight: 15 },
     { id: "fit", label: "Role fit analyzed", complete: true, weight: 15 },
-    { id: "package", label: "Application package reviewed", complete: false, weight: 25 },
-    { id: "outreach", label: "Outreach and follow-up reviewed", complete: false, weight: 10 },
-    { id: "interview", label: "Interview preparation created", complete: false, weight: 10 },
-    { id: "application", label: "Application workspace started", complete: false, weight: 10 },
+    {
+      id: "package",
+      label: "Application package reviewed",
+      complete: false,
+      weight: 25,
+    },
+    {
+      id: "outreach",
+      label: "Outreach and follow-up reviewed",
+      complete: false,
+      weight: 10,
+    },
+    {
+      id: "interview",
+      label: "Interview preparation created",
+      complete: false,
+      weight: 10,
+    },
+    {
+      id: "application",
+      label: "Application workspace started",
+      complete: false,
+      weight: 10,
+    },
   ],
   resume: {
     version_id: null,
@@ -88,7 +108,8 @@ const snapshot: CareerSystemSnapshot = {
     checklist: [],
   },
   communications: {
-    recruiter_message: "Hi — I’m interested in the Senior Data Engineer role at ApplyAI Labs.",
+    recruiter_message:
+      "Hi — I’m interested in the Senior Data Engineer role at ApplyAI Labs.",
     recruiter_message_verified: false,
     follow_up_message: "Hi — I wanted to follow up on my application.",
     follow_up_message_verified: false,
@@ -162,12 +183,15 @@ describe("CareerSystemPanel", () => {
       progress_score: 50,
       communications: {
         ...snapshot.communications,
-        recruiter_message: `${snapshot.communications.recruiter_message} Happy to share more context.`,
+        recruiter_message:
+          `${snapshot.communications.recruiter_message} Happy to share more context.`,
         recruiter_message_verified: true,
         follow_up_message_verified: true,
       },
     });
-    vi.mocked(api.applications.create).mockResolvedValue({ id: "application-1" } as Awaited<ReturnType<typeof api.applications.create>>);
+    vi.mocked(api.applications.create).mockResolvedValue({
+      id: "application-1",
+    } as Awaited<ReturnType<typeof api.applications.create>>);
     vi.mocked(api.careerV2.start).mockResolvedValue({
       id: "run-1",
       status: "COMPLETED",
@@ -177,11 +201,15 @@ describe("CareerSystemPanel", () => {
   it("renders the complete job-search system without presenting progress as hiring probability", async () => {
     renderPanel();
 
-    expect(await screen.findByRole("heading", { name: "One role. One complete application workspace." })).toBeDefined();
+    expect(
+      await screen.findByRole("heading", {
+        name: "One role. One complete application workspace.",
+      }),
+    ).toBeDefined();
     expect(screen.getByText("30%")).toBeDefined();
     expect(screen.getByText(/not a hiring probability/i)).toBeDefined();
     expect(screen.getByText("78%")).toBeDefined();
-    expect(screen.getByText("Kafka").textContent).toBe("Kafka");
+    expect(screen.getByText(/Gaps to address honestly: Kafka/i)).toBeDefined();
     expect(screen.getByText("Senior data engineering leader")).toBeDefined();
     expect(screen.getByText(/concrete example where you used Python/i)).toBeDefined();
   });
@@ -193,7 +221,8 @@ describe("CareerSystemPanel", () => {
     const recruiter = screen.getByLabelText("Recruiter message");
     fireEvent.change(recruiter, {
       target: {
-        value: `${snapshot.communications.recruiter_message} Happy to share more context.`,
+        value:
+          `${snapshot.communications.recruiter_message} Happy to share more context.`,
       },
     });
 
@@ -202,7 +231,9 @@ describe("CareerSystemPanel", () => {
     fireEvent.click(checkboxes[1]);
     fireEvent.click(screen.getByRole("button", { name: /save reviewed messages/i }));
 
-    await waitFor(() => expect(careerSystemApi.saveCommunications).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(careerSystemApi.saveCommunications).toHaveBeenCalledTimes(1),
+    );
     expect(careerSystemApi.saveCommunications).toHaveBeenCalledWith(
       "job-1",
       expect.objectContaining({
@@ -215,9 +246,15 @@ describe("CareerSystemPanel", () => {
 
   it("starts the existing evidence-bound interview preparation task", async () => {
     renderPanel();
-    fireEvent.click(await screen.findByRole("button", { name: "Create full interview pack" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Create full interview pack" }),
+    );
 
-    await waitFor(() => expect(api.careerV2.start).toHaveBeenCalledWith("job-1", "interview-prep"));
-    expect(successMock).toHaveBeenCalledWith("Job-specific interview preparation is ready");
+    await waitFor(() =>
+      expect(api.careerV2.start).toHaveBeenCalledWith("job-1", "interview-prep"),
+    );
+    expect(successMock).toHaveBeenCalledWith(
+      "Job-specific interview preparation is ready",
+    );
   });
 });

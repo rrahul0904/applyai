@@ -23,6 +23,9 @@ class ObjectStorageProvider(ABC):
     def supports_direct_upload(self) -> bool:
         return False
 
+    def direct_upload_headers(self, *, content_type: str) -> dict[str, str]:
+        return {"content-type": content_type}
+
     def create_presigned_put(
         self,
         *,
@@ -80,6 +83,13 @@ class LocalObjectStorageProvider(ObjectStorageProvider):
 
 
 class S3ObjectStorageProvider(ObjectStorageProvider):
+    """S3-compatible private object storage used by AWS S3 and Cloudflare R2.
+
+    AWS deployments keep SSE-S3 (`AES256`) enabled. R2 deployments set
+    `S3_SERVER_SIDE_ENCRYPTION=none`; R2 encrypts objects at rest but its S3 API does not accept
+    the AWS `x-amz-server-side-encryption: AES256` PutObject header.
+    """
+
     def __init__(self, settings: Settings) -> None:
         if not settings.s3_bucket:
             raise RuntimeError("S3_BUCKET is required for the S3 storage provider")
@@ -87,16 +97,48 @@ class S3ObjectStorageProvider(ObjectStorageProvider):
         addressing_style = os.getenv("S3_ADDRESSING_STYLE", "auto").strip().lower()
         if addressing_style not in {"auto", "path", "virtual"}:
             raise RuntimeError("S3_ADDRESSING_STYLE must be auto, path, or virtual")
+
+        credentials: dict[str, str] = {}
+        if settings.s3_access_key_id and settings.s3_secret_access_key:
+            credentials = {
+                "aws_access_key_id": settings.s3_access_key_id,
+                "aws_secret_access_key": settings.s3_secret_access_key,
+            }
+        self.server_side_encryption = settings.s3_server_side_encryption.strip()
         self.client = boto3.client(
             "s3",
             region_name=settings.s3_region,
             endpoint_url=settings.s3_endpoint_url,
-            config=Config(s3={"addressing_style": addressing_style}),
+            config=Config(
+                signature_version="s3v4",
+                s3={"addressing_style": addressing_style},
+            ),
+            **credentials,
         )
 
     @property
     def supports_direct_upload(self) -> bool:
         return True
+
+    @property
+    def _uses_sse_s3(self) -> bool:
+        return self.server_side_encryption.casefold() == "aes256"
+
+    def _put_params(self, *, key: str, content_type: str) -> dict[str, str]:
+        params = {
+            "Bucket": self.bucket,
+            "Key": key,
+            "ContentType": content_type,
+        }
+        if self._uses_sse_s3:
+            params["ServerSideEncryption"] = "AES256"
+        return params
+
+    def direct_upload_headers(self, *, content_type: str) -> dict[str, str]:
+        headers = {"content-type": content_type}
+        if self._uses_sse_s3:
+            headers["x-amz-server-side-encryption"] = "AES256"
+        return headers
 
     def create_presigned_put(
         self,
@@ -107,22 +149,20 @@ class S3ObjectStorageProvider(ObjectStorageProvider):
     ) -> str:
         return self.client.generate_presigned_url(
             "put_object",
-            Params={
-                "Bucket": self.bucket,
-                "Key": key,
-                "ContentType": content_type,
-                "ServerSideEncryption": "AES256",
-            },
+            Params=self._put_params(key=key, content_type=content_type),
             ExpiresIn=expires_in_seconds,
             HttpMethod="PUT",
         )
 
     def put(self, *, key: str, content: BinaryIO, content_type: str) -> None:
+        extra_args = {"ContentType": content_type}
+        if self._uses_sse_s3:
+            extra_args["ServerSideEncryption"] = "AES256"
         self.client.upload_fileobj(
             content,
             self.bucket,
             key,
-            ExtraArgs={"ContentType": content_type, "ServerSideEncryption": "AES256"},
+            ExtraArgs=extra_args,
         )
 
     def delete(self, *, key: str) -> None:

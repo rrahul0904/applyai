@@ -1,8 +1,15 @@
 import { SignUp } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { CandidateAuthShell } from "@/components/candidate-auth-shell";
+
+export const metadata: Metadata = {
+  title: "Create account | ApplyAI",
+  description: "Create a private ApplyAI candidate workspace and start with your verified career evidence.",
+  robots: { index: false, follow: false },
+};
 
 export default async function SignUpPage() {
   const clerkConfigured = Boolean(

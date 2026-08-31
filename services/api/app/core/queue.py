@@ -7,6 +7,7 @@ from typing import Any
 
 import boto3
 from fastapi import Depends
+from sqlalchemy.exc import IntegrityError
 
 from app.core.config import Settings, get_settings
 
@@ -94,14 +95,48 @@ class SqsTaskQueue(TaskQueue):
         self.client.send_message(**kwargs)
 
 
+class PostgresTaskQueue(TaskQueue):
+    """Materialize outbox events into an idempotent PostgreSQL work queue.
+
+    The outbox transaction remains the domain/event boundary. This queue owns only worker
+    delivery state. A unique idempotency key makes an outbox publish retry safe if the task row
+    was committed but the publisher crashed before marking its outbox event published.
+    """
+
+    def enqueue(self, task: Task) -> None:
+        # Lazy imports avoid creating a queue <-> database module import cycle at process start.
+        from app.core.database import SessionLocal
+        from app.postgres_queue_models import PostgresTask
+
+        with SessionLocal() as session:
+            try:
+                with session.begin_nested():
+                    session.add(
+                        PostgresTask(
+                            task_type=task.task_type,
+                            payload=task.payload,
+                            idempotency_key=task.idempotency_key,
+                            status="QUEUED",
+                        )
+                    )
+                    session.flush()
+                session.commit()
+            except IntegrityError:
+                session.rollback()
+                # A task with the same key is already durable. Treat duplicate publication as
+                # success so the corresponding outbox event can advance to PUBLISHED.
+                return
+
+
 _development_queue = InMemoryTaskQueue()
 _source_development_queue = InMemoryTaskQueue()
 _ai_development_queue = InMemoryTaskQueue()
 _agent_development_queue = InMemoryTaskQueue()
+_postgres_queue = PostgresTaskQueue()
 
 
 def supports_task_type(settings: Settings, task_type: str) -> bool:
-    if settings.task_queue_provider != "sqs":
+    if settings.task_queue_provider in {"memory", "postgres"}:
         return True
     if task_type in AGENT_TASK_TYPES:
         return bool(resolve_agent_queue_url(settings))
@@ -120,6 +155,8 @@ def get_task_queue_for_type(
     is_source_task = task_type in SOURCE_TASK_TYPES
     is_ai_task = task_type in AI_TASK_TYPES
     is_agent_task = task_type in AGENT_TASK_TYPES
+    if settings.task_queue_provider == "postgres":
+        return _postgres_queue
     if settings.task_queue_provider == "sqs":
         if is_agent_task:
             queue_url = resolve_agent_queue_url(settings)

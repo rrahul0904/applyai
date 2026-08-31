@@ -74,7 +74,8 @@ test("candidate MVP persists resume, profile, saved job, application, status, an
   await captureDemo(page, "07-onboarding-complete");
   await page.getByRole("button", { name: /Complete onboarding/i }).click();
   await page.waitForURL(/\/dashboard$/);
-  await expect(page.getByRole("heading", { name: "Your next best moves." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your career workspace is ready." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Opportunities worth inspecting" })).toBeVisible();
   await captureDemo(page, "08-dashboard");
 
   await page.goto("/jobs");

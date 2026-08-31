@@ -14,7 +14,7 @@ describe("CandidateAuthShell", () => {
     expect(screen.getByText("Auth form")).toBeTruthy();
     expect(screen.getByText("Private by default")).toBeTruthy();
     expect(screen.getByText("Evidence-bound AI")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Create account" })).toHaveAttribute("href", "/sign-up");
+    expect(screen.getByRole("link", { name: "Create account" }).getAttribute("href")).toBe("/sign-up");
   });
 
   it("presents account creation as the start of a reusable career workspace", () => {
@@ -27,6 +27,6 @@ describe("CandidateAuthShell", () => {
     expect(screen.getByRole("heading", { name: "Make every application more intentional." })).toBeTruthy();
     expect(screen.getByText("Create account form")).toBeTruthy();
     expect(screen.getByText("See the recruiter view before you apply")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/sign-in");
+    expect(screen.getByRole("link", { name: "Sign in" }).getAttribute("href")).toBe("/sign-in");
   });
 });

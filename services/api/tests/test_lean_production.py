@@ -18,7 +18,7 @@ from app.workers.postgres import cancel_task, claim_task, retry_or_dead_task, ut
 
 def _production_settings(**overrides) -> Settings:
     values = {
-        "environment": "production",
+        "app_env": "production",
         "deployment_profile": "lean",
         "database_url": "postgresql://user:secret@postgres.railway.internal:5432/railway",
         "auth_provider": "clerk",
@@ -68,6 +68,7 @@ def test_legacy_split_database_fields_remain_available_for_aws() -> None:
 
 def test_production_lean_profile_requires_postgres_queue_not_sqs() -> None:
     settings = _production_settings()
+    assert settings.app_env == "production"
     assert settings.task_queue_provider == "postgres"
     assert settings.sqs_queue_url is None
 
@@ -192,13 +193,50 @@ def test_postgres_queue_is_idempotent_and_outbox_safe(database_url) -> None:
         assert outbox.status == "PUBLISHED"
 
 
-def test_postgres_queue_recovers_expired_leases_retries_and_dies(database_url) -> None:
+def test_postgres_queue_retries_with_backoff_before_dead_state(database_url) -> None:
     del database_url
     settings = Settings(
         task_queue_provider="postgres",
         postgres_task_lease_seconds=30,
         postgres_task_max_attempts=2,
         postgres_task_retry_base_seconds=1,
+    )
+    PostgresTaskQueue().enqueue(
+        Task(task_type="RESUME_PARSE", payload={}, idempotency_key="lean:test:retry")
+    )
+    task_id = claim_task(settings, worker_id="worker-a")
+    assert task_id is not None
+    status = retry_or_dead_task(
+        task_id,
+        worker_id="worker-a",
+        settings=settings,
+        error_code="TRANSIENT",
+    )
+    assert status == "RETRY_WAIT"
+
+    with SessionLocal() as session:
+        row = session.get(PostgresTask, task_id)
+        assert row is not None
+        assert row.available_at > utcnow()
+        row.available_at = utcnow() - timedelta(seconds=1)
+        session.commit()
+
+    assert claim_task(settings, worker_id="worker-b") == task_id
+    status = retry_or_dead_task(
+        task_id,
+        worker_id="worker-b",
+        settings=settings,
+        error_code="TRANSIENT_AGAIN",
+    )
+    assert status == "DEAD"
+
+
+def test_postgres_queue_recovers_expired_lease(database_url) -> None:
+    del database_url
+    settings = Settings(
+        task_queue_provider="postgres",
+        postgres_task_lease_seconds=30,
+        postgres_task_max_attempts=3,
     )
     PostgresTaskQueue().enqueue(
         Task(task_type="RESUME_PARSE", payload={}, idempotency_key="lean:test:lease")
@@ -216,13 +254,11 @@ def test_postgres_queue_recovers_expired_leases_retries_and_dies(database_url) -
 
     reclaimed = claim_task(settings, worker_id="worker-b")
     assert reclaimed == task_id
-    status = retry_or_dead_task(
-        task_id,
-        worker_id="worker-b",
-        settings=settings,
-        error_code="TRANSIENT",
-    )
-    assert status == "DEAD"
+    with SessionLocal() as session:
+        row = session.get(PostgresTask, task_id)
+        assert row is not None
+        assert row.attempt_count == 2
+        assert row.lease_owner == "worker-b"
 
 
 def test_postgres_queue_cancellation_prevents_claim(database_url) -> None:

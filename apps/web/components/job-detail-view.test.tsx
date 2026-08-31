@@ -21,6 +21,12 @@ vi.mock("sonner", () => ({
   },
 }));
 
+vi.mock("@/components/career-system-panel", () => ({
+  CareerSystemPanel: ({ jobId }: { jobId: string }) => (
+    <div data-testid="career-system-panel">Career System for {jobId}</div>
+  ),
+}));
+
 vi.mock("@/lib/api/client", () => ({
   api: {
     jobs: { detail: vi.fn() },
@@ -68,6 +74,7 @@ function renderJobDetail() {
 
 describe("JobDetailView", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.mocked(api.jobs.detail).mockResolvedValue(job);
     vi.mocked(api.savedJobs.save).mockResolvedValue(undefined);
     vi.mocked(api.savedJobs.unsave).mockResolvedValue(undefined);
@@ -82,6 +89,7 @@ describe("JobDetailView", () => {
     expect(screen.getByText("Boston, MA")).toBeDefined();
     expect(screen.getByText("Build reliable data products.")).toBeDefined();
     expect(screen.getByRole("link", { name: "View original listing" }).getAttribute("href")).toBe(job.source_url);
+    expect(screen.getByTestId("career-system-panel").textContent).toContain("job-1");
   });
 
   it("persists a saved job through the real mutation boundary", async () => {

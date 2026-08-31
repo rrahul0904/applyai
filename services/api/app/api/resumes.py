@@ -234,10 +234,7 @@ def create_resume_upload_intent(
         resume_id=intent.resume_id,
         resume_version_id=intent.resume_version_id,
         upload_url=upload_url,
-        upload_headers={
-            "content-type": intent.content_type,
-            "x-amz-server-side-encryption": "AES256",
-        },
+        upload_headers=storage.direct_upload_headers(content_type=intent.content_type),
         expires_in_seconds=settings.s3_upload_expiration_seconds,
     )
 

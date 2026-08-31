@@ -5,6 +5,7 @@ from typing import Any, Iterator
 
 import httpx
 
+from app.job_source_models import JobSourceRegistry
 from app.jobs.connectors import ConnectorHealth, JobSourceConnector, NormalizedJob
 from app.jobs.contracts import (
     JobSourceType,
@@ -41,11 +42,15 @@ class OpenJobsConnector(JobSourceConnector):
 
     Open Jobs publishes a local-first tree manifest and leaf-group JSON files. ApplyAI
     intentionally consumes those small public group files instead of loading the multi-GB
-    Parquet snapshot into API memory. Each source run advances through a bounded number of
-    leaves and persists a checkpoint through the normal source registry.
+    Parquet snapshot into API memory.
 
-    This source is discovery/coverage evidence, not closure authority. Employer-origin ATS
+    The source is discovery/coverage evidence, not closure authority. Employer-origin ATS
     observations remain higher-authority canonical sources when the same role is observed.
+
+    Checkpointing is retry-safe without changing the generic source pipeline: a run writes a
+    pending checkpoint onto its attached registry record. The next run promotes that pending
+    checkpoint only when the previous run recorded zero failed postings. A partial run therefore
+    replays the same bounded slice, and canonical ingestion makes that replay idempotent.
     """
 
     key = "open-jobs"
@@ -60,6 +65,7 @@ class OpenJobsConnector(JobSourceConnector):
         max_jobs_per_group: int = 1000,
         timeout_seconds: float = 30.0,
         client: httpx.Client | None = None,
+        source_record: JobSourceRegistry | None = None,
     ) -> None:
         base = data_base_url.strip().rstrip("/")
         if not base.startswith("https://"):
@@ -67,6 +73,7 @@ class OpenJobsConnector(JobSourceConnector):
         self.data_base_url = base
         self.max_groups_per_run = max(1, min(int(max_groups_per_run), 250))
         self.max_jobs_per_group = max(1, min(int(max_jobs_per_group), 2000))
+        self.source_record = source_record
         self._owns_client = client is None
         self.client = client or httpx.Client(
             timeout=timeout_seconds,
@@ -107,12 +114,39 @@ class OpenJobsConnector(JobSourceConnector):
             if not isinstance(node, dict):
                 continue
             children = node.get("children")
-            if children not in (None, []) and isinstance(children, list) and children:
+            if isinstance(children, list) and children:
                 continue
             node_id = node.get("id")
             if node_id is not None:
                 leaves.append(str(node_id))
         return leaves
+
+    def _committed_checkpoint(self, supplied: dict[str, Any] | None) -> dict[str, Any]:
+        if self.source_record is None:
+            return dict(supplied or {})
+
+        configuration = dict(self.source_record.configuration or {})
+        committed = dict(configuration.get("connector_checkpoint") or supplied or {})
+        pending = configuration.get("open_jobs_pending_checkpoint")
+        previous_counts = configuration.get("last_source_completeness_counts")
+        previous_completed = bool(configuration.get("last_source_completeness_at"))
+        if isinstance(pending, dict) and pending:
+            failed = None
+            if isinstance(previous_counts, dict):
+                failed = int(previous_counts.get("failed", 0))
+            if previous_completed and failed == 0:
+                committed = dict(pending)
+                configuration["connector_checkpoint"] = committed
+            configuration.pop("open_jobs_pending_checkpoint", None)
+            self.source_record.configuration = configuration
+        return committed
+
+    def _stage_checkpoint(self) -> None:
+        if self.source_record is None:
+            return
+        configuration = dict(self.source_record.configuration or {})
+        configuration["open_jobs_pending_checkpoint"] = self.checkpoint()
+        self.source_record.configuration = configuration
 
     def iter_batches(
         self,
@@ -126,7 +160,8 @@ class OpenJobsConnector(JobSourceConnector):
         self._manifest_recipe = str(manifest.get("recipe") or "") or None
         self._manifest_jobs = int(manifest.get("jobs") or 0) or None
         self._manifest_leaves = int(manifest.get("leaves") or len(leaves))
-        previous_leaf = str((checkpoint or {}).get("last_leaf_id") or "")
+        committed = self._committed_checkpoint(checkpoint)
+        previous_leaf = str(committed.get("last_leaf_id") or "")
         start = 0
         if previous_leaf:
             try:
@@ -180,9 +215,11 @@ class OpenJobsConnector(JobSourceConnector):
             self._jobs_seen += len(records)
             yield records
 
+        self._stage_checkpoint()
+
     def fetch(self, checkpoint: dict[str, Any] | None) -> list[dict[str, Any]]:
-        # Compatibility path for callers that have not adopted iter_batches. The configured
-        # group bound keeps this finite, but production registry ingestion consumes batches.
+        # Compatibility path for the existing registered-source runner. The group bound keeps
+        # each run finite; the source record carries the retry-safe durable cursor.
         return [record for batch in self.iter_batches(checkpoint) for record in batch]
 
     def to_raw(self, payload: dict[str, Any]) -> RawJobPosting:

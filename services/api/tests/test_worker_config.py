@@ -9,6 +9,7 @@ from app.workers.resume import process_message
 
 
 DURABLE_SETTINGS = {
+    "deployment_profile": "aws",
     "auth_provider": "clerk",
     "clerk_issuer": "https://clerk.example.test",
     "clerk_jwks_url": "https://clerk.example.test/.well-known/jwks.json",
@@ -40,10 +41,11 @@ def test_database_component_configuration_must_be_complete():
         Settings(database_host="db.example.test", database_name="applyai")
 
 
-def test_production_requires_durable_sqs_queue():
-    with pytest.raises(ValueError, match="Production requires TASK_QUEUE_PROVIDER=sqs"):
+def test_production_aws_profile_requires_durable_sqs_queue():
+    with pytest.raises(ValueError, match="Production AWS profile requires TASK_QUEUE_PROVIDER=sqs"):
         Settings(
             app_env="production",
+            deployment_profile="aws",
             task_queue_provider="memory",
             auth_provider="clerk",
             clerk_issuer=DURABLE_SETTINGS["clerk_issuer"],
@@ -63,6 +65,7 @@ def test_staging_requires_s3_storage():
     with pytest.raises(ValueError, match="Staging requires OBJECT_STORAGE_PROVIDER=s3"):
         Settings(
             app_env="staging",
+            deployment_profile="aws",
             object_storage_provider="local",
             task_queue_provider="sqs",
             sqs_queue_url=DURABLE_SETTINGS["sqs_queue_url"],
@@ -76,7 +79,7 @@ def test_staging_requires_s3_storage():
 def test_staging_requires_dlq():
     settings = dict(DURABLE_SETTINGS)
     settings.pop("sqs_dlq_url")
-    with pytest.raises(ValueError, match="Staging requires SQS_DLQ_URL"):
+    with pytest.raises(ValueError, match="Staging SQS profile requires SQS_DLQ_URL"):
         Settings(app_env="staging", **settings)
 
 
@@ -103,6 +106,7 @@ def test_resume_processing_timeout_cannot_be_shorter_than_visibility_timeout():
 
 def test_sqs_production_configuration_is_accepted():
     settings = Settings(app_env="production", **DURABLE_SETTINGS)
+    assert settings.deployment_profile == "aws"
     assert settings.task_queue_provider == "sqs"
     assert settings.object_storage_provider == "s3"
     assert settings.auth_provider == "clerk"

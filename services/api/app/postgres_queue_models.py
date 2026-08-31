@@ -15,6 +15,7 @@ class PostgresTask(Base):
     __table_args__ = (
         Index("ix_postgres_tasks_claim", "status", "available_at", "created_at"),
         Index("ix_postgres_tasks_lease", "status", "lease_expires_at"),
+        Index("ix_postgres_tasks_idempotency_key", "idempotency_key", unique=True),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -22,7 +23,7 @@ class PostgresTask(Base):
     )
     task_type: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="QUEUED", index=True)
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     available_at: Mapped[datetime] = mapped_column(

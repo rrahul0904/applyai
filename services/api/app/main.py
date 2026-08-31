@@ -36,6 +36,7 @@ from app.api import (
     privacy,
     profiles,
     recruiter_lens,
+    resume_shares,
     resumes,
     semantic_matching,
 )
@@ -141,6 +142,7 @@ for product_router in (
     career_product.router,
     career_system.router,
     recruiter_lens.router,
+    resume_shares.router,
     agents.router,
     application_agent.router,
     application_agent_documents.router,

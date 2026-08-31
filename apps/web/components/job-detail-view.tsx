@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Bookmark, BriefcaseBusiness, Building2, CalendarDays, CheckCircle2, MapPin, ShieldCheck, Sparkles, WalletCards } from "lucide-react";
+import { ArrowLeft, Bookmark, BriefcaseBusiness, Building2, CalendarDays, CheckCircle2, MapPin, Share2, ShieldCheck, Sparkles, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -42,6 +42,7 @@ export function JobDetailView({ jobId }: { jobId: string }) {
 
   const item = job.data;
   const salary = formatMoney(item.minimum_compensation, item.maximum_compensation);
+  const shareHref = `/resume/signals?jobId=${encodeURIComponent(jobId)}&label=${encodeURIComponent(`${item.company_name} — ${item.title}`)}&channel=application`;
   return (
     <>
       <Link className="cx-back-link" href="/jobs"><ArrowLeft size={16} />Back to jobs</Link>
@@ -82,6 +83,7 @@ export function JobDetailView({ jobId }: { jobId: string }) {
             <p>Keep your research, application progress, and verified career evidence together for this role.</p>
             <Button onClick={() => applying.mutate()} disabled={applying.isPending}><Sparkles size={17} />{applying.isPending ? "Preparing…" : "Prepare application"}</Button>
             <Button variant="secondary" onClick={() => saving.mutate()} disabled={saving.isPending} aria-pressed={item.saved}><Bookmark size={17} fill={item.saved ? "currentColor" : "none"} />{item.saved ? "Saved" : "Save for later"}</Button>
+            <Link className="ui-button ui-button-secondary" href={shareHref}><Share2 size={17} />Create tracked resume link</Link>
 
             <div className="cx-trust-list" aria-label="ApplyAI preparation safeguards">
               <div><CheckCircle2 size={16} /><span>Uses your verified experience</span></div>

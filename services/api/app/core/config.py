@@ -18,6 +18,7 @@ class Settings(BaseSettings):
         default="development",
         validation_alias=AliasChoices("ENVIRONMENT", "APP_ENV"),
     )
+    deployment_profile: str = "lean"
     database_url: str = "postgresql+psycopg://applyai:applyai@localhost:55432/applyai"
     database_host: str | None = None
     database_port: int = Field(default=5432, ge=1, le=65_535)
@@ -42,6 +43,9 @@ class Settings(BaseSettings):
     s3_bucket: str | None = None
     s3_region: str = "us-east-1"
     s3_endpoint_url: str | None = None
+    s3_access_key_id: str | None = None
+    s3_secret_access_key: str | None = None
+    s3_server_side_encryption: str = "AES256"
     s3_upload_expiration_seconds: int = Field(default=900, ge=60, le=3600)
 
     task_queue_provider: str = "memory"
@@ -67,6 +71,10 @@ class Settings(BaseSettings):
     source_sqs_max_receive_count: int = Field(default=5, ge=1, le=100)
     ai_sqs_max_receive_count: int = Field(default=5, ge=1, le=100)
     agent_sqs_max_receive_count: int = Field(default=5, ge=1, le=100)
+    postgres_task_lease_seconds: int = Field(default=300, ge=30, le=3600)
+    postgres_task_max_attempts: int = Field(default=5, ge=1, le=100)
+    postgres_task_retry_base_seconds: int = Field(default=5, ge=1, le=300)
+    postgres_worker_poll_seconds: float = Field(default=1.0, ge=0.1, le=30.0)
     resume_processing_timeout_seconds: int = Field(default=900, ge=60, le=86_400)
     outbox_batch_size: int = Field(default=25, ge=1, le=100)
     outbox_retry_base_seconds: int = Field(default=5, ge=1, le=300)
@@ -131,6 +139,9 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def guard_runtime_configuration(self) -> "Settings":
+        if self.deployment_profile not in {"lean", "aws"}:
+            raise ValueError("DEPLOYMENT_PROFILE must be lean or aws")
+
         database_components = {
             "DATABASE_HOST": self.database_host,
             "DATABASE_NAME": self.database_name,
@@ -140,7 +151,13 @@ class Settings(BaseSettings):
         supplied_database_components = [
             name for name, value in database_components.items() if value is not None
         ]
-        if supplied_database_components and len(supplied_database_components) != len(
+        explicit_database_url = "database_url" in self.model_fields_set
+        if explicit_database_url:
+            if self.database_url.startswith("postgres://"):
+                self.database_url = "postgresql+psycopg://" + self.database_url[len("postgres://"):]
+            elif self.database_url.startswith("postgresql://"):
+                self.database_url = "postgresql+psycopg://" + self.database_url[len("postgresql://"):]
+        elif supplied_database_components and len(supplied_database_components) != len(
             database_components
         ):
             missing = [name for name, value in database_components.items() if value is None]
@@ -148,7 +165,7 @@ class Settings(BaseSettings):
                 "Database component configuration is incomplete; missing "
                 + ", ".join(missing)
             )
-        if supplied_database_components:
+        elif supplied_database_components:
             user = quote(self.database_user or "", safe="")
             password = quote(self.database_password or "", safe="")
             database_name = quote(self.database_name or "", safe="")
@@ -183,17 +200,24 @@ class Settings(BaseSettings):
             raise ValueError("OBJECT_STORAGE_PROVIDER must be local or s3")
         if self.object_storage_provider == "s3" and not self.s3_bucket:
             raise ValueError("S3_BUCKET is required when OBJECT_STORAGE_PROVIDER=s3")
+        if bool(self.s3_access_key_id) != bool(self.s3_secret_access_key):
+            raise ValueError("S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY must be supplied together")
+        normalized_encryption = self.s3_server_side_encryption.strip().lower()
+        if normalized_encryption not in {"aes256", "none", ""}:
+            raise ValueError("S3_SERVER_SIDE_ENCRYPTION must be AES256 or none")
         if durable_environment and self.object_storage_provider != "s3":
             raise ValueError(f"{environment.title()} requires OBJECT_STORAGE_PROVIDER=s3")
 
-        if self.task_queue_provider not in {"memory", "sqs"}:
-            raise ValueError("TASK_QUEUE_PROVIDER must be memory or sqs")
+        if self.task_queue_provider not in {"memory", "sqs", "postgres"}:
+            raise ValueError("TASK_QUEUE_PROVIDER must be memory, postgres or sqs")
         if self.task_queue_provider == "sqs" and not self.sqs_queue_url:
             raise ValueError("SQS_QUEUE_URL is required when TASK_QUEUE_PROVIDER=sqs")
-        if durable_environment and self.task_queue_provider != "sqs":
-            raise ValueError(f"{environment.title()} requires TASK_QUEUE_PROVIDER=sqs")
-        if durable_environment and not self.sqs_dlq_url:
-            raise ValueError(f"{environment.title()} requires SQS_DLQ_URL")
+        if durable_environment and self.deployment_profile == "aws" and self.task_queue_provider != "sqs":
+            raise ValueError(f"{environment.title()} AWS profile requires TASK_QUEUE_PROVIDER=sqs")
+        if durable_environment and self.deployment_profile == "lean" and self.task_queue_provider != "postgres":
+            raise ValueError(f"{environment.title()} lean profile requires TASK_QUEUE_PROVIDER=postgres")
+        if durable_environment and self.task_queue_provider == "sqs" and not self.sqs_dlq_url:
+            raise ValueError(f"{environment.title()} SQS profile requires SQS_DLQ_URL")
         if self.sqs_visibility_heartbeat_seconds >= self.sqs_visibility_timeout_seconds:
             raise ValueError("SQS visibility heartbeat must be shorter than visibility timeout")
         if self.source_sqs_visibility_heartbeat_seconds >= self.source_sqs_visibility_timeout_seconds:
@@ -212,10 +236,10 @@ class Settings(BaseSettings):
         if self.ai_provider == "openai":
             if not self.openai_base_url.startswith("https://"):
                 raise ValueError("OPENAI_BASE_URL must use HTTPS")
-            if durable_environment:
+            if durable_environment and self.task_queue_provider == "sqs":
                 if not self.ai_sqs_queue_url or not self.ai_sqs_dlq_url:
                     raise ValueError(
-                        f"{environment.title()} with AI_PROVIDER=openai requires AI_SQS_QUEUE_URL and AI_SQS_DLQ_URL"
+                        f"{environment.title()} SQS profile with AI_PROVIDER=openai requires AI_SQS_QUEUE_URL and AI_SQS_DLQ_URL"
                     )
         if self.openai_reasoning_effort not in {"none", "low", "medium", "high", "xhigh", "max"}:
             raise ValueError("OPENAI_REASONING_EFFORT is invalid")

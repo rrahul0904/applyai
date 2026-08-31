@@ -137,6 +137,39 @@ class Settings(BaseSettings):
     apply_url_not_found_confirmations: int = Field(default=2, ge=1, le=10)
     raw_job_payload_retention_days: int = Field(default=90, ge=7, le=3_650)
 
+    def __init__(self, **values):
+        """Preserve normal BaseSettings precedence while making explicit split DB args atomic.
+
+        GitHub CI exports DATABASE_URL globally. Tests and AWS callers that explicitly pass the
+        legacy split fields should not have that ambient environment value silently override the
+        constructor arguments. If DATABASE_URL itself is explicitly passed, it still wins.
+        """
+        component_names = (
+            "database_host",
+            "database_name",
+            "database_user",
+            "database_password",
+        )
+        supplied_components = [
+            name for name in component_names if values.get(name) is not None
+        ]
+        if "database_url" not in values and supplied_components:
+            if len(supplied_components) != len(component_names):
+                missing = [name.upper() for name in component_names if values.get(name) is None]
+                raise ValueError(
+                    "Database component configuration is incomplete; missing "
+                    + ", ".join(missing)
+                )
+            user = quote(str(values["database_user"]), safe="")
+            password = quote(str(values["database_password"]), safe="")
+            database_name = quote(str(values["database_name"]), safe="")
+            port = int(values.get("database_port", 5432))
+            values["database_url"] = (
+                f"postgresql+psycopg://{user}:{password}@{values['database_host']}:"
+                f"{port}/{database_name}"
+            )
+        super().__init__(**values)
+
     @model_validator(mode="after")
     def guard_runtime_configuration(self) -> "Settings":
         if self.deployment_profile not in {"lean", "aws"}:

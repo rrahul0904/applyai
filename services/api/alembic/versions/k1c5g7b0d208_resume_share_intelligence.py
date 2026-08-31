@@ -42,7 +42,6 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["resume_id"], ["resumes.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("public_token"),
     )
     op.create_index("ix_resume_share_links_user_id", "resume_share_links", ["user_id"], unique=False)
     op.create_index("ix_resume_share_links_resume_id", "resume_share_links", ["resume_id"], unique=False)

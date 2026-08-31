@@ -121,7 +121,7 @@ describe("ResumeShareIntelligenceView", () => {
     renderView();
 
     expect(await screen.findByRole("heading", { name: /Know what happens after you share your resume/i })).toBeDefined();
-    expect(screen.getByText("Northstar Health · Product Operations Manager")).toBeDefined();
+    expect(await screen.findByText("Northstar Health · Product Operations Manager")).toBeDefined();
     expect(screen.getByText("Deep Read")).toBeDefined();
     expect(screen.getByText(/does not store raw viewer IP addresses/i)).toBeDefined();
     expect(screen.getByText(/never hiring probability/i)).toBeDefined();

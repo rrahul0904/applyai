@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, Upload } from "lucide-react";
+import { FileText, Share2, Upload } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Badge, Button, Card, EmptyState, ErrorState, PageHeader, Skeleton } from "@/components/ui";
@@ -33,7 +33,17 @@ export function ResumeView() {
 
   return (
     <>
-      <PageHeader eyebrow="Resume" title="Manage the documents behind your profile." description="PDF and DOCX files are private. Extraction remains reviewable before it changes your candidate profile." action={<label className="ui-button ui-button-primary"><Upload size={17} />Upload resume<input className="sr-only" type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(event) => { const file = event.target.files?.[0]; if (file) upload.mutate(file); }} /></label>} />
+      <PageHeader
+        eyebrow="Resume"
+        title="Manage the documents behind your profile."
+        description="PDF and DOCX files are private. Extraction remains reviewable before it changes your candidate profile."
+        action={
+          <div className="button-row">
+            <Link className="ui-button ui-button-secondary" href="/resume/signals"><Share2 size={17} />Share & track</Link>
+            <label className="ui-button ui-button-primary"><Upload size={17} />Upload resume<input className="sr-only" type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(event) => { const file = event.target.files?.[0]; if (file) upload.mutate(file); }} /></label>
+          </div>
+        }
+      />
       {resumes.isError ? <ErrorState message={resumes.error.message} retry={() => resumes.refetch()} /> : resumes.isLoading ? (
         <div className="list-stack">{[1, 2].map((item) => <Skeleton className="skeleton-row" key={item} />)}</div>
       ) : resumes.data?.length ? (

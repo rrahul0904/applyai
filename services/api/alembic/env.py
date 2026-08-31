@@ -18,6 +18,7 @@ from app import (  # noqa: F401
     models,
     platform_models,
     privacy_models,
+    resume_share_models,
 )
 
 

@@ -1,0 +1,164 @@
+.shell {
+  min-height: 100vh;
+  background: #f5f6f8;
+  color: #17181c;
+  padding: 2rem;
+}
+
+.header,
+.viewer,
+.privacy,
+.statusCard {
+  width: min(1120px, 100%);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.brand {
+  display: inline-flex;
+  margin-bottom: 1rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.kicker {
+  margin: 0 0 0.3rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.72rem;
+  font-weight: 750;
+  color: #686d78;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 3.7rem);
+  letter-spacing: -0.055em;
+  line-height: 0.95;
+}
+
+.headline {
+  margin: 0.6rem 0 0;
+  font-size: 1.05rem;
+  color: #4f5561;
+}
+
+.label {
+  display: inline-block;
+  margin: 0.75rem 0 0;
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  background: #e8eaee;
+  color: #4f5561;
+  font-size: 0.78rem;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.actions button,
+.documentFallback button {
+  border: 1px solid #d5d8df;
+  background: white;
+  border-radius: 10px;
+  min-height: 42px;
+  padding: 0 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.viewer {
+  background: white;
+  border: 1px solid #dedfe4;
+  border-radius: 16px;
+  overflow: hidden;
+  min-height: 72vh;
+  box-shadow: 0 12px 35px rgba(24, 28, 36, 0.08);
+}
+
+.viewer iframe {
+  display: block;
+  width: 100%;
+  min-height: 80vh;
+  border: 0;
+  background: white;
+}
+
+.documentFallback,
+.statusCard {
+  min-height: 45vh;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  text-align: center;
+  gap: 0.7rem;
+  padding: 2rem;
+}
+
+.documentFallback h2,
+.statusCard h1,
+.documentFallback p,
+.statusCard p {
+  margin: 0;
+}
+
+.documentFallback p,
+.statusCard p {
+  color: #686d78;
+}
+
+.statusCard {
+  background: white;
+  border: 1px solid #dedfe4;
+  border-radius: 16px;
+}
+
+.privacy {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 1rem 0.25rem;
+  color: #686d78;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.privacy svg {
+  flex: 0 0 auto;
+  margin-top: 0.05rem;
+}
+
+.privacy p {
+  margin: 0;
+}
+
+@media (max-width: 720px) {
+  .shell {
+    padding: 1rem;
+  }
+
+  .header {
+    display: grid;
+    align-items: start;
+  }
+
+  .viewer,
+  .viewer iframe {
+    min-height: 68vh;
+  }
+}

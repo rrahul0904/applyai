@@ -1,0 +1,261 @@
+.createCard,
+.shareCard {
+  display: grid;
+  gap: 1rem;
+}
+
+.createIntro,
+.privacyCard,
+.shareHeader,
+.titleLine,
+.footerActions {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.createIntro {
+  align-items: flex-start;
+}
+
+.createIntro h2,
+.shareHeader h3,
+.sessions h4 {
+  margin: 0;
+}
+
+.createIntro p,
+.shareHeader p,
+.privacyCard p,
+.noActivity {
+  margin: 0.3rem 0 0;
+  color: var(--muted-foreground);
+}
+
+.iconBox {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: var(--secondary);
+  flex: 0 0 auto;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 0.8rem;
+}
+
+.formGrid label {
+  display: grid;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.formGrid input,
+.formGrid select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--background);
+  color: inherit;
+  padding: 0 0.75rem;
+}
+
+.toggleRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.2rem;
+  color: var(--muted-foreground);
+  font-size: 0.9rem;
+}
+
+.toggleRow label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.privacyCard {
+  margin-top: 1rem;
+  align-items: flex-start;
+}
+
+.privacyCard svg {
+  flex: 0 0 auto;
+  margin-top: 0.1rem;
+}
+
+.section {
+  margin-top: 1.5rem;
+}
+
+.shareList {
+  display: grid;
+  gap: 1rem;
+}
+
+.shareHeader {
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.titleLine {
+  flex-wrap: wrap;
+}
+
+.linkText {
+  display: block;
+  margin-top: 0.35rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--muted-foreground);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.metrics > div {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.75rem;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.15rem 0.45rem;
+  align-items: center;
+}
+
+.metrics strong {
+  font-size: 1.15rem;
+}
+
+.metrics span {
+  grid-column: 1 / -1;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+
+.sessions {
+  border-top: 1px solid var(--border);
+  padding-top: 0.85rem;
+}
+
+.sessionRow {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) minmax(210px, 1.4fr) auto 36px;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.72rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.sessionRow > div:first-child {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.sessionRow > div:first-child span,
+.footerActions > span,
+.timeline p span {
+  color: var(--muted-foreground);
+  font-size: 0.76rem;
+}
+
+.sessionStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+}
+
+.score {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.noActivity {
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  padding: 0.9rem;
+}
+
+.timeline {
+  border-top: 1px solid var(--border);
+  padding-top: 0.8rem;
+}
+
+.timeline summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.timeline div {
+  display: grid;
+  gap: 0;
+  padding-top: 0.5rem;
+}
+
+.timeline p {
+  margin: 0;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: baseline;
+  font-size: 0.85rem;
+}
+
+.timeline p span {
+  margin-left: auto;
+}
+
+.footerActions {
+  flex-wrap: wrap;
+}
+
+.footerActions > span {
+  margin-left: auto;
+}
+
+@media (max-width: 900px) {
+  .formGrid,
+  .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sessionRow {
+    grid-template-columns: 1fr auto;
+  }
+
+  .sessionStats {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+@media (max-width: 620px) {
+  .formGrid,
+  .metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .shareHeader {
+    display: grid;
+  }
+
+  .footerActions > span {
+    width: 100%;
+    margin-left: 0;
+  }
+}

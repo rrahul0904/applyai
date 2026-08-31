@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 
 import pytest
@@ -9,11 +10,22 @@ from sqlalchemy import func, select
 from app.core.config import Settings
 from app.core.database import SessionLocal
 from app.core.outbox import add_task_outbox_event, publish_outbox_once
-from app.core.queue import PostgresTaskQueue, Task, get_task_queue_for_type
+from app.core.queue import (
+    PostgresTaskQueue,
+    Task,
+    get_task_queue_for_type,
+    supports_task_type,
+)
 from app.core.storage import S3ObjectStorageProvider
 from app.durability_models import TaskOutbox
 from app.postgres_queue_models import PostgresTask
-from app.workers.postgres import cancel_task, claim_task, retry_or_dead_task, utcnow
+from app.workers.postgres import (
+    cancel_task,
+    claim_task,
+    dispatch_task,
+    retry_or_dead_task,
+    utcnow,
+)
 
 
 def _production_settings(**overrides) -> Settings:
@@ -274,3 +286,33 @@ def test_postgres_queue_cancellation_prevents_claim(database_url) -> None:
     assert task_id is not None
     assert cancel_task(task_id) is True
     assert claim_task(settings, worker_id="worker-a") is None
+
+
+def test_two_postgres_workers_claim_distinct_tasks(database_url) -> None:
+    del database_url
+    settings = Settings(task_queue_provider="postgres")
+    queue = PostgresTaskQueue()
+    queue.enqueue(Task(task_type="RESUME_PARSE", payload={}, idempotency_key="lean:test:worker-a"))
+    queue.enqueue(Task(task_type="RESUME_PARSE", payload={}, idempotency_key="lean:test:worker-b"))
+
+    def claim(worker_id: str):
+        return claim_task(settings, worker_id=worker_id)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        task_ids = list(executor.map(claim, ["worker-a", "worker-b"]))
+
+    assert all(task_ids)
+    assert len(set(task_ids)) == 2
+    with SessionLocal() as session:
+        rows = list(session.scalars(select(PostgresTask).where(PostgresTask.id.in_(task_ids))))
+        assert {row.lease_owner for row in rows} == {"worker-a", "worker-b"}
+
+
+def test_postgres_queue_rejects_unknown_task_types(database_url) -> None:
+    del database_url
+    settings = Settings(task_queue_provider="postgres")
+    assert supports_task_type(settings, "UNKNOWN") is False
+    with pytest.raises(RuntimeError, match="UNSUPPORTED_POSTGRES_TASK_TYPE"):
+        get_task_queue_for_type(settings, task_type="UNKNOWN")
+    with pytest.raises(RuntimeError, match="UNSUPPORTED_POSTGRES_TASK_TYPE"):
+        dispatch_task(Task(task_type="UNKNOWN", payload={}, idempotency_key="unknown"), settings)

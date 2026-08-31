@@ -232,11 +232,13 @@ jobs:
             deployment_url="$(vercel deploy --prebuilt --scope "$VERCEL_TEAM_SLUG" --token "$VERCEL_TOKEN")"
           fi
           echo "url=$deployment_url" >> "$GITHUB_OUTPUT"
-          echo "### ApplyAI Vercel deployment" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Target: $DEPLOY_TARGET" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Project: $VERCEL_PROJECT_NAME" >> "$GITHUB_STEP_SUMMARY"
-          echo "- URL: $deployment_url" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### ApplyAI Vercel deployment"
+            echo ""
+            echo "- Target: $DEPLOY_TARGET"
+            echo "- Project: $VERCEL_PROJECT_NAME"
+            echo "- URL: $deployment_url"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Probe deployed web application
         if: ${{ steps.preflight.outputs.ready == 'true' }}

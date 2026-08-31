@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from app.core.config import Settings, get_settings
 
 
+RESUME_TASK_TYPES = {"RESUME_PARSE"}
 SOURCE_TASK_TYPES = {"SOURCE_DISCOVERY", "SOURCE_INGEST", "SOURCE_VERIFY"}
 AI_TASK_TYPES = {
     "AI_DEEP_MATCH",
@@ -21,6 +22,7 @@ AI_TASK_TYPES = {
 }
 AGENT_TASK_TYPES = {"AGENT_RUN"}
 SPECIAL_TASK_TYPES = SOURCE_TASK_TYPES | AI_TASK_TYPES | AGENT_TASK_TYPES
+KNOWN_TASK_TYPES = RESUME_TASK_TYPES | SPECIAL_TASK_TYPES
 
 
 def sqs_client(*, region: str):
@@ -104,6 +106,9 @@ class PostgresTaskQueue(TaskQueue):
     """
 
     def enqueue(self, task: Task) -> None:
+        if task.task_type not in KNOWN_TASK_TYPES:
+            raise RuntimeError(f"UNSUPPORTED_POSTGRES_TASK_TYPE:{task.task_type}")
+
         # Lazy imports avoid creating a queue <-> database module import cycle at process start.
         from app.core.database import SessionLocal
         from app.postgres_queue_models import PostgresTask
@@ -136,8 +141,10 @@ _postgres_queue = PostgresTaskQueue()
 
 
 def supports_task_type(settings: Settings, task_type: str) -> bool:
-    if settings.task_queue_provider in {"memory", "postgres"}:
+    if settings.task_queue_provider == "memory":
         return True
+    if settings.task_queue_provider == "postgres":
+        return task_type in KNOWN_TASK_TYPES
     if task_type in AGENT_TASK_TYPES:
         return bool(resolve_agent_queue_url(settings))
     if task_type in AI_TASK_TYPES:
@@ -156,6 +163,8 @@ def get_task_queue_for_type(
     is_ai_task = task_type in AI_TASK_TYPES
     is_agent_task = task_type in AGENT_TASK_TYPES
     if settings.task_queue_provider == "postgres":
+        if task_type is not None and task_type not in KNOWN_TASK_TYPES:
+            raise RuntimeError(f"UNSUPPORTED_POSTGRES_TASK_TYPE:{task_type}")
         return _postgres_queue
     if settings.task_queue_provider == "sqs":
         if is_agent_task:

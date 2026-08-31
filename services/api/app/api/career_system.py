@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import uuid
-from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -101,13 +100,17 @@ def _portfolio_preview(session: Session, user: User, job_title: str) -> dict:
 
     return {
         "headline": headline or "Professional profile",
-        "about": about or "Add a verified professional summary to build your portfolio introduction.",
+        "about": about
+        or "Add a verified professional summary to build your portfolio introduction.",
         "target_context": job_title,
         "highlights": highlights,
         "skills": [item.name for item in skills[:16]],
         "safety": {
             "policy": "VERIFIED_EVIDENCE_ONLY",
-            "message": "This preview contains only saved candidate/profile evidence and does not invent accomplishments.",
+            "message": (
+                "This preview contains only saved candidate/profile evidence and does not "
+                "invent accomplishments."
+            ),
         },
     }
 
@@ -126,18 +129,24 @@ def _communication_drafts(
     profile = candidate["profile"]
     matched = match.get("matched_skills") or []
     skill_phrase = ", ".join(matched[:3])
-    role_phrase = profile.current_title if profile and profile.current_title else "my current background"
+    role_phrase = (
+        profile.current_title
+        if profile and profile.current_title
+        else "my current professional background"
+    )
 
     recruiter_default = (
         f"Hi — I’m interested in the {job.title} role at {company_name}. "
         f"My verified background as {role_phrase}"
         + (f" includes experience with {skill_phrase}." if skill_phrase else ".")
-        + " I’d welcome the chance to learn more about the team’s priorities and whether my background could be relevant."
+        + " I’d welcome the chance to learn more about the team’s priorities and whether "
+        "my background could be relevant."
     )
     follow_up_default = (
-        f"Hi — I wanted to follow up on my application for the {job.title} role at {company_name}. "
-        "I remain interested in the opportunity and would be glad to provide any additional context about my experience. "
-        "Thank you for your time and consideration."
+        f"Hi — I wanted to follow up on my application for the {job.title} role at "
+        f"{company_name}. I remain interested in the opportunity and would be glad to "
+        "provide any additional context about my experience. Thank you for your time and "
+        "consideration."
     )
 
     recruiter_saved = _saved_answer(
@@ -176,8 +185,9 @@ def _fallback_interview_questions(job, match: dict) -> list[dict[str, str]]:
             {
                 "focus": skill,
                 "question": (
-                    f"The role emphasizes {skill}, which is not explicit in your verified profile. "
-                    "What adjacent experience would help you ramp up without overstating your background?"
+                    f"The role emphasizes {skill}, which is not explicit in your verified "
+                    "profile. What adjacent experience would help you ramp up without "
+                    "overstating your background?"
                 ),
             }
         )
@@ -190,7 +200,10 @@ def _fallback_interview_questions(job, match: dict) -> list[dict[str, str]]:
     questions.append(
         {
             "focus": "ownership",
-            "question": "Tell me about a high-impact problem you owned when requirements were ambiguous. How did you decide what to do and measure the result?",
+            "question": (
+                "Tell me about a high-impact problem you owned when requirements were ambiguous. "
+                "How did you decide what to do and measure the result?"
+            ),
         }
     )
     return questions[:6]
@@ -213,7 +226,9 @@ def _career_system_payload(session: Session, user: User, job) -> dict:
     )
     portfolio = _portfolio_preview(session, user, job.title)
 
-    profile_ready = bool(candidate["profile"] and candidate["skills"] and candidate["experiences"])
+    profile_ready = bool(
+        candidate["profile"] and candidate["skills"] and candidate["experiences"]
+    )
     resume_ready = bool(
         resume
         and resume.upload_status == "UPLOADED"
@@ -229,13 +244,48 @@ def _career_system_payload(session: Session, user: User, job) -> dict:
     application_started = application is not None
 
     stages = [
-        {"id": "profile", "label": "Verified career profile", "complete": profile_ready, "weight": 15},
-        {"id": "resume", "label": "Processed master resume", "complete": resume_ready, "weight": 15},
-        {"id": "fit", "label": "Role fit reviewed", "complete": fit_ready, "weight": 15},
-        {"id": "package", "label": "Application package reviewed", "complete": package_ready, "weight": 25},
-        {"id": "outreach", "label": "Outreach and follow-up reviewed", "complete": outreach_ready, "weight": 10},
-        {"id": "interview", "label": "Interview preparation created", "complete": interview_ready, "weight": 10},
-        {"id": "application", "label": "Application workspace started", "complete": application_started, "weight": 10},
+        {
+            "id": "profile",
+            "label": "Verified career profile",
+            "complete": profile_ready,
+            "weight": 15,
+        },
+        {
+            "id": "resume",
+            "label": "Processed master resume",
+            "complete": resume_ready,
+            "weight": 15,
+        },
+        {
+            "id": "fit",
+            "label": "Role fit analyzed",
+            "complete": fit_ready,
+            "weight": 15,
+        },
+        {
+            "id": "package",
+            "label": "Application package reviewed",
+            "complete": package_ready,
+            "weight": 25,
+        },
+        {
+            "id": "outreach",
+            "label": "Outreach and follow-up reviewed",
+            "complete": outreach_ready,
+            "weight": 10,
+        },
+        {
+            "id": "interview",
+            "label": "Interview preparation created",
+            "complete": interview_ready,
+            "weight": 10,
+        },
+        {
+            "id": "application",
+            "label": "Application workspace started",
+            "complete": application_started,
+            "weight": 10,
+        },
     ]
     progress_score = sum(stage["weight"] for stage in stages if stage["complete"])
     next_stage = next((stage for stage in stages if not stage["complete"]), None)
@@ -266,7 +316,9 @@ def _career_system_payload(session: Session, user: User, job) -> dict:
             "ready_to_finalize": assistant["ready_to_finalize"],
             "cover_letter_verified": assistant["cover_letter_verified"],
             "question_count": len(assistant["questions"]),
-            "verified_question_count": sum(1 for item in assistant["questions"] if item["user_verified"]),
+            "verified_question_count": sum(
+                1 for item in assistant["questions"] if item["user_verified"]
+            ),
             "checklist": assistant["checklist"],
         },
         "communications": communications,
@@ -277,7 +329,9 @@ def _career_system_payload(session: Session, user: User, job) -> dict:
             "status": interview.status if interview else "NOT_STARTED",
             "candidate_verified": bool(interview and interview.candidate_verified),
             "content": interview.content_json if interview else None,
-            "starter_questions": [] if interview else _fallback_interview_questions(job, match),
+            "starter_questions": []
+            if interview
+            else _fallback_interview_questions(job, match),
         },
         "actions": {
             "resume": "/resume/studio",
@@ -342,7 +396,10 @@ def save_career_system_communications(
             )
         else:
             if row.user_id != user.id:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application asset not found")
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Application asset not found",
+                )
             row.answer = answer
             row.user_verified = verified
     session.commit()

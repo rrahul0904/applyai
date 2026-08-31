@@ -13,7 +13,13 @@ from sqlalchemy import and_, or_, select, update
 from app.core.config import Settings, get_settings
 from app.core.database import SessionLocal
 from app.core.outbox import publish_outbox_once
-from app.core.queue import AGENT_TASK_TYPES, AI_TASK_TYPES, SOURCE_TASK_TYPES, Task
+from app.core.queue import (
+    AGENT_TASK_TYPES,
+    AI_TASK_TYPES,
+    RESUME_TASK_TYPES,
+    SOURCE_TASK_TYPES,
+    Task,
+)
 from app.postgres_queue_models import PostgresTask
 
 
@@ -116,10 +122,12 @@ def dispatch_task(task: Task, settings: Settings) -> bool:
         from app.workers.agent import process_message
 
         return process_message(body, settings)
+    if task.task_type in RESUME_TASK_TYPES:
+        from app.workers.resume import process_message
 
-    from app.workers.resume import process_message
+        return process_message(body, settings)
 
-    return process_message(body, settings)
+    raise RuntimeError(f"UNSUPPORTED_POSTGRES_TASK_TYPE:{task.task_type}")
 
 
 def complete_task(task_id: uuid.UUID, *, worker_id: str) -> bool:
@@ -237,7 +245,7 @@ def process_claimed_task(task_id: uuid.UUID, *, worker_id: str, settings: Settin
     try:
         acknowledged = dispatch_task(task, settings)
     except Exception as exc:
-        error_code = type(exc).__name__
+        error_code = f"{type(exc).__name__}:{exc}"[:1000]
         logger.exception(
             "postgres_worker_task_failed",
             extra={"task_id": str(task_id), "task_type": task.task_type},

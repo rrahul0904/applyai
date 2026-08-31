@@ -51,6 +51,10 @@ async function forward(request: NextRequest, context: RouteContext) {
   target.search = request.nextUrl.search;
   const headers = new Headers();
   if (request.method === "POST") headers.set("content-type", "application/json");
+  const userAgent = request.headers.get("user-agent");
+  if (userAgent) headers.set("user-agent", userAgent);
+  const accept = request.headers.get("accept");
+  if (accept) headers.set("accept", accept);
 
   let body: ArrayBuffer | undefined;
   if (request.method === "POST") {

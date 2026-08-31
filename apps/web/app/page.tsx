@@ -1,4 +1,4 @@
-import { SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
+import { UserButton } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
 import Link from "next/link";
 
@@ -26,12 +26,12 @@ export default async function Home() {
             </>
           ) : clerkConfigured ? (
             <>
-              <SignInButton>
-                <button className="text-button">Sign in</button>
-              </SignInButton>
-              <SignUpButton>
-                <button className="button button-small">Create account</button>
-              </SignUpButton>
+              <Link className="text-button" href="/sign-in">
+                Sign in
+              </Link>
+              <Link className="button button-small" href="/sign-up">
+                Create account
+              </Link>
             </>
           ) : (
             <Link className="text-button" href="/demo">
@@ -53,15 +53,19 @@ export default async function Home() {
             <Link className="button" href="/dashboard">
               Continue to your workspace
             </Link>
+          ) : clerkConfigured ? (
+            <Link className="button" href="/sign-up">
+              Create your career workspace
+            </Link>
           ) : (
             <Link className="button" href="/demo">
               Try the interactive demo
             </Link>
           )}
           {!userId && clerkConfigured ? (
-            <SignUpButton>
-              <button className="text-button">Create your workspace</button>
-            </SignUpButton>
+            <Link className="text-button" href="/demo">
+              Explore the product first
+            </Link>
           ) : null}
           <a className="text-link" href="#foundation">
             See how it helps <span aria-hidden="true">↓</span>

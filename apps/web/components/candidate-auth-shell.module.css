@@ -1,0 +1,387 @@
+.page {
+  min-height: 100vh;
+  background: #f5f3ec;
+  color: #17231d;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  width: min(1180px, calc(100% - 40px));
+  margin: 0 auto;
+  min-height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  border-bottom: 1px solid rgba(23, 35, 29, 0.1);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: inherit;
+  text-decoration: none;
+  font-weight: 760;
+  letter-spacing: -0.02em;
+}
+
+.brandMark {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: #173d30;
+  color: #fffdf7;
+  font-size: 15px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+
+.headerAction {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: #647068;
+  font-size: 14px;
+}
+
+.headerAction a,
+.footer a {
+  color: #173d30;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.layout {
+  width: min(1180px, calc(100% - 40px));
+  margin: auto;
+  padding: 54px 0 46px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(360px, 0.72fr);
+  gap: clamp(44px, 7vw, 92px);
+  align-items: center;
+}
+
+.story {
+  max-width: 680px;
+}
+
+.kicker,
+.authEyebrow {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #e4eadf;
+  color: #355144;
+  font-size: 12px;
+  font-weight: 760;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.story h1 {
+  margin: 20px 0 18px;
+  max-width: 650px;
+  font-size: clamp(42px, 5.5vw, 70px);
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+  font-weight: 760;
+}
+
+.lead {
+  max-width: 610px;
+  margin: 0;
+  color: #536058;
+  font-size: clamp(17px, 2vw, 20px);
+  line-height: 1.65;
+}
+
+.journey {
+  margin-top: 34px;
+  border: 1px solid rgba(23, 61, 48, 0.13);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.68);
+  overflow: hidden;
+  box-shadow: 0 18px 55px rgba(38, 48, 42, 0.06);
+}
+
+.journeyHeader {
+  padding: 15px 17px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid rgba(23, 61, 48, 0.1);
+  color: #2e4137;
+  font-size: 13px;
+  font-weight: 720;
+}
+
+.journeyStatus {
+  color: #69756e;
+  font-weight: 620;
+}
+
+.journeySteps {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.journeyStep {
+  min-height: 88px;
+  padding: 14px 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+  border-right: 1px solid rgba(23, 61, 48, 0.08);
+  color: #405047;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.journeyStep:last-child {
+  border-right: 0;
+}
+
+.journeyStep svg {
+  color: #1f6a4f;
+}
+
+.stepNumber {
+  color: #819087;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+
+.proofGrid {
+  margin-top: 22px;
+  display: grid;
+  gap: 10px;
+}
+
+.proofCard {
+  padding: 15px 16px;
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  gap: 12px;
+  align-items: start;
+  border-radius: 14px;
+  border: 1px solid rgba(23, 61, 48, 0.09);
+  background: rgba(255, 255, 255, 0.44);
+}
+
+.proofIcon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: #e4eadf;
+  color: #245440;
+}
+
+.proofCard h2 {
+  margin: 0 0 3px;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+}
+
+.proofCard p {
+  margin: 0;
+  color: #69756e;
+  font-size: 12.5px;
+  line-height: 1.48;
+}
+
+.authPanel {
+  width: 100%;
+  max-width: 460px;
+  justify-self: end;
+  padding: clamp(26px, 3vw, 38px);
+  border-radius: 22px;
+  background: #fff;
+  border: 1px solid rgba(23, 61, 48, 0.12);
+  box-shadow: 0 26px 70px rgba(35, 46, 40, 0.11);
+}
+
+.authIntro {
+  margin-bottom: 22px;
+}
+
+.authIntro h2 {
+  margin: 16px 0 9px;
+  font-size: 28px;
+  line-height: 1.08;
+  letter-spacing: -0.035em;
+}
+
+.authIntro p {
+  margin: 0;
+  color: #667169;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.clerkSlot {
+  width: 100%;
+  min-height: 300px;
+}
+
+.clerkSlot :global(.cl-rootBox),
+.clerkSlot :global(.cl-cardBox),
+.clerkSlot :global(.cl-card) {
+  width: 100%;
+  max-width: none;
+}
+
+.clerkSlot :global(.cl-cardBox),
+.clerkSlot :global(.cl-card) {
+  box-shadow: none;
+}
+
+.clerkSlot :global(.cl-card) {
+  padding: 0;
+  border: 0;
+}
+
+.clerkSlot :global(.cl-header) {
+  display: none;
+}
+
+.clerkSlot :global(.cl-formButtonPrimary) {
+  min-height: 44px;
+  border-radius: 12px;
+  background: #173d30;
+  box-shadow: none;
+  font-weight: 720;
+}
+
+.clerkSlot :global(.cl-formButtonPrimary:hover) {
+  background: #102f25;
+}
+
+.clerkSlot :global(.cl-socialButtonsBlockButton),
+.clerkSlot :global(.cl-formFieldInput) {
+  min-height: 44px;
+  border-radius: 12px;
+}
+
+.clerkSlot :global(.cl-footerActionLink),
+.clerkSlot :global(.cl-formFieldAction) {
+  color: #1c5b43;
+}
+
+.trustRow {
+  margin-top: 18px;
+  padding-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  border-top: 1px solid #edf0ec;
+  color: #6a756e;
+  font-size: 11px;
+}
+
+.trustRow span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.footer {
+  width: min(1180px, calc(100% - 40px));
+  margin: 0 auto;
+  min-height: 62px;
+  padding: 14px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border-top: 1px solid rgba(23, 35, 29, 0.1);
+  color: #78827c;
+  font-size: 11px;
+}
+
+.footer div {
+  display: flex;
+  gap: 16px;
+}
+
+@media (max-width: 920px) {
+  .layout {
+    grid-template-columns: 1fr;
+    padding-top: 38px;
+  }
+
+  .story {
+    max-width: none;
+  }
+
+  .story h1 {
+    max-width: 720px;
+  }
+
+  .authPanel {
+    max-width: none;
+    justify-self: stretch;
+  }
+}
+
+@media (max-width: 680px) {
+  .header,
+  .layout,
+  .footer {
+    width: min(100% - 28px, 1180px);
+  }
+
+  .header {
+    min-height: 68px;
+  }
+
+  .headerAction span {
+    display: none;
+  }
+
+  .layout {
+    gap: 30px;
+    padding: 28px 0 34px;
+  }
+
+  .story h1 {
+    font-size: clamp(38px, 12vw, 52px);
+  }
+
+  .journeySteps {
+    grid-template-columns: 1fr;
+  }
+
+  .journeyStep {
+    min-height: auto;
+    grid-template-columns: 34px 1fr 18px;
+    display: grid;
+    align-items: center;
+    border-right: 0;
+    border-bottom: 1px solid rgba(23, 61, 48, 0.08);
+  }
+
+  .journeyStep:last-child {
+    border-bottom: 0;
+  }
+
+  .authPanel {
+    padding: 22px 18px;
+    border-radius: 18px;
+  }
+
+  .footer {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 18px 0 24px;
+  }
+}

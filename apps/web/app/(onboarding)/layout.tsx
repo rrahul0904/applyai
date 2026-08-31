@@ -3,7 +3,9 @@ import { devAuthEnabled, getApplyAISession } from "@/lib/auth/session";
 
 export default async function OnboardingLayout({ children }: { children: React.ReactNode }) {
   const session = await getApplyAISession();
-  if (!session.authenticated) redirect(devAuthEnabled() ? "/dev-login" : "/");
+  if (!session.authenticated) {
+    redirect(devAuthEnabled() ? "/dev-login" : "/sign-in?redirect_url=%2Fonboarding");
+  }
   return (
     <div className="onboarding-shell">
       <header className="onboarding-top">

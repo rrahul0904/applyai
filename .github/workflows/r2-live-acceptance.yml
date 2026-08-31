@@ -1,0 +1,77 @@
+name: R2 Live Acceptance
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: applyai-r2-live-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  private-storage-round-trip:
+    name: Verify private R2 storage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12.11'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+        with:
+          version: '0.9.21'
+
+      - name: Verify required R2 secrets are configured
+        env:
+          ENDPOINT: ${{ secrets.APPLYAI_R2_ENDPOINT_URL }}
+          BUCKET: ${{ secrets.APPLYAI_R2_BUCKET }}
+          ACCESS_KEY: ${{ secrets.APPLYAI_R2_ACCESS_KEY_ID }}
+          SECRET_KEY: ${{ secrets.APPLYAI_R2_SECRET_ACCESS_KEY }}
+        run: |
+          missing=0
+          for pair in "APPLYAI_R2_ENDPOINT_URL:$ENDPOINT" "APPLYAI_R2_BUCKET:$BUCKET" "APPLYAI_R2_ACCESS_KEY_ID:$ACCESS_KEY" "APPLYAI_R2_SECRET_ACCESS_KEY:$SECRET_KEY"; do
+            name="${pair%%:*}"
+            value="${pair#*:}"
+            if [ -z "$value" ]; then
+              echo "::error::$name is not configured"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 2
+          fi
+
+      - name: Install API dependencies
+        working-directory: services/api
+        run: uv sync --frozen
+
+      - name: Run private object round-trip
+        working-directory: services/api
+        env:
+          S3_ENDPOINT_URL: ${{ secrets.APPLYAI_R2_ENDPOINT_URL }}
+          S3_BUCKET: ${{ secrets.APPLYAI_R2_BUCKET }}
+          S3_ACCESS_KEY_ID: ${{ secrets.APPLYAI_R2_ACCESS_KEY_ID }}
+          S3_SECRET_ACCESS_KEY: ${{ secrets.APPLYAI_R2_SECRET_ACCESS_KEY }}
+          S3_REGION: auto
+          S3_SERVER_SIDE_ENCRYPTION: none
+        run: uv run python -m scripts.r2_acceptance
+
+      - name: Record evidence boundary
+        if: ${{ success() }}
+        run: |
+          {
+            echo '## Cloudflare R2 live acceptance'
+            echo
+            echo '- Private authenticated PUT/HEAD/GET/DELETE: verified'
+            echo '- Presigned PUT generation: verified HTTPS'
+            echo '- Raw public bucket exposure: not implied by this gate'
+            echo '- Resume candidate ownership: enforced separately by ApplyAI API tests'
+          } >> "$GITHUB_STEP_SUMMARY"

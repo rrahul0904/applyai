@@ -1,0 +1,124 @@
+name: Lean Production Validation
+
+on:
+  pull_request:
+    paths:
+      - services/api/app/core/config.py
+      - services/api/app/core/queue.py
+      - services/api/app/core/storage.py
+      - services/api/app/postgres_queue_models.py
+      - services/api/app/workers/postgres.py
+      - services/api/alembic/**
+      - services/api/tests/test_lean_production.py
+      - services/api/Dockerfile
+      - scripts/railway-bootstrap.sh
+      - docs/LEAN_PRODUCTION_ARCHITECTURE.md
+      - docs/RAILWAY_DEPLOYMENT.md
+      - docs/R2_STORAGE.md
+      - .github/workflows/lean-production-validation.yml
+  push:
+    branches:
+      - agent/lean-production-wave-1
+    paths:
+      - services/api/app/core/config.py
+      - services/api/app/core/queue.py
+      - services/api/app/core/storage.py
+      - services/api/app/postgres_queue_models.py
+      - services/api/app/workers/postgres.py
+      - services/api/alembic/**
+      - services/api/tests/test_lean_production.py
+      - services/api/Dockerfile
+      - scripts/railway-bootstrap.sh
+      - .github/workflows/lean-production-validation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: applyai-lean-production-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lean-runtime:
+    name: Postgres queue and R2 compatibility
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17.6
+        env:
+          POSTGRES_USER: applyai
+          POSTGRES_PASSWORD: applyai
+          POSTGRES_DB: applyai_lean_test
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U applyai -d applyai_lean_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql+psycopg://applyai:applyai@localhost:55432/applyai_lean_test
+      TEST_DATABASE_URL: postgresql+psycopg://applyai:applyai@localhost:55432/applyai_lean_test
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12.11'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+        with:
+          version: '0.9.21'
+
+      - name: Install API dependencies
+        working-directory: services/api
+        run: uv sync --frozen
+
+      - name: Apply migrations from zero to head
+        working-directory: services/api
+        run: uv run alembic upgrade head
+
+      - name: Verify migration drift
+        working-directory: services/api
+        run: uv run alembic check
+
+      - name: Run lean production tests
+        working-directory: services/api
+        run: uv run pytest tests/test_lean_production.py -q
+
+      - name: Verify production lean settings fail closed
+        working-directory: services/api
+        run: |
+          uv run python - <<'PY'
+          from app.core.config import Settings
+          settings = Settings(
+              app_env='production',
+              deployment_profile='lean',
+              database_url='postgresql://user:pass@postgres.railway.internal:5432/railway',
+              auth_provider='clerk',
+              clerk_issuer='https://clerk.example.test',
+              clerk_jwks_url='https://clerk.example.test/.well-known/jwks.json',
+              web_origin='https://applyai.example.test',
+              object_storage_provider='s3',
+              s3_bucket='applyai-resumes',
+              s3_endpoint_url='https://account.r2.cloudflarestorage.com',
+              s3_access_key_id='test',
+              s3_secret_access_key='test',
+              s3_server_side_encryption='none',
+              task_queue_provider='postgres',
+          )
+          assert settings.deployment_profile == 'lean'
+          assert settings.task_queue_provider == 'postgres'
+          assert settings.database_url.startswith('postgresql+psycopg://')
+          PY
+
+      - name: Validate Railway bootstrap shell
+        run: bash -n scripts/railway-bootstrap.sh
+
+      - name: Build Railway API image
+        run: docker build -t applyai-api:lean services/api

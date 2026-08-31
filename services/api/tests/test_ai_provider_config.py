@@ -17,10 +17,11 @@ def test_api_can_describe_openai_intent_without_holding_model_secret():
         OpenAIResponsesProvider(settings)
 
 
-def test_staging_openai_requires_dedicated_ai_queues():
+def test_staging_openai_requires_dedicated_ai_queues_on_aws_profile():
     with pytest.raises(ValueError, match="AI_SQS_QUEUE_URL and AI_SQS_DLQ_URL"):
         Settings(
             app_env="staging",
+            deployment_profile="aws",
             auth_provider="clerk",
             clerk_issuer="https://example.clerk.accounts.dev",
             clerk_jwks_url="https://example.clerk.accounts.dev/.well-known/jwks.json",

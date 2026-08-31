@@ -27,6 +27,12 @@ vi.mock("@/components/career-system-panel", () => ({
   ),
 }));
 
+vi.mock("@/components/recruiter-lens-card", () => ({
+  RecruiterLensCard: ({ jobId }: { jobId: string }) => (
+    <div data-testid="recruiter-lens-card">Recruiter Lens for {jobId}</div>
+  ),
+}));
+
 vi.mock("@/lib/api/client", () => ({
   api: {
     jobs: { detail: vi.fn() },
@@ -90,6 +96,7 @@ describe("JobDetailView", () => {
     expect(screen.getByText("Build reliable data products.")).toBeDefined();
     expect(screen.getByRole("link", { name: "View original listing" }).getAttribute("href")).toBe(job.source_url);
     expect(screen.getByTestId("career-system-panel").textContent).toContain("job-1");
+    expect(screen.getByTestId("recruiter-lens-card").textContent).toContain("job-1");
   });
 
   it("persists a saved job through the real mutation boundary", async () => {

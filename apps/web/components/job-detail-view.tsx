@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { CareerIntelligencePanel } from "@/components/career-intelligence-panel";
 import { CareerSystemPanel } from "@/components/career-system-panel";
 import { CompanyIntelligenceCard } from "@/components/company-intelligence-card";
+import { RecruiterLensCard } from "@/components/recruiter-lens-card";
 import { api } from "@/lib/api/client";
 import { Badge, Button, Card, ErrorState, Skeleton } from "@/components/ui";
 import { formatDate, formatMoney, titleCase } from "@/lib/utils";
@@ -65,6 +66,7 @@ export function JobDetailView({ jobId }: { jobId: string }) {
 
           <CareerIntelligencePanel jobId={jobId} />
           <CareerSystemPanel jobId={jobId} />
+          <RecruiterLensCard jobId={jobId} />
           <CompanyIntelligenceCard jobId={jobId} />
           <Card className="detail-section"><h2>About the role</h2><div className="detail-copy">{item.description}</div></Card>
           {item.requirements.length ? <Card className="detail-section"><h2>What they’re looking for</h2><ul>{item.requirements.map((requirement) => <li key={requirement}>{requirement}</li>)}</ul></Card> : null}

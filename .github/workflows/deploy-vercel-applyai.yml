@@ -3,7 +3,7 @@ name: Deploy ApplyAI Web to Vercel
 on:
   push:
     branches:
-      - agent/career-system-websumes
+      - agent/production-activation-wave-1
     paths:
       - apps/web/**
       - package.json

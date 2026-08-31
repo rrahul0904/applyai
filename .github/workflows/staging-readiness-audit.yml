@@ -1,0 +1,114 @@
+name: ApplyAI Staging Readiness Audit
+
+on:
+  push:
+    branches:
+      - agent/production-activation-wave-1
+    paths:
+      - .github/workflows/staging-readiness-audit.yml
+      - .github/workflows/staging-preflight.yml
+      - .github/workflows/staging-source-bootstrap.yml
+      - .github/workflows/staging-release-v2.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: applyai-staging-readiness-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: Audit staging provider configuration
+    runs-on: ubuntu-24.04
+    environment: staging
+    env:
+      AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+      WEB_ORIGIN: ${{ vars.WEB_ORIGIN }}
+      API_BASE_URL: ${{ vars.API_BASE_URL }}
+      API_CERTIFICATE_ARN: ${{ vars.API_CERTIFICATE_ARN }}
+      CLERK_ISSUER: ${{ vars.CLERK_ISSUER }}
+      CLERK_JWKS_URL: ${{ vars.CLERK_JWKS_URL }}
+      CLERK_AUDIENCE: ${{ vars.CLERK_AUDIENCE }}
+      GREENHOUSE_BOARD_TOKENS: ${{ vars.GREENHOUSE_BOARD_TOKENS || '[]' }}
+      LEVER_SITE_NAMES: ${{ vars.LEVER_SITE_NAMES || '[]' }}
+      ASHBY_BOARD_NAMES: ${{ vars.ASHBY_BOARD_NAMES || '[]' }}
+      ENABLE_OPEN_JOBS: ${{ vars.ENABLE_OPEN_JOBS || 'true' }}
+    steps:
+      - name: Inspect presence without exposing values
+        id: audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(
+            AWS_DEPLOY_ROLE_ARN
+            TF_STATE_BUCKET
+            WEB_ORIGIN
+            API_BASE_URL
+            API_CERTIFICATE_ARN
+            CLERK_ISSUER
+            CLERK_JWKS_URL
+            CLERK_AUDIENCE
+          )
+          missing=()
+          for name in "${required[@]}"; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("$name")
+            fi
+          done
+
+          source_issue=""
+          for name in GREENHOUSE_BOARD_TOKENS LEVER_SITE_NAMES ASHBY_BOARD_NAMES; do
+            if ! printf '%s' "${!name}" | jq -e 'type == "array" and length <= 5 and all(.[]; type == "string" and length > 0)' >/dev/null; then
+              source_issue="${source_issue}${name} has invalid JSON; "
+            fi
+          done
+          case "$ENABLE_OPEN_JOBS" in
+            true|false) ;;
+            *) source_issue="${source_issue}ENABLE_OPEN_JOBS must be true or false; " ;;
+          esac
+
+          {
+            echo '## ApplyAI staging readiness audit'
+            echo
+            if [ "${#missing[@]}" -eq 0 ]; then
+              echo '- Core staging variables: configured'
+            else
+              echo '- Core staging variables: **BLOCKED_EXTERNAL_CONFIGURATION**'
+              echo '- Missing variable names:'
+              for name in "${missing[@]}"; do
+                echo "  - \`${name}\`"
+              done
+            fi
+            if [ -n "$source_issue" ]; then
+              echo "- Source configuration issue: ${source_issue}"
+            else
+              echo "- Open Jobs enabled by default: \`${ENABLE_OPEN_JOBS}\`"
+              echo '- Optional direct ATS source lists: structurally valid'
+            fi
+            echo
+            echo 'This audit never prints variable values and does not assume an AWS role or deploy infrastructure.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "${#missing[@]}" -eq 0 ] && [ -z "$source_issue" ]; then
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+            echo "::warning::ApplyAI staging remains blocked by missing or invalid external configuration"
+          fi
+
+      - name: Verify public Clerk discovery only when configured
+        if: ${{ steps.audit.outputs.ready == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$WEB_ORIGIN" in https://*) ;; *) echo 'WEB_ORIGIN must use HTTPS' >&2; exit 1 ;; esac
+          case "$API_BASE_URL" in https://*) ;; *) echo 'API_BASE_URL must use HTTPS' >&2; exit 1 ;; esac
+          case "$CLERK_ISSUER" in https://*) ;; *) echo 'CLERK_ISSUER must use HTTPS' >&2; exit 1 ;; esac
+          case "$CLERK_JWKS_URL" in https://*) ;; *) echo 'CLERK_JWKS_URL must use HTTPS' >&2; exit 1 ;; esac
+          curl --fail --silent --show-error --location --retry 3 \
+            --output /dev/null "${CLERK_ISSUER%/}/.well-known/openid-configuration"
+          curl --fail --silent --show-error --location --retry 3 "$CLERK_JWKS_URL" >/tmp/jwks.json
+          jq -e '.keys | type == "array" and length > 0 and all(.[]; has("kid") and has("kty"))' /tmp/jwks.json >/dev/null

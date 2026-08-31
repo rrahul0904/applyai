@@ -9,6 +9,7 @@ from app.jobs.adapters import JobSourceAdapterFactory
 from app.jobs.connectors import JobSourceConnector
 from app.jobs.contracts import JobSourceType, SourceTrustLevel
 from app.jobs.generic_career import CareerSiteJobConnector
+from app.jobs.open_jobs import OpenJobsConnector
 from app.jobs.partner_feed import PartnerFeedConnector
 from app.jobs.public_feeds import ReliefWebJobsConnector, USAJobsConnector
 from app.jobs.smartrecruiters import SmartRecruitersPostingConnector
@@ -30,6 +31,26 @@ def _smartrecruiters_adapter(
         max_jobs=int(configuration.get("max_jobs") or 2000),
         request_interval_seconds=float(configuration.get("request_interval_seconds") or 0.11),
         client=client,
+    )
+
+
+def _open_jobs_adapter(
+    source: JobSourceRegistry,
+    configuration: dict,
+    *,
+    client: httpx.Client | None,
+) -> OpenJobsConnector:
+    return OpenJobsConnector(
+        data_base_url=str(
+            configuration.get("data_base_url")
+            or source.base_url
+            or "https://backend.dehnbostele.workers.dev/data"
+        ),
+        max_groups_per_run=int(configuration.get("max_groups_per_run") or 25),
+        max_jobs_per_group=int(configuration.get("max_jobs_per_group") or 1000),
+        timeout_seconds=float(configuration.get("timeout_seconds") or 30),
+        client=client,
+        source_record=source,
     )
 
 
@@ -110,6 +131,11 @@ def create_source_adapter(
 
     if source_type == JobSourceType.SMARTRECRUITERS:
         return _smartrecruiters_adapter(source, configuration, client=client)
+
+    if source_type == JobSourceType.AUTHORIZED_AGGREGATOR_FEED:
+        provider_key = str(configuration.get("provider_key") or "").strip().upper()
+        if provider_key in {"OPEN_JOBS", "OPEN-JOBS", "OPENJOBS"}:
+            return _open_jobs_adapter(source, configuration, client=client)
 
     if source_type in {
         JobSourceType.AUTHORIZED_AGGREGATOR_FEED,

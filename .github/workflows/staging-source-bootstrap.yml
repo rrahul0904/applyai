@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   register:
-    name: Register reviewed public ATS sources
+    name: Register real public job sources
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: staging
@@ -31,11 +31,12 @@ jobs:
       GREENHOUSE_BOARD_TOKENS: ${{ vars.GREENHOUSE_BOARD_TOKENS || '[]' }}
       LEVER_SITE_NAMES: ${{ vars.LEVER_SITE_NAMES || '[]' }}
       ASHBY_BOARD_NAMES: ${{ vars.ASHBY_BOARD_NAMES || '[]' }}
+      ENABLE_OPEN_JOBS: ${{ vars.ENABLE_OPEN_JOBS || 'true' }}
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Validate reviewed source lists
+      - name: Validate real source configuration
         shell: bash
         run: |
           set -euo pipefail
@@ -46,13 +47,19 @@ jobs:
               all(.[]; type == "string" and length > 0)
             ' >/dev/null
           done
-          total="$((
+          case "$ENABLE_OPEN_JOBS" in true|false) ;; *) echo 'ENABLE_OPEN_JOBS must be true or false' >&2; exit 1 ;; esac
+
+          reviewed_ats_count="$((
             $(printf '%s' "$GREENHOUSE_BOARD_TOKENS" | jq 'length') +
             $(printf '%s' "$LEVER_SITE_NAMES" | jq 'length') +
             $(printf '%s' "$ASHBY_BOARD_NAMES" | jq 'length')
           ))"
+          total="$reviewed_ats_count"
+          if [ "$ENABLE_OPEN_JOBS" = "true" ]; then
+            total="$((total + 1))"
+          fi
           test "$total" -gt 0 || {
-            echo 'Configure at least one reviewed public ATS source.' >&2
+            echo 'Enable Open Jobs or configure at least one reviewed public ATS source.' >&2
             exit 1
           }
 
@@ -81,15 +88,22 @@ jobs:
           task_family="$(terraform -chdir=infra/staging output -raw migration_task_family)"
           subnets="$(terraform -chdir=infra/staging output -json app_subnet_ids | jq -r 'join(",")')"
           security_group="$(terraform -chdir=infra/staging output -raw ecs_security_group_id)"
+
+          bootstrap_command='uv run python scripts/register_sources_db.py'
+          if [ "$ENABLE_OPEN_JOBS" = "true" ]; then
+            bootstrap_command="${bootstrap_command} && uv run python scripts/register_public_job_sources.py --open-jobs"
+          fi
+
           jq -n \
             --arg greenhouse "$GREENHOUSE_BOARD_TOKENS" \
             --arg lever "$LEVER_SITE_NAMES" \
             --arg ashby "$ASHBY_BOARD_NAMES" \
+            --arg command "$bootstrap_command" \
             '{
               containerOverrides: [
                 {
                   name: "migration",
-                  command: ["uv", "run", "python", "scripts/register_sources_db.py"],
+                  command: ["sh", "-lc", $command],
                   environment: [
                     {name: "GREENHOUSE_BOARD_TOKENS", value: $greenhouse},
                     {name: "LEVER_SITE_NAMES", value: $lever},
@@ -123,11 +137,13 @@ jobs:
           lever_count="$(printf '%s' "$LEVER_SITE_NAMES" | jq 'length')"
           ashby_count="$(printf '%s' "$ASHBY_BOARD_NAMES" | jq 'length')"
           {
-            echo "## ApplyAI reviewed staging source bootstrap"
+            echo "## ApplyAI real staging source bootstrap"
             echo
+            echo "- Open Jobs discovery corpus: ${ENABLE_OPEN_JOBS}"
             echo "- Greenhouse boards: ${greenhouse_count}"
             echo "- Lever sites: ${lever_count}"
             echo "- Ashby boards: ${ashby_count}"
-            echo "- Registration path: private one-shot ECS task using Aurora-managed credentials"
+            echo "- Open Jobs authority: discovery/coverage only; employer ATS observations remain higher authority"
+            echo "- Registration path: private one-shot ECS task using database credentials from the existing task definition"
             echo "- No operator API token or provider identifier was stored in Terraform state"
           } >> "$GITHUB_STEP_SUMMARY"

@@ -12,7 +12,9 @@ async function signIn(page: Page) {
   await page.waitForURL(/\/(onboarding|dashboard)$/);
   await page.goto("/dashboard");
   await page.waitForURL(/\/dashboard$/);
-  await expect(page.getByRole("heading", { name: "Your next best moves." })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Your career workspace is ready." }),
+  ).toBeVisible();
 }
 
 async function assertHealthy(page: Page, path: string) {

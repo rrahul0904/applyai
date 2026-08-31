@@ -29,7 +29,8 @@ test("canonical candidate product persists cross-workspace career state", async 
 
   await page.goto("/demo");
   await page.waitForURL(/\/dashboard$/);
-  await expect(page.getByRole("heading", { name: "Your next best moves." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your career workspace is ready." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Opportunities worth inspecting" })).toBeVisible();
   await captureDemo(page, "13-candidate-home");
 
   await page.goto("/applications");

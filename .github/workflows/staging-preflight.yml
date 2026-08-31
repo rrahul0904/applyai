@@ -29,6 +29,7 @@ jobs:
       GREENHOUSE_BOARD_TOKENS: ${{ vars.GREENHOUSE_BOARD_TOKENS || '[]' }}
       LEVER_SITE_NAMES: ${{ vars.LEVER_SITE_NAMES || '[]' }}
       ASHBY_BOARD_NAMES: ${{ vars.ASHBY_BOARD_NAMES || '[]' }}
+      ENABLE_OPEN_JOBS: ${{ vars.ENABLE_OPEN_JOBS || 'true' }}
     steps:
       - name: Validate environment variable shapes
         shell: bash
@@ -47,6 +48,7 @@ jobs:
           case "$API_BASE_URL" in https://*) ;; *) echo 'API_BASE_URL must use HTTPS' >&2; exit 1 ;; esac
           case "$CLERK_ISSUER" in https://*) ;; *) echo 'CLERK_ISSUER must use HTTPS' >&2; exit 1 ;; esac
           case "$CLERK_JWKS_URL" in https://*) ;; *) echo 'CLERK_JWKS_URL must use HTTPS' >&2; exit 1 ;; esac
+          case "$ENABLE_OPEN_JOBS" in true|false) ;; *) echo 'ENABLE_OPEN_JOBS must be true or false' >&2; exit 1 ;; esac
 
           validate_source_list() {
             local name="$1"
@@ -66,13 +68,17 @@ jobs:
           validate_source_list LEVER_SITE_NAMES "$LEVER_SITE_NAMES"
           validate_source_list ASHBY_BOARD_NAMES "$ASHBY_BOARD_NAMES"
 
-          total_sources="$(jq -n \
+          reviewed_ats_sources="$(jq -n \
             --argjson greenhouse "$GREENHOUSE_BOARD_TOKENS" \
             --argjson lever "$LEVER_SITE_NAMES" \
             --argjson ashby "$ASHBY_BOARD_NAMES" \
             '$greenhouse | length + ($lever | length) + ($ashby | length)')"
-          test "$total_sources" -gt 0 || {
-            echo 'Configure at least one reviewed public ATS source before real staging preflight.' >&2
+          real_source_count="$reviewed_ats_sources"
+          if [ "$ENABLE_OPEN_JOBS" = "true" ]; then
+            real_source_count="$((real_source_count + 1))"
+          fi
+          test "$real_source_count" -gt 0 || {
+            echo 'Enable Open Jobs or configure at least one reviewed public ATS source before real staging preflight.' >&2
             exit 1
           }
 
@@ -136,6 +142,7 @@ jobs:
             echo "- ACM certificate status: \`ISSUED\` (\`${cert_domain}\`)"
             echo '- Clerk issuer discovery and JWKS: reachable and valid'
             echo '- Clerk audience: configured'
+            echo "- Open Jobs discovery source enabled: \`${ENABLE_OPEN_JOBS}\`"
             echo "- Reviewed ATS sources: Greenhouse \`${greenhouse_count}\`, Lever \`${lever_count}\`, Ashby \`${ashby_count}\`"
             echo '- Staging variable shapes: valid'
             echo

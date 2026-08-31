@@ -13,7 +13,7 @@ from sqlalchemy import and_, or_, select, update
 from app.core.config import Settings, get_settings
 from app.core.database import SessionLocal
 from app.core.outbox import publish_outbox_once
-from app.core.queue import AGENT_TASK_TYPES, AI_TASK_TYPES, SOURCE_TASK_TYPES
+from app.core.queue import AGENT_TASK_TYPES, AI_TASK_TYPES, SOURCE_TASK_TYPES, Task
 from app.postgres_queue_models import PostgresTask
 
 
@@ -26,7 +26,6 @@ def utcnow() -> datetime:
 
 def claim_task(settings: Settings, *, worker_id: str) -> uuid.UUID | None:
     now = utcnow()
-    expired = now
     with SessionLocal() as session:
         row = session.scalar(
             select(PostgresTask)
@@ -39,7 +38,7 @@ def claim_task(settings: Settings, *, worker_id: str) -> uuid.UUID | None:
                     and_(
                         PostgresTask.status == "RUNNING",
                         PostgresTask.lease_expires_at.is_not(None),
-                        PostgresTask.lease_expires_at < expired,
+                        PostgresTask.lease_expires_at < now,
                     ),
                 )
             )
@@ -93,27 +92,27 @@ def _heartbeat(
             return
 
 
-def _body(row: PostgresTask) -> str:
+def _body(task: Task) -> str:
     return json.dumps(
         {
-            "task_type": row.task_type,
-            "payload": row.payload,
-            "idempotency_key": row.idempotency_key,
+            "task_type": task.task_type,
+            "payload": task.payload,
+            "idempotency_key": task.idempotency_key,
         }
     )
 
 
-def dispatch_task(row: PostgresTask, settings: Settings) -> bool:
-    body = _body(row)
-    if row.task_type in SOURCE_TASK_TYPES:
+def dispatch_task(task: Task, settings: Settings) -> bool:
+    body = _body(task)
+    if task.task_type in SOURCE_TASK_TYPES:
         from app.workers.source import process_message
 
         return process_message(body, settings)
-    if row.task_type in AI_TASK_TYPES:
+    if task.task_type in AI_TASK_TYPES:
         from app.workers.ai import process_message
 
         return process_message(body, settings)
-    if row.task_type in AGENT_TASK_TYPES:
+    if task.task_type in AGENT_TASK_TYPES:
         from app.workers.agent import process_message
 
         return process_message(body, settings)
@@ -215,14 +214,10 @@ def process_claimed_task(task_id: uuid.UUID, *, worker_id: str, settings: Settin
         )
         if row is None:
             return False
-        # Detach the small task payload from this short-lived session before processing.
-        task = PostgresTask(
-            id=row.id,
+        task = Task(
             task_type=row.task_type,
             payload=dict(row.payload),
             idempotency_key=row.idempotency_key,
-            status=row.status,
-            attempt_count=row.attempt_count,
         )
 
     stop = threading.Event()

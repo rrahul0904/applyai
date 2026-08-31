@@ -1,0 +1,341 @@
+.panel {
+  display: grid;
+  gap: 20px;
+  padding: 24px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.header h2,
+.section h3 {
+  margin: 0;
+}
+
+.header p:not(:global(.eyebrow)),
+.sectionTitle p,
+.explanation,
+.compactCopy,
+.portfolio p,
+.questions p {
+  color: var(--muted-foreground);
+}
+
+.header p:not(:global(.eyebrow)) {
+  max-width: 760px;
+  margin: 8px 0 0;
+  line-height: 1.55;
+}
+
+.progress {
+  width: 92px;
+  height: 92px;
+  flex: 0 0 92px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--card);
+}
+
+.progress strong {
+  font-size: 1.55rem;
+  line-height: 1;
+}
+
+.progress span {
+  margin-top: 5px;
+  font-size: 0.7rem;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.progressTrack {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--muted);
+}
+
+.progressTrack span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--foreground);
+  transition: width 180ms ease;
+}
+
+.explanation {
+  margin: -8px 0 0;
+  font-size: 0.78rem;
+}
+
+.stageGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.stage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 0.76rem;
+  font-weight: 650;
+}
+
+.complete {
+  color: #15803d;
+}
+
+.incomplete {
+  color: var(--muted-foreground);
+}
+
+.nextAction {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--muted);
+}
+
+.nextAction span,
+.nextAction strong {
+  display: block;
+}
+
+.nextAction span {
+  margin-bottom: 4px;
+  color: var(--muted-foreground);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.grid,
+.messageGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.section {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--card) 94%, var(--muted));
+}
+
+.sectionTitle {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.sectionTitle svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.sectionTitle p {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.metrics div {
+  min-width: 92px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--background);
+  border: 1px solid var(--border);
+}
+
+.metrics strong,
+.metrics span {
+  display: block;
+}
+
+.metrics strong {
+  font-size: 1.05rem;
+}
+
+.metrics span {
+  margin-top: 2px;
+  color: var(--muted-foreground);
+  font-size: 0.68rem;
+}
+
+.badges,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.compactCopy {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  font-size: 0.78rem;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.messageField {
+  display: grid;
+  gap: 8px;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.messageField textarea {
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.checkRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.checkRow input {
+  margin-top: 2px;
+}
+
+.portfolio {
+  display: grid;
+  gap: 10px;
+}
+
+.portfolio > strong {
+  font-size: 1rem;
+}
+
+.portfolio p {
+  margin: 3px 0 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.portfolio > div {
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
+}
+
+.portfolio > div > span {
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.questions {
+  display: grid;
+  gap: 8px;
+}
+
+.questions > div {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--background);
+}
+
+.questions span {
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted-foreground);
+}
+
+.questions p {
+  margin: 5px 0 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.footerNote {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.footerNote svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+@media (max-width: 900px) {
+  .stageGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .grid,
+  .messageGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .panel {
+    padding: 18px;
+  }
+
+  .header,
+  .nextAction {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .progress {
+    width: 76px;
+    height: 76px;
+    flex-basis: 76px;
+  }
+
+  .stageGrid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -3,6 +3,7 @@ import re
 import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
+from zipfile import BadZipFile, ZipFile
 
 from docx import Document
 from pypdf import PdfReader
@@ -15,7 +16,26 @@ from app.durability_models import ResumeProcessingAttempt
 from app.models import ResumeExtraction, ResumeVersion
 
 
-PARSER_VERSION = "deterministic-v1"
+PARSER_VERSION = "deterministic-v2"
+MAX_PDF_PAGES = 30
+MAX_DOCX_ENTRIES = 2_000
+MAX_DOCX_UNCOMPRESSED_BYTES = 20 * 1024 * 1024
+MAX_DOCX_ENTRY_BYTES = 10 * 1024 * 1024
+MAX_DOCX_COMPRESSION_RATIO = 200
+MAX_EXTRACTED_CHARACTERS = 100_000
+PARSER_ERROR_CODES = {
+    "UNSUPPORTED_DOCUMENT_TYPE",
+    "INVALID_PDF_SIGNATURE",
+    "ENCRYPTED_PDF",
+    "PDF_PAGE_LIMIT_EXCEEDED",
+    "INVALID_DOCX_SIGNATURE",
+    "INVALID_DOCX_ARCHIVE",
+    "DOCX_ENTRY_LIMIT_EXCEEDED",
+    "DOCX_EXPANSION_LIMIT_EXCEEDED",
+    "DOCX_ENTRY_TOO_LARGE",
+    "DOCX_COMPRESSION_RATIO_EXCEEDED",
+    "EXTRACTED_TEXT_TOO_LARGE",
+}
 
 
 class OcrProvider(ABC):
@@ -24,16 +44,61 @@ class OcrProvider(ABC):
         raise NotImplementedError
 
 
+def _bounded_text(parts) -> str:
+    chunks: list[str] = []
+    character_count = 0
+    for value in parts:
+        text = value or ""
+        character_count += len(text) + (1 if chunks else 0)
+        if character_count > MAX_EXTRACTED_CHARACTERS:
+            raise ValueError("EXTRACTED_TEXT_TOO_LARGE")
+        chunks.append(text)
+    return "\n".join(chunks)
+
+
+def _validate_docx_archive(content: bytes) -> None:
+    if not content.startswith(b"PK"):
+        raise ValueError("INVALID_DOCX_SIGNATURE")
+    try:
+        with ZipFile(io.BytesIO(content)) as archive:
+            entries = archive.infolist()
+            if len(entries) > MAX_DOCX_ENTRIES:
+                raise ValueError("DOCX_ENTRY_LIMIT_EXCEEDED")
+            names = {entry.filename for entry in entries}
+            if "[Content_Types].xml" not in names or "word/document.xml" not in names:
+                raise ValueError("INVALID_DOCX_ARCHIVE")
+            expanded = 0
+            for entry in entries:
+                expanded += entry.file_size
+                if expanded > MAX_DOCX_UNCOMPRESSED_BYTES:
+                    raise ValueError("DOCX_EXPANSION_LIMIT_EXCEEDED")
+                if entry.file_size > MAX_DOCX_ENTRY_BYTES:
+                    raise ValueError("DOCX_ENTRY_TOO_LARGE")
+                if entry.file_size > 0:
+                    compressed = max(1, entry.compress_size)
+                    if entry.file_size / compressed > MAX_DOCX_COMPRESSION_RATIO:
+                        raise ValueError("DOCX_COMPRESSION_RATIO_EXCEEDED")
+    except BadZipFile as exc:
+        raise ValueError("INVALID_DOCX_ARCHIVE") from exc
+
+
 def extract_document_text(content: bytes, content_type: str) -> str:
     if content_type == "application/pdf":
+        if not content.startswith(b"%PDF"):
+            raise ValueError("INVALID_PDF_SIGNATURE")
         reader = PdfReader(io.BytesIO(content))
-        return "\n".join(page.extract_text() or "" for page in reader.pages)
+        if reader.is_encrypted:
+            raise ValueError("ENCRYPTED_PDF")
+        if len(reader.pages) > MAX_PDF_PAGES:
+            raise ValueError("PDF_PAGE_LIMIT_EXCEEDED")
+        return _bounded_text(page.extract_text() or "" for page in reader.pages)
     if (
         content_type
         == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     ):
+        _validate_docx_archive(content)
         document = Document(io.BytesIO(content))
-        return "\n".join(paragraph.text for paragraph in document.paragraphs)
+        return _bounded_text(paragraph.text for paragraph in document.paragraphs)
     raise ValueError("UNSUPPORTED_DOCUMENT_TYPE")
 
 
@@ -259,9 +324,7 @@ def process_resume_version(
             attempt.completed_at = datetime.now(timezone.utc)
             session.commit()
         except Exception as exc:
-            error_code = (
-                str(exc) if str(exc) in {"UNSUPPORTED_DOCUMENT_TYPE"} else "EXTRACTION_FAILED"
-            )
+            error_code = str(exc) if str(exc) in PARSER_ERROR_CODES else "EXTRACTION_FAILED"
             extraction.status = "FAILED"
             extraction.error_code = error_code
             version.processing_status = "FAILED"

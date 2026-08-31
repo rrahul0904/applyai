@@ -1,0 +1,253 @@
+name: Deploy ApplyAI Web to Vercel
+
+on:
+  push:
+    branches:
+      - agent/career-system-websumes
+    paths:
+      - apps/web/**
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - .github/workflows/deploy-vercel-applyai.yml
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Vercel deployment target
+        required: true
+        default: preview
+        type: choice
+        options:
+          - preview
+          - production
+
+permissions:
+  contents: read
+
+concurrency:
+  group: applyai-vercel-${{ github.ref_name }}-${{ github.event_name == 'workflow_dispatch' && inputs.target || 'preview' }}
+  cancel-in-progress: false
+
+env:
+  VERCEL_TEAM_ID: team_zmEezpOKGZy2sH5nqTfO44LD
+  VERCEL_TEAM_SLUG: rrahul0904-5013s-projects
+  VERCEL_PROJECT_NAME: applyai
+  VERCEL_PROJECT_ROOT: apps/web
+  DEPLOY_TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.target || 'preview' }}
+
+jobs:
+  deploy:
+    name: Deploy ApplyAI web
+    runs-on: ubuntu-24.04
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.target != 'production' || github.ref_name == 'main' }}
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.target == 'production' && 'production' || 'preview' }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        with:
+          version: 10.13.1
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.13.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Validate deployment secrets
+        id: preflight
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          APPLYAI_API_URL: ${{ secrets.APPLYAI_VERCEL_API_URL }}
+          CLERK_PUBLISHABLE_KEY: ${{ secrets.APPLYAI_VERCEL_CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.APPLYAI_VERCEL_CLERK_SECRET_KEY }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in VERCEL_TOKEN APPLYAI_API_URL CLERK_PUBLISHABLE_KEY CLERK_SECRET_KEY; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("$name")
+            fi
+          done
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Missing Vercel deployment secrets: ${missing[*]}" >> "$GITHUB_STEP_SUMMARY"
+            if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+              echo "::error::Missing required Vercel deployment secrets: ${missing[*]}"
+              exit 1
+            fi
+            echo "::warning::Skipping automatic preview because Vercel deployment secrets are not configured"
+            exit 0
+          fi
+
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Install workspace dependencies
+        if: ${{ steps.preflight.outputs.ready == 'true' }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Vercel CLI
+        if: ${{ steps.preflight.outputs.ready == 'true' }}
+        run: pnpm add --global vercel@latest
+
+      - name: Ensure dedicated ApplyAI Vercel project exists
+        if: ${{ steps.preflight.outputs.ready == 'true' }}
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          project_url="https://api.vercel.com/v9/projects/${VERCEL_PROJECT_NAME}?teamId=${VERCEL_TEAM_ID}"
+          status="$(curl --silent --output /tmp/vercel-project.json --write-out '%{http_code}' \
+            --header "Authorization: Bearer ${VERCEL_TOKEN}" \
+            "$project_url")"
+
+          if [ "$status" = "404" ]; then
+            create_status="$(curl --silent --output /tmp/vercel-project-create.json --write-out '%{http_code}' \
+              --request POST \
+              --url "https://api.vercel.com/v11/projects?teamId=${VERCEL_TEAM_ID}" \
+              --header "Authorization: Bearer ${VERCEL_TOKEN}" \
+              --header "Content-Type: application/json" \
+              --data "{\"name\":\"${VERCEL_PROJECT_NAME}\",\"framework\":\"nextjs\",\"rootDirectory\":\"${VERCEL_PROJECT_ROOT}\",\"installCommand\":\"cd ../.. && pnpm install --frozen-lockfile\",\"buildCommand\":\"pnpm build\",\"gitRepository\":{\"type\":\"github\",\"repo\":\"rrahul0904/applyai\"}}")"
+            if [ "$create_status" -lt 200 ] || [ "$create_status" -ge 300 ]; then
+              cat /tmp/vercel-project-create.json
+              echo "::error::Unable to create the dedicated ApplyAI Vercel project"
+              exit 1
+            fi
+          elif [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            cat /tmp/vercel-project.json
+            echo "::error::Unable to inspect the ApplyAI Vercel project"
+            exit 1
+          fi
+
+          patch_status="$(curl --silent --output /tmp/vercel-project-update.json --write-out '%{http_code}' \
+            --request PATCH \
+            --url "$project_url" \
+            --header "Authorization: Bearer ${VERCEL_TOKEN}" \
+            --header "Content-Type: application/json" \
+            --data "{\"framework\":\"nextjs\",\"rootDirectory\":\"${VERCEL_PROJECT_ROOT}\",\"installCommand\":\"cd ../.. && pnpm install --frozen-lockfile\",\"buildCommand\":\"pnpm build\"}")"
+          if [ "$patch_status" -lt 200 ] || [ "$patch_status" -ge 300 ]; then
+            cat /tmp/vercel-project-update.json
+            echo "::error::Unable to enforce ApplyAI Vercel project settings"
+            exit 1
+          fi
+
+      - name: Link checkout to ApplyAI Vercel project
+        if: ${{ steps.preflight.outputs.ready == 'true' }}
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          vercel link \
+            --yes \
+            --project "$VERCEL_PROJECT_NAME" \
+            --scope "$VERCEL_TEAM_SLUG" \
+            --token "$VERCEL_TOKEN"
+
+      - name: Synchronize Vercel environment
+        if: ${{ steps.preflight.outputs.ready == 'true' }}
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          APPLYAI_API_URL: ${{ secrets.APPLYAI_VERCEL_API_URL }}
+          CLERK_PUBLISHABLE_KEY: ${{ secrets.APPLYAI_VERCEL_CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.APPLYAI_VERCEL_CLERK_SECRET_KEY }}
+          OPERATOR_EMAILS: ${{ secrets.APPLYAI_VERCEL_OPERATOR_EMAILS }}
+          INTERNAL_API_TOKEN: ${{ secrets.APPLYAI_VERCEL_INTERNAL_API_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          set_env() {
+            key="$1"
+            value="$2"
+            if [ -z "$value" ]; then
+              return 0
+            fi
+            printf '%s' "$value" | vercel env add "$key" "$DEPLOY_TARGET" \
+              --force \
+              --yes \
+              --scope "$VERCEL_TEAM_SLUG" \
+              --token "$VERCEL_TOKEN"
+          }
+
+          set_sensitive_env() {
+            key="$1"
+            value="$2"
+            if [ -z "$value" ]; then
+              return 0
+            fi
+            printf '%s' "$value" | vercel env add "$key" "$DEPLOY_TARGET" \
+              --force \
+              --yes \
+              --sensitive \
+              --scope "$VERCEL_TEAM_SLUG" \
+              --token "$VERCEL_TOKEN"
+          }
+
+          set_env NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY "$CLERK_PUBLISHABLE_KEY"
+          set_sensitive_env CLERK_SECRET_KEY "$CLERK_SECRET_KEY"
+          set_sensitive_env APPLYAI_API_URL "$APPLYAI_API_URL"
+          set_env APP_ENV production
+          set_env DEV_AUTH_ENABLED false
+          set_env APPLYAI_OPERATOR_EMAILS "$OPERATOR_EMAILS"
+          set_sensitive_env INTERNAL_API_TOKEN "$INTERNAL_API_TOKEN"
+
+      - name: Pull Vercel project settings
+        if: ${{ steps.preflight.outputs.ready == 'true' }}
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          vercel pull \
+            --yes \
+            --environment "$DEPLOY_TARGET" \
+            --scope "$VERCEL_TEAM_SLUG" \
+            --token "$VERCEL_TOKEN"
+
+      - name: Build Vercel artifact
+        if: ${{ steps.preflight.outputs.ready == 'true' }}
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ "$DEPLOY_TARGET" = "production" ]; then
+            vercel build --prod --scope "$VERCEL_TEAM_SLUG" --token "$VERCEL_TOKEN"
+          else
+            vercel build --scope "$VERCEL_TEAM_SLUG" --token "$VERCEL_TOKEN"
+          fi
+
+      - name: Deploy prebuilt artifact
+        if: ${{ steps.preflight.outputs.ready == 'true' }}
+        id: deploy
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ "$DEPLOY_TARGET" = "production" ]; then
+            deployment_url="$(vercel deploy --prebuilt --prod --scope "$VERCEL_TEAM_SLUG" --token "$VERCEL_TOKEN")"
+          else
+            deployment_url="$(vercel deploy --prebuilt --scope "$VERCEL_TEAM_SLUG" --token "$VERCEL_TOKEN")"
+          fi
+          echo "url=$deployment_url" >> "$GITHUB_OUTPUT"
+          {
+            echo "### ApplyAI Vercel deployment"
+            echo ""
+            echo "- Target: $DEPLOY_TARGET"
+            echo "- Project: $VERCEL_PROJECT_NAME"
+            echo "- URL: $deployment_url"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Probe deployed web application
+        if: ${{ steps.preflight.outputs.ready == 'true' }}
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -euo pipefail
+          curl --fail --show-error --silent --location \
+            --retry 5 --retry-delay 3 \
+            --output /tmp/applyai-vercel-home.html \
+            "$DEPLOYMENT_URL/"
+          test -s /tmp/applyai-vercel-home.html

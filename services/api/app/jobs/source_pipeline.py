@@ -224,11 +224,12 @@ class RegisteredSourceIngestionPipeline:
 
                 counts["valid"] += 1
                 normalized = connector.normalize(payload)
+                source_company_identity = raw.source_company_identity or source.source_identity
                 normalized.raw_payload.update(
                     {
                         "_applyai_source_registry_id": str(source.id),
                         "_applyai_source_type": source.source_type,
-                        "_applyai_source_company_identity": source.source_identity,
+                        "_applyai_source_company_identity": source_company_identity,
                         "_applyai_source_job_identity": raw.source_job_identity,
                         "_applyai_source_url": raw.source_url,
                         "_applyai_canonical_apply_url": canonicalize_public_url(raw.apply_url),
@@ -242,7 +243,7 @@ class RegisteredSourceIngestionPipeline:
                     result = self.canonical.ingest_one(
                         connector.key,
                         normalized,
-                        source_company=source.source_identity,
+                        source_company=source_company_identity,
                     )
                     posting_source = self.session.scalar(
                         select(JobSource).where(
@@ -257,7 +258,7 @@ class RegisteredSourceIngestionPipeline:
                         {
                             "source_registry_id": str(source.id),
                             "source_type": source.source_type,
-                            "source_company_identity": source.source_identity,
+                            "source_company_identity": source_company_identity,
                             "source_job_identity": raw.source_job_identity,
                             "source_url": raw.source_url,
                             "canonical_apply_url": canonicalize_public_url(raw.apply_url),
@@ -354,7 +355,7 @@ class RegisteredSourceIngestionPipeline:
         checkpoint = {
             "source_registry_id": str(source.id),
             "source_type": source.source_type,
-            "source_company_identity": source.source_identity,
+            "source_company_identity": raw.source_company_identity or source.source_identity,
             "source_job_identity": raw.source_job_identity,
             "source_url": raw.source_url,
             "canonical_apply_url": canonicalize_public_url(raw.apply_url),

@@ -112,7 +112,7 @@ describe("DashboardView first-value experience", () => {
       await screen.findByRole("heading", { name: "Your career workspace is ready." }),
     ).toBeDefined();
     expect(screen.getByRole("heading", { name: "Opportunities worth inspecting" })).toBeDefined();
-    expect(screen.getByText("Match 82/100")).toBeDefined();
+    expect(await screen.findByText("Match 82/100")).toBeDefined();
     expect(screen.getByText("Snowflake")).toBeDefined();
     expect(screen.getByText("People leadership evidence")).toBeDefined();
     expect(screen.getByText(/preparation workflow completion, not employer interest/i)).toBeDefined();
@@ -128,10 +128,8 @@ describe("DashboardView first-value experience", () => {
         name: "Add your résumé before evaluating opportunities.",
       }),
     ).toBeDefined();
-    expect(screen.getByRole("link", { name: /upload résumé/i })).toHaveAttribute(
-      "href",
-      "/resume",
-    );
+    const uploadLink = screen.getByRole("link", { name: /upload résumé/i });
+    expect(uploadLink.getAttribute("href")).toBe("/resume");
   });
 
   it("surfaces tracked application engagement without converting it to hiring probability", async () => {

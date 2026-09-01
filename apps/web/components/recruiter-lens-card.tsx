@@ -1,15 +1,19 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   MessageCircleQuestion,
+  Printer,
   ScanSearch,
   ShieldCheck,
 } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
 
-import { Badge } from "@/components/ui";
-import { recruiterLensApi } from "@/lib/api/recruiter-lens";
+import { Badge, Button, Input, NativeSelect } from "@/components/ui";
+import { growthApi } from "@/lib/api/growth";
+import { recruiterLensApi, type RecruiterLensMode } from "@/lib/api/recruiter-lens";
 import { titleCase } from "@/lib/utils";
 import styles from "./recruiter-lens-card.module.css";
 
@@ -20,9 +24,38 @@ function criterionTone(status: "SUPPORTED" | "PARTIAL" | "NOT_EVIDENCED") {
 }
 
 export function RecruiterLensCard({ jobId }: { jobId: string }) {
+  const queryClient = useQueryClient();
+  const [mode, setMode] = useState<RecruiterLensMode>("DEFAULT_RECRUITER");
+  const [criteriaSetId, setCriteriaSetId] = useState("");
+  const [setName, setSetName] = useState("");
+  const [criterionLabel, setCriterionLabel] = useState("");
+  const criteriaSets = useQuery({
+    queryKey: ["recruiter-lens-criteria-sets"],
+    queryFn: ({ signal }) => growthApi.criteriaSets.list(signal),
+  });
   const lens = useQuery({
-    queryKey: ["recruiter-lens", jobId],
-    queryFn: ({ signal }) => recruiterLensApi.get(jobId, signal),
+    queryKey: ["recruiter-lens", jobId, mode, criteriaSetId],
+    queryFn: ({ signal }) => recruiterLensApi.get(
+      jobId,
+      { mode, criteriaSetId: criteriaSetId || null },
+      signal,
+    ),
+  });
+  const createSet = useMutation({
+    mutationFn: () => growthApi.criteriaSets.create({
+      name: setName,
+      mode: "CUSTOM",
+      criteria: [{ label: criterionLabel, required: true, weight: 2 }],
+    }),
+    onSuccess: async (created) => {
+      setSetName("");
+      setCriterionLabel("");
+      setCriteriaSetId(created.id);
+      setMode("CUSTOM");
+      await queryClient.invalidateQueries({ queryKey: ["recruiter-lens-criteria-sets"] });
+      toast.success("Self-assessment criteria saved");
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Could not save criteria"),
   });
 
   if (lens.isLoading) {
@@ -66,6 +99,71 @@ export function RecruiterLensCard({ jobId }: { jobId: string }) {
         </div>
       </div>
 
+      <div className={styles.block}>
+        <div className={styles.blockHeader}>
+          <h4>Screening perspective</h4>
+          <Button variant="ghost" size="small" onClick={() => window.print()}>
+            <Printer size={15} />Print report
+          </Button>
+        </div>
+        <div className="form-grid">
+          <label className="form-field">
+            <span>Perspective</span>
+            <NativeSelect
+              value={mode}
+              onChange={(event) => {
+                setCriteriaSetId("");
+                setMode(event.target.value as RecruiterLensMode);
+              }}
+            >
+              <option value="DEFAULT_RECRUITER">Default recruiter</option>
+              <option value="STRICT_MUST_HAVE">Strict must-have</option>
+              <option value="HIRING_MANAGER">Hiring manager</option>
+              <option value="TECHNICAL">Technical</option>
+              <option value="CUSTOM">Custom</option>
+            </NativeSelect>
+          </label>
+          <label className="form-field">
+            <span>Saved self-assessment criteria</span>
+            <NativeSelect
+              value={criteriaSetId}
+              onChange={(event) => {
+                setCriteriaSetId(event.target.value);
+                if (event.target.value) setMode("CUSTOM");
+              }}
+            >
+              <option value="">Use posting criteria</option>
+              {(criteriaSets.data ?? []).map((criteriaSet) => (
+                <option value={criteriaSet.id} key={criteriaSet.id}>{criteriaSet.name}</option>
+              ))}
+            </NativeSelect>
+          </label>
+        </div>
+        <details>
+          <summary>Create a reusable candidate-only criterion</summary>
+          <div className="form-grid" style={{ marginTop: 12 }}>
+            <label className="form-field">
+              <span>Set name</span>
+              <Input value={setName} maxLength={120} onChange={(event) => setSetName(event.target.value)} placeholder="Strict technical" />
+            </label>
+            <label className="form-field">
+              <span>Criterion</span>
+              <Input value={criterionLabel} maxLength={300} onChange={(event) => setCriterionLabel(event.target.value)} placeholder="Production Python experience" />
+            </label>
+            <Button
+              type="button"
+              disabled={!setName.trim() || !criterionLabel.trim() || createSet.isPending}
+              onClick={() => createSet.mutate()}
+            >
+              Save criteria set
+            </Button>
+          </div>
+          <p className={styles.disclaimer}>
+            Protected-characteristic criteria are blocked. These sets are for your own preparation and never rank other candidates.
+          </p>
+        </details>
+      </div>
+
       <div className={styles.metrics}>
         <div className={styles.metric}>
           <strong>{item.score}%</strong>
@@ -87,7 +185,7 @@ export function RecruiterLensCard({ jobId }: { jobId: string }) {
 
       <div className={styles.block}>
         <div className={styles.blockHeader}>
-          <h4>What the posting appears to screen for</h4>
+          <h4>What this perspective screens for</h4>
           <Badge>{titleCase(item.confidence)} confidence</Badge>
         </div>
         <div className={styles.criteria}>
@@ -98,9 +196,7 @@ export function RecruiterLensCard({ jobId }: { jobId: string }) {
                 {titleCase(criterion.status)}
               </Badge>
               {criterion.evidence ? (
-                <p>
-                  Evidence: {criterion.evidence.snippet}
-                </p>
+                <p>Evidence: {criterion.evidence.snippet}</p>
               ) : (
                 <p>No explicit verified evidence found in your saved profile.</p>
               )}
@@ -111,9 +207,7 @@ export function RecruiterLensCard({ jobId }: { jobId: string }) {
 
       {item.concerns.length ? (
         <div className={styles.block}>
-          <div className={styles.blockHeader}>
-            <h4>Likely recruiter concerns</h4>
-          </div>
+          <div className={styles.blockHeader}><h4>Likely recruiter concerns</h4></div>
           <div className={styles.concerns}>
             {item.concerns.slice(0, 4).map((concern) => (
               <div className={styles.concern} key={`${concern.criterion_id}-${concern.message}`}>
@@ -127,9 +221,7 @@ export function RecruiterLensCard({ jobId }: { jobId: string }) {
 
       {item.interview_questions.length ? (
         <div className={styles.block}>
-          <div className={styles.blockHeader}>
-            <h4>Questions those gaps could create</h4>
-          </div>
+          <div className={styles.blockHeader}><h4>Questions those gaps could create</h4></div>
           <div className={styles.questions}>
             {item.interview_questions.slice(0, 4).map((question) => (
               <div className={styles.question} key={`${question.criterion_id}-${question.question}`}>

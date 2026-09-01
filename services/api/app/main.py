@@ -21,6 +21,7 @@ from app.api import (
     career_system,
     company_intelligence,
     employer_platform,
+    growth,
     internal_agents,
     internal_ai_evaluation,
     internal_ai_quality,
@@ -47,7 +48,7 @@ from app.core.database import engine
 settings = get_settings()
 app = FastAPI(
     title="ApplyAI API",
-    version="0.4.0",
+    version="0.5.0",
     openapi_url="/api/v1/openapi.json",
     docs_url="/api/docs",
 )
@@ -132,6 +133,7 @@ for router in (
     employer_platform.router,
     billing_platform.router,
     privacy.router,
+    growth.router,
 ):
     app.include_router(router, prefix="/api/v1")
 

@@ -16,6 +16,15 @@ function allowedPath(path: string[]) {
   ) {
     return path.join("/");
   }
+  if (
+    path.length === 4 &&
+    path[0] === "recruiter-lens" &&
+    path[1] === "public" &&
+    path[2] === "reports" &&
+    TOKEN_PATTERN.test(path[3])
+  ) {
+    return path.join("/");
+  }
   if (path.length < 3 || path[0] !== "resume-shares" || path[1] !== "public") return null;
   if (!TOKEN_PATTERN.test(path[2])) return null;
   if (path.length === 3) return path.join("/");
@@ -27,6 +36,7 @@ function allowedPath(path: string[]) {
 
 function methodAllowed(method: string, normalizedPath: string) {
   if (normalizedPath.startsWith("growth/public/portfolio/")) return method === "GET";
+  if (normalizedPath.startsWith("recruiter-lens/public/reports/")) return method === "GET";
   if (method === "GET") return true;
   return method === "POST" && normalizedPath.endsWith("/events");
 }

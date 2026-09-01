@@ -135,8 +135,6 @@ for router in (
     employer_platform.router,
     billing_platform.router,
     privacy.router,
-    growth.router,
-    resume_intelligence.router,
 ):
     app.include_router(router, prefix="/api/v1")
 
@@ -147,6 +145,8 @@ for product_router in (
     career_product.router,
     career_system.router,
     recruiter_lens.router,
+    growth.router,
+    resume_intelligence.router,
     resume_shares.router,
     resume_share_insights.router,
     agents.router,

@@ -1,35 +1,36 @@
 # Current Repository State
 
-Updated: 2026-08-31
+Updated: 2026-09-01
 
 ## Source control
 
 - Repository: `rrahul0904/applyai`
 - Default branch: `main`
-- Current integrated main before Lean Production: `10d64358e7faa4328ca1f0765e3f224e23fa0321`
-- Merged product stack: PR #22 Career System, #23 Recruiter Lens, #24 Resume Share Intelligence, #25 Candidate Entry, #26 Production Activation.
-- Final lean-production release vehicle: PR #27, branch `agent/lean-production-wave-1`, base `main`.
-- PR #27 remains draft until real Preview acceptance passes.
+- Product PRs #22–#26 are merged into `main`.
+- Final lean-production release vehicle: PR #27, `agent/lean-production-wave-1` → `main`.
+- Reverse-engineering gap closure: PR #28, `agent/reverse-engineering-gap-closure` → `agent/lean-production-wave-1`.
+- PR #28 must pass exact-head validation before being merged into the PR #27 release branch.
+- PR #27 remains draft until real Preview/provider acceptance passes.
 
-The first production launch architecture is now:
+## Launch architecture
 
 ```text
 Vercel / Next.js + Clerk
         ↓
-Railway / FastAPI
+FastAPI backend
         ↓
-Railway PostgreSQL
+PostgreSQL
         ├─ canonical product data
-        └─ TaskOutbox → postgres_tasks → Railway worker
+        └─ TaskOutbox → durable PostgreSQL task queue
 
-Cloudflare R2 → private résumé/document objects
+Private S3-compatible object storage → résumé/document objects
 ```
 
-AWS remains source-controlled and validated as an optional scale/enterprise profile. It is not a launch prerequisite.
+The public product target remains Vercel. Backend/provider choices must preserve the hard `$0 required monthly infrastructure` launch constraint; no mandatory paid provider is allowed without explicit approval. AWS remains an optional future scale/enterprise profile, not a launch prerequisite.
 
 ## Candidate product
 
-Canonical authenticated candidate routes include:
+Canonical candidate surfaces include:
 
 ```text
 /dashboard
@@ -43,6 +44,8 @@ Canonical authenticated candidate routes include:
 /resume/studio
 /resume/signals
 /career
+/career/navigation
+/portfolio
 /interview/[jobId]
 /network
 /analytics
@@ -53,69 +56,60 @@ Canonical authenticated candidate routes include:
 /import-job
 ```
 
-Core candidate capabilities now include:
+Public candidate-controlled surfaces on the gap-closure branch include:
+
+```text
+/u/{candidate-slug}
+/recruiter-report/{token}
+/r/{resume-share-token}
+```
+
+Core capabilities include:
 
 - Clerk-backed identity mapping and owner-scoped APIs;
 - branded sign-in/sign-up and onboarding;
-- Career Memory and candidate-reviewed profile evidence;
+- candidate-reviewed profile evidence and Career Memory;
 - private résumé upload, parsing, review and versioning;
 - Resume Studio and job-specific variants;
+- deterministic resume-intelligence checks;
 - real-source capable PostgreSQL job search, filters and saved jobs;
-- explainable deterministic Career Intelligence;
-- candidate-side Recruiter Lens with `SUPPORTED`, `PARTIAL` and `NOT_EVIDENCED` criteria;
+- explainable Career Intelligence;
 - unified Career System per job;
-- application command center;
-- candidate-approved external submission boundary;
-- evidence-bound application/interview copilots;
+- candidate-side Recruiter Lens;
+- Recruiter Lens modes and candidate-owned reusable criteria;
+- candidate-controlled print/private-share/revoke Recruiter Lens reports;
+- application command center and candidate-approved external submission boundary;
+- evidence-bound application/interview preparation;
+- Technical Interview Lab for behavioral, technical, system-design, SQL and coding reasoning practice;
 - recruiter/referral outreach and follow-up;
+- opt-in public portfolio with themes, projects and field-level visibility;
+- career role navigation, skill-gap and canonical-job market intelligence;
 - privacy-preserving Resume Share Intelligence;
+- anonymous Resume Share session reports and 7/30/90-day trends;
 - notification inbox and candidate analytics;
 - account export and application-side deletion.
 
-The first-value dashboard is organized around:
+Readiness metrics are candidate preparation signals, never employer scores or hiring probabilities.
 
-```text
-Next Best Action
-Jobs For You
-Career Readiness
-Active Opportunities
-```
+## Reverse-engineering coverage
 
-Readiness and Recruiter Lens are candidate preparation signals, not employer scores or hiring probabilities.
+Canonical audit files:
 
-## Career Intelligence and AI
+- `docs/REVERSE_ENGINEERING_COVERAGE_AUDIT.md`
+- `docs/reverse-engineering-feature-matrix.json`
 
-Career Intelligence V1 remains the deterministic, explainable baseline. Durable V2 uses:
+Safe P0/P1 gaps are source-implemented on PR #28. Deliberate exclusions remain explicit:
 
-```text
-verified candidate/job evidence
-        ↓
-AIJobRun + transactional outbox
-        ↓
-durable queue
-        ↓
-worker → reviewed model provider
-        ↓
-strict schema + evidence-reference validation
-        ↓
-versioned artifact + candidate review
-```
+- employer bulk candidate ranking/automatic advancement/rejection → `DEFERRED_BY_LEGAL_RISK`;
+- raw-IP/company/named-viewer inference and fingerprinting → `DEFERRED_BY_PRIVACY`;
+- arbitrary remote coding sandbox → `DEFERRED_BY_COST` for the `$0` launch;
+- QR, print-intent tracking, section-level engagement and recruiter contact form → P2, not release blockers.
 
-Lean production routes durable work through PostgreSQL. The optional AWS profile can continue routing the same task families through SQS.
+Source completion is not promoted to validated completion until exact-head CI is green.
 
-Supported AI task families include deep match, résumé tailoring, application copilot and interview preparation. AI is not allowed to invent candidate facts.
+## Career Intelligence and durable work
 
-## Lean durable queue
-
-PR #27 adds the production Postgres worker path:
-
-```text
-TaskOutbox
-    ↓
-postgres_tasks
-    ↓
-Railway worker
-```
+Career Intelligence V1 remains deterministic and explainable. Durable V2 uses verified candidate/job evidence, transactional outbox persistence, durable task delivery, strict schema/evidence-reference validation and candidate review. Lean production uses PostgreSQL durable tasks; the optional AWS profile can route the same task families through SQS.
 
 Queue semantics include:
 
@@ -128,149 +122,80 @@ Queue semantics include:
 - `RETRY_WAIT` and `DEAD` states;
 - cancellation;
 - explicit task-family routing;
-- unknown task types fail closed and visibly.
+- unknown task types fail closed.
 
-Production task families are résumé, source ingestion, AI and agent runtime.
+## Resume and sharing privacy
 
-## Resume storage and Resume Share Intelligence
+Private storage credentials remain server-side. Raw private storage URLs are never exposed by Resume Share or portfolio/report surfaces.
 
-Lean production uses Cloudflare R2 through the existing S3-compatible storage adapter. The bucket is required to remain private; R2 credentials are server-side only and direct-upload response headers are provider-owned.
-
-AWS S3 retains `AES256` support. R2 uses `S3_SERVER_SIDE_ENCRYPTION=none` because the AWS-specific PutObject SSE header is not used for the R2 mode.
-
-Resume Share Intelligence remains privacy preserving:
+Resume Share remains privacy preserving:
 
 - no raw IP persistence;
 - no cross-link browser fingerprinting;
-- no inferred company identity from IP;
+- no company identity inference;
+- no named viewer guessing;
 - engagement is not hiring probability;
-- first human view creates one `RESUME_SHARE_VIEWED` notification;
-- first observed return creates one `RESUME_SHARE_RETURNED` notification;
-- later repeat views remain analytics-only rather than generating notification spam.
+- first human view creates one viewed notification;
+- first observed return creates one returned notification;
+- later repeated views remain analytics-only;
+- new session-detail and trend APIs remain owner-scoped.
+
+Recruiter Lens report shares are candidate-created, high-entropy, noindex, revocable, and explicitly do not perform viewer identity/company inference.
 
 ## Job-data platform
 
-Implemented source support includes:
+Source support and architecture include ApplyAI first-party jobs, Greenhouse, Lever, Ashby, SmartRecruiters, configured government/public sources, bounded permitted employer structured pages, authorized/licensed feeds and Open Jobs discovery coverage.
 
-- ApplyAI first-party jobs;
-- Greenhouse;
-- Lever;
-- Ashby;
-- SmartRecruiters;
-- USAJOBS where credentials are configured;
-- ReliefWeb where configuration is available;
-- bounded permitted employer career-page/JSON-LD import;
-- authorized/licensed feeds;
-- Open Jobs public CC0 discovery coverage.
+Employer-origin sources remain higher authority than broad coverage sources. Open Jobs does not receive absence-based closure authority. Source registry, leases, health, provenance, deduplication, freshness, URL verification and operator controls remain canonical.
 
-Open Jobs uses bounded manifest/group ingestion and is deliberately lower authority than employer-origin sources. It does not get absence-based closure authority.
-
-The real-network Open Jobs source was previously acceptance-tested. Real canonical production job counts still require a live production PostgreSQL database/source worker run.
-
-Initial production inventory is gated by:
-
-```bash
-pnpm job-supply:initial-acceptance
-```
-
-The mature multi-source gate remains:
-
-```bash
-pnpm job-supply:acceptance
-```
-
-and is not weakened for launch.
-
-## Deployment profiles
-
-### Lean launch
-
-```text
-DEPLOYMENT_PROFILE=lean
-DATABASE_URL=<Railway Postgres>
-TASK_QUEUE_PROVIDER=postgres
-OBJECT_STORAGE_PROVIDER=s3
-S3_ENDPOINT_URL=<Cloudflare R2 endpoint>
-AUTH_PROVIDER=clerk
-WEB_ORIGIN=<Vercel production origin>
-```
-
-### Optional AWS scale profile
-
-The repository continues to contain and validate:
-
-```text
-VPC / private networking
-ALB
-ECS/Fargate
-Aurora PostgreSQL Serverless v2
-ECR
-private S3
-resume/source/AI/agent SQS queues and DLQs
-EventBridge source dispatch
-CloudWatch
-Terraform + bootstrap CloudFormation
-```
-
-No AWS credential is required to start the lean API/worker path.
+Real production job counts still require an actual production database/source run. Synthetic and source-network acceptance are not interchangeable with live production inventory.
 
 ## Repository validation
 
-The final release gate includes:
+Required release evidence includes:
 
 ```text
 Web lint / typecheck / unit tests / Next.js production build
 API tests
 Alembic zero-to-head + zero metadata drift
-OpenAPI generated-client drift
+OpenAPI drift
 API production container
 Candidate Playwright journey
 Local clean-room certification
 Lean Production Validation
 Postgres queue concurrency / lease / retry / cancellation tests
-R2/AWS storage compatibility tests
-Open Jobs live-source acceptance
-Job Search Scale Benchmark
-Job Supply Scheduler Scale Benchmark
-Agent runtime tests / scale benchmark
-Demo capture
+job search/source scheduler scale gates
+agent runtime tests / scale gate
+demo capture
 GitHub workflow validation
-AWS Terraform/bootstrap validation
+AWS optional-profile validation
 ```
 
-Exact-head evidence is required after every source-changing commit.
+PR #28 additionally includes dedicated ownership/privacy regression coverage for portfolio projects, Recruiter Lens criteria, Recruiter Lens report shares, Technical Interview Lab attempts and Resume Share session/trend data.
 
-## Current live-provider boundary
+Do not reuse a historical PASS after a source-changing commit.
 
-Repository-side launch support is implemented, but the currently connected tool environment does not expose authorized Railway, Cloudflare R2 or Clerk integrations/credentials.
+## Live-provider boundary
 
-The connected Vercel team also does not yet contain a dedicated `applyai` project. The repository Preview workflow is ready to create/configure it, but its preflight has confirmed these required GitHub Actions values are currently absent:
+Repository/source work and live deployment evidence are intentionally separate.
 
-```text
-VERCEL_TOKEN
-APPLYAI_VERCEL_API_URL
-APPLYAI_VERCEL_CLERK_PUBLISHABLE_KEY
-APPLYAI_VERCEL_CLERK_SECRET_KEY
-```
-
-Accordingly, the following remain `BLOCKED_EXTERNAL_CONFIGURATION` rather than falsely marked live:
+The final live gate still requires actual evidence for:
 
 ```text
-Railway project/PostgreSQL/API/worker
-Cloudflare R2 private bucket + live acceptance
-Clerk real signup/signin/JWT acceptance
+real Clerk signup/signin/JWT
+real database migrations/persistence
+real private object storage
+real job ingestion
 Vercel ApplyAI Preview
-real Open Jobs insertion into production PostgreSQL
-complete real Preview candidate journey
-PR #27 merge / final production deployment
+complete Preview candidate journey
+merge PR #28 into PR #27 release branch
+exact PR #27 CI
+merge PR #27 to main
+exact-main CI
+Vercel Production
+complete Production candidate journey
 ```
 
-See:
+Optional Stripe, Resend, paid AI, analytics/monitoring and browser auto-submit must remain disabled or safely feature-gated when they would violate the `$0` launch constraint.
 
-- `DEPLOYMENT.md`
-- `docs/RAILWAY_DEPLOYMENT.md`
-- `docs/R2_STORAGE.md`
-- `docs/PRODUCTION_RELEASE_CHECKLIST.md`
-- `docs/PRODUCTION_RUNBOOK.md`
-
-`LIVE_PRODUCTION_VERIFIED` is allowed only after the complete persistent candidate journey passes against real Production infrastructure.
+`LIVE_PRODUCTION_VERIFIED` may be reported only after the complete persistent candidate journey passes against real Production infrastructure.

@@ -37,6 +37,7 @@ from app.api import (
     privacy,
     profiles,
     recruiter_lens,
+    resume_intelligence,
     resume_share_insights,
     resume_shares,
     resumes,
@@ -135,6 +136,7 @@ for router in (
     billing_platform.router,
     privacy.router,
     growth.router,
+    resume_intelligence.router,
 ):
     app.include_router(router, prefix="/api/v1")
 

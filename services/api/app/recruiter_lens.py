@@ -9,7 +9,7 @@ from app.api.candidate_workspace import candidate_context, tokens
 from app.api.career_product import _job_context
 from app.models import User
 
-ENGINE_VERSION = "applyai-recruiter-lens-v2"
+ENGINE_VERSION = "applyai-recruiter-lens-v1"
 MAX_CRITERIA = 12
 MAX_CONCERNS = 5
 MAX_QUESTIONS = 6
@@ -240,7 +240,7 @@ def _questions(criteria: list[dict[str, Any]], mode: str) -> list[dict[str, str]
         if item["status"] == "SUPPORTED":
             continue
         question = (
-            f"{prefix} Your background shows adjacent evidence for {item['label']}. What verified example best demonstrates that capability, and what was your specific role?"
+            f"{prefix} Your background shows adjacent evidence for {item['label']}. What verified example best demonstrates that capability, what was your specific role, and how would you explain the gap without overstating your experience?"
             if item["status"] == "PARTIAL"
             else f"{prefix} The role appears to value {item['label']}, but it is not explicit in your saved evidence. Do you have a truthful adjacent example you can explain without overstating your experience?"
         )

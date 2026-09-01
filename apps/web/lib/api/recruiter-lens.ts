@@ -1,8 +1,16 @@
+export type RecruiterLensMode =
+  | "DEFAULT_RECRUITER"
+  | "STRICT_MUST_HAVE"
+  | "HIRING_MANAGER"
+  | "TECHNICAL"
+  | "CUSTOM";
+
 export type RecruiterLensCriterion = {
   id: string;
   label: string;
   category: string;
   required: boolean;
+  weight: number | null;
   status: "SUPPORTED" | "PARTIAL" | "NOT_EVIDENCED";
   evidence: {
     kind: string;
@@ -13,10 +21,12 @@ export type RecruiterLensCriterion = {
 
 export type RecruiterLensSnapshot = {
   engine_version: string;
+  mode: RecruiterLensMode;
+  criteria_set_id: string | null;
   score: number;
   tier: "A" | "B" | "C" | "D";
   confidence: "HIGH" | "MEDIUM" | "LOW";
-  criteria_source: "STRUCTURED_JOB_POSTING";
+  criteria_source: "STRUCTURED_JOB_POSTING" | "CANDIDATE_CUSTOM";
   counts: {
     supported: number;
     partial: number;
@@ -33,12 +43,18 @@ export type RecruiterLensSnapshot = {
     focus: string;
     question: string;
   }>;
+  report: {
+    print_friendly: boolean;
+    generated_for_candidate_self_assessment: boolean;
+    share_requires_candidate_control: boolean;
+  };
   disclaimer: string;
   policy: {
     candidate_self_assessment: true;
     employer_prediction: false;
     identity_fields_used: false;
     evidence_policy: "VERIFIED_EVIDENCE_ONLY";
+    protected_characteristic_criteria_allowed: false;
   };
 };
 
@@ -73,6 +89,15 @@ async function request<T>(path: string, signal?: AbortSignal): Promise<T> {
 }
 
 export const recruiterLensApi = {
-  get: (jobId: string, signal?: AbortSignal) =>
-    request<RecruiterLensSnapshot>(`/recruiter-lens/jobs/${jobId}`, signal),
+  get: (
+    jobId: string,
+    options?: { mode?: RecruiterLensMode; criteriaSetId?: string | null },
+    signal?: AbortSignal,
+  ) => {
+    const params = new URLSearchParams();
+    if (options?.mode) params.set("mode", options.mode);
+    if (options?.criteriaSetId) params.set("criteria_set_id", options.criteriaSetId);
+    const suffix = params.size ? `?${params.toString()}` : "";
+    return request<RecruiterLensSnapshot>(`/recruiter-lens/jobs/${jobId}${suffix}`, signal);
+  },
 };

@@ -5,6 +5,8 @@ import json
 import os
 import uuid
 
+import httpx
+
 from app.core.config import Settings
 from app.core.storage import S3ObjectStorageProvider
 
@@ -41,7 +43,9 @@ def main() -> None:
     )
     storage = S3ObjectStorageProvider(settings)
     key = f"acceptance/{uuid.uuid4()}.txt"
+    presigned_key = f"acceptance/{uuid.uuid4()}.txt"
     payload = b"ApplyAI R2 private storage acceptance\n"
+    presigned_payload = b"ApplyAI R2 presigned PUT acceptance\n"
     try:
         storage.put(key=key, content=io.BytesIO(payload), content_type="text/plain")
         metadata = storage.head(key=key)
@@ -51,12 +55,25 @@ def main() -> None:
         if metadata.size != len(payload):
             raise RuntimeError("R2 round-trip size mismatch")
         presigned = storage.create_presigned_put(
-            key=f"acceptance/{uuid.uuid4()}.txt",
+            key=presigned_key,
             content_type="text/plain",
             expires_in_seconds=300,
         )
         if not presigned.startswith("https://"):
             raise RuntimeError("R2 presigned URL was not HTTPS")
+        response = httpx.put(
+            presigned,
+            content=presigned_payload,
+            headers=storage.direct_upload_headers(content_type="text/plain"),
+            timeout=30.0,
+        )
+        response.raise_for_status()
+        presigned_metadata = storage.head(key=presigned_key)
+        presigned_content = storage.get(key=presigned_key)
+        if presigned_content != presigned_payload:
+            raise RuntimeError("R2 presigned PUT content mismatch")
+        if presigned_metadata.size != len(presigned_payload):
+            raise RuntimeError("R2 presigned PUT size mismatch")
         print(
             json.dumps(
                 {
@@ -64,6 +81,7 @@ def main() -> None:
                     "bucket": settings.s3_bucket,
                     "round_trip_bytes": metadata.size,
                     "presigned_put_https": True,
+                    "presigned_put_verified": True,
                     "raw_object_public_url_tested": False,
                     "server_side_encryption_header": (
                         "AES256"
@@ -75,10 +93,11 @@ def main() -> None:
             )
         )
     finally:
-        try:
-            storage.delete(key=key)
-        except Exception:
-            pass
+        for cleanup_key in (key, presigned_key):
+            try:
+                storage.delete(key=cleanup_key)
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":

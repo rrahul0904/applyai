@@ -84,8 +84,26 @@ def test_staging_requires_dlq():
 
 
 def test_credentialed_cors_rejects_wildcard_origin():
-    with pytest.raises(ValueError, match="WEB_ORIGIN cannot be"):
+    with pytest.raises(ValueError, match="WEB_ORIGIN and WEB_ORIGINS cannot contain"):
         Settings(web_origin="*")
+
+
+def test_credentialed_cors_accepts_exact_preview_and_production_origins():
+    settings = Settings(
+        app_env="production",
+        web_origins=["https://applyai-preview.vercel.app"],
+        **DURABLE_SETTINGS,
+    )
+
+    assert settings.allowed_web_origins == [
+        "https://staging.applyai.example",
+        "https://applyai-preview.vercel.app",
+    ]
+
+
+def test_credentialed_cors_rejects_wildcard_additional_origin():
+    with pytest.raises(ValueError, match="WEB_ORIGINS cannot contain"):
+        Settings(web_origins=["*"])
 
 
 def test_visibility_heartbeat_must_be_shorter_than_visibility_timeout():

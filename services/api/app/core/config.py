@@ -95,6 +95,7 @@ class Settings(BaseSettings):
     agent_runtime_daily_cost_limit_usd: float = Field(default=500.0, ge=0.0, le=1_000_000.0)
 
     web_origin: str = "http://localhost:3000"
+    web_origins: list[str] = Field(default_factory=list)
     max_resume_bytes: int = 5 * 1024 * 1024
     seed_development_jobs: bool = False
 
@@ -210,8 +211,10 @@ class Settings(BaseSettings):
         environment = self.app_env.lower()
         durable_environment = environment in {"staging", "production"}
 
-        if self.web_origin == "*":
-            raise ValueError("WEB_ORIGIN cannot be '*' when credentialed CORS is enabled")
+        if "*" in self.allowed_web_origins:
+            raise ValueError(
+                "WEB_ORIGIN and WEB_ORIGINS cannot contain '*' when credentialed CORS is enabled"
+            )
 
         if environment == "production" and (
             self.dev_auth_enabled or self.auth_provider == "dev-test"
@@ -293,10 +296,18 @@ class Settings(BaseSettings):
                 raise ValueError(
                     f"{environment.title()} requires CLERK_ISSUER and CLERK_JWKS_URL"
                 )
-            if not self.web_origin.startswith("https://"):
-                raise ValueError(f"{environment.title()} requires an HTTPS WEB_ORIGIN")
+            if any(not origin.startswith("https://") for origin in self.allowed_web_origins):
+                raise ValueError(
+                    f"{environment.title()} requires HTTPS WEB_ORIGIN and WEB_ORIGINS values"
+                )
 
         return self
+
+    @property
+    def allowed_web_origins(self) -> list[str]:
+        """Return the primary web origin plus any deployed preview/production origins."""
+
+        return list(dict.fromkeys([self.web_origin, *self.web_origins]))
 
 
 @lru_cache

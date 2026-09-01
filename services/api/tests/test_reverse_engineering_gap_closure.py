@@ -210,7 +210,7 @@ def test_resume_share_session_and_trends_are_owner_scoped(client, switch_user, d
         {"session_id": sid, "event_type": "VIEW"},
         {"session_id": sid, "event_type": "DWELL", "value": 75000},
         {"session_id": sid, "event_type": "SCROLL", "value": 80},
-        {"session_id": sid, "event_type": "COPY", "metadata": {"target": "email"}},
+        {"session_id": sid, "event_type": "COPY", "target": "email"},
     ):
         response = client.post(
             f"/api/v1/resume-shares/public/{token}/events",

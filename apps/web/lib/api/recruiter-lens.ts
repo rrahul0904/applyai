@@ -45,8 +45,13 @@ export type RecruiterLensSnapshot = {
   }>;
   report: {
     print_friendly: boolean;
-    generated_for_candidate_self_assessment: boolean;
-    share_requires_candidate_control: boolean;
+    generated_for_candidate_self_assessment?: boolean;
+    share_requires_candidate_control?: boolean;
+    candidate_controlled?: boolean;
+    employer_decision?: boolean;
+    job_id?: string;
+    job_title?: string;
+    share_id?: string;
   };
   disclaimer: string;
   policy: {
@@ -55,6 +60,21 @@ export type RecruiterLensSnapshot = {
     identity_fields_used: false;
     evidence_policy: "VERIFIED_EVIDENCE_ONLY";
     protected_characteristic_criteria_allowed: false;
+  };
+};
+
+export type RecruiterLensReportShare = {
+  id: string;
+  job_id: string;
+  mode: RecruiterLensMode;
+  criteria_set_id: string | null;
+  public_path: string;
+  revoked: boolean;
+  created_at: string;
+  privacy: {
+    candidate_controlled: true;
+    named_viewer_tracking: false;
+    employer_decision: false;
   };
 };
 
@@ -69,8 +89,9 @@ export class RecruiterLensError extends Error {
   }
 }
 
-async function request<T>(path: string, signal?: AbortSignal): Promise<T> {
+async function request<T>(path: string, signal?: AbortSignal, method = "GET"): Promise<T> {
   const response = await fetch(`/api/backend${path}`, {
+    method,
     headers: { "content-type": "application/json" },
     cache: "no-store",
     signal,
@@ -88,16 +109,33 @@ async function request<T>(path: string, signal?: AbortSignal): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+function optionsSuffix(options?: { mode?: RecruiterLensMode; criteriaSetId?: string | null }) {
+  const params = new URLSearchParams();
+  if (options?.mode) params.set("mode", options.mode);
+  if (options?.criteriaSetId) params.set("criteria_set_id", options.criteriaSetId);
+  return params.size ? `?${params.toString()}` : "";
+}
+
 export const recruiterLensApi = {
   get: (
     jobId: string,
     options?: { mode?: RecruiterLensMode; criteriaSetId?: string | null },
     signal?: AbortSignal,
-  ) => {
-    const params = new URLSearchParams();
-    if (options?.mode) params.set("mode", options.mode);
-    if (options?.criteriaSetId) params.set("criteria_set_id", options.criteriaSetId);
-    const suffix = params.size ? `?${params.toString()}` : "";
-    return request<RecruiterLensSnapshot>(`/recruiter-lens/jobs/${jobId}${suffix}`, signal);
-  },
+  ) => request<RecruiterLensSnapshot>(
+    `/recruiter-lens/jobs/${jobId}${optionsSuffix(options)}`,
+    signal,
+  ),
+  createReportShare: (
+    jobId: string,
+    options?: { mode?: RecruiterLensMode; criteriaSetId?: string | null },
+  ) => request<RecruiterLensReportShare>(
+    `/recruiter-lens/jobs/${jobId}/report-shares${optionsSuffix(options)}`,
+    undefined,
+    "POST",
+  ),
+  revokeReportShare: (shareId: string) => request<{ id: string; revoked: true }>(
+    `/recruiter-lens/report-shares/${shareId}/revoke`,
+    undefined,
+    "POST",
+  ),
 };

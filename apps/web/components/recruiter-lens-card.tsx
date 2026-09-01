@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
+  Link2,
   MessageCircleQuestion,
   Printer,
   ScanSearch,
@@ -57,6 +58,22 @@ export function RecruiterLensCard({ jobId }: { jobId: string }) {
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Could not save criteria"),
   });
+  const createReportShare = useMutation({
+    mutationFn: () => recruiterLensApi.createReportShare(jobId, {
+      mode,
+      criteriaSetId: criteriaSetId || null,
+    }),
+    onSuccess: async (share) => {
+      const absoluteUrl = `${window.location.origin}${share.public_path}`;
+      try {
+        await navigator.clipboard.writeText(absoluteUrl);
+        toast.success("Private Recruiter Lens report link copied");
+      } catch {
+        toast.success(`Report link ready: ${absoluteUrl}`);
+      }
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Could not create report link"),
+  });
 
   if (lens.isLoading) {
     return (
@@ -102,9 +119,19 @@ export function RecruiterLensCard({ jobId }: { jobId: string }) {
       <div className={styles.block}>
         <div className={styles.blockHeader}>
           <h4>Screening perspective</h4>
-          <Button variant="ghost" size="small" onClick={() => window.print()}>
-            <Printer size={15} />Print report
-          </Button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Button variant="ghost" size="small" onClick={() => window.print()}>
+              <Printer size={15} />Print report
+            </Button>
+            <Button
+              variant="ghost"
+              size="small"
+              disabled={createReportShare.isPending}
+              onClick={() => createReportShare.mutate()}
+            >
+              <Link2 size={15} />Share private report
+            </Button>
+          </div>
         </div>
         <div className="form-grid">
           <label className="form-field">

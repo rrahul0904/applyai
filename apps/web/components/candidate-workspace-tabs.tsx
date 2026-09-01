@@ -45,7 +45,9 @@ export function CareerWorkspaceTabs({ activeHref }: { activeHref: string }) {
       activeHref={activeHref}
       tabs={[
         { href: "/career", label: "Coach" },
+        { href: "/career/navigation", label: "Navigation" },
         { href: "/resume/studio", label: "Resume" },
+        { href: "/portfolio", label: "Portfolio" },
         { href: "/network", label: "Network" },
         { href: "/analytics", label: "Progress" },
       ]}

@@ -20,6 +20,7 @@ from app import (  # noqa: F401
     platform_models,
     postgres_queue_models,
     privacy_models,
+    recruiter_lens_report_models,
     resume_share_models,
 )
 

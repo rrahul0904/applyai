@@ -4,8 +4,18 @@ type RouteContext = { params: Promise<{ path: string[] }> };
 
 const MAX_PUBLIC_BODY_BYTES = 64 * 1024;
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{20,64}$/;
+const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,78}[a-z0-9])?$/;
 
 function allowedPath(path: string[]) {
+  if (
+    path.length === 4 &&
+    path[0] === "growth" &&
+    path[1] === "public" &&
+    path[2] === "portfolio" &&
+    SLUG_PATTERN.test(path[3])
+  ) {
+    return path.join("/");
+  }
   if (path.length < 3 || path[0] !== "resume-shares" || path[1] !== "public") return null;
   if (!TOKEN_PATTERN.test(path[2])) return null;
   if (path.length === 3) return path.join("/");
@@ -13,6 +23,12 @@ function allowedPath(path: string[]) {
     return path.join("/");
   }
   return null;
+}
+
+function methodAllowed(method: string, normalizedPath: string) {
+  if (normalizedPath.startsWith("growth/public/portfolio/")) return method === "GET";
+  if (method === "GET") return true;
+  return method === "POST" && normalizedPath.endsWith("/events");
 }
 
 async function forward(request: NextRequest, context: RouteContext) {
@@ -32,7 +48,7 @@ async function forward(request: NextRequest, context: RouteContext) {
       { status: 404 },
     );
   }
-  if (request.method === "POST" && normalizedPath.endsWith("/events") === false) {
+  if (!methodAllowed(request.method, normalizedPath)) {
     return NextResponse.json(
       { error: { code: "METHOD_NOT_ALLOWED", message: "This public action is not available." } },
       { status: 405 },
@@ -86,7 +102,7 @@ async function forward(request: NextRequest, context: RouteContext) {
     });
   } catch {
     return NextResponse.json(
-      { error: { code: "NETWORK_ERROR", message: "We could not reach the shared resume service." } },
+      { error: { code: "NETWORK_ERROR", message: "We could not reach the public ApplyAI service." } },
       { status: 503 },
     );
   }

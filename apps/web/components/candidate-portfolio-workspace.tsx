@@ -3,38 +3,26 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ExternalLink, Globe2, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge, Button, Card, ErrorState, Input, NativeSelect, PageHeader, Textarea } from "@/components/ui";
-import { growthApi } from "@/lib/api/growth";
+import { growthApi, type Portfolio } from "@/lib/api/growth";
 
 const visibilityKeys = ["headline", "about", "experience", "education", "skills", "projects"] as const;
 
-export function CandidatePortfolioWorkspace() {
+function PortfolioEditor({ initial }: { initial: Portfolio }) {
   const queryClient = useQueryClient();
-  const portfolio = useQuery({ queryKey: ["candidate-portfolio"], queryFn: ({ signal }) => growthApi.portfolio.get(signal) });
-  const [slug, setSlug] = useState("");
-  const [headline, setHeadline] = useState("");
-  const [about, setAbout] = useState("");
-  const [theme, setTheme] = useState("PROFESSIONAL");
-  const [published, setPublished] = useState(false);
-  const [indexing, setIndexing] = useState(false);
-  const [visibility, setVisibility] = useState<Record<string, boolean>>({});
+  const [slug, setSlug] = useState(initial.slug ?? initial.suggested_slug ?? "");
+  const [headline, setHeadline] = useState(initial.headline ?? "");
+  const [about, setAbout] = useState(initial.about ?? "");
+  const [theme, setTheme] = useState(initial.theme ?? "PROFESSIONAL");
+  const [published, setPublished] = useState(Boolean(initial.published));
+  const [indexing, setIndexing] = useState(Boolean(initial.indexing_allowed));
+  const [visibility, setVisibility] = useState<Record<string, boolean>>(initial.visibility ?? {});
   const [projectTitle, setProjectTitle] = useState("");
   const [projectSummary, setProjectSummary] = useState("");
   const [projectTech, setProjectTech] = useState("");
-
-  useEffect(() => {
-    if (!portfolio.data) return;
-    setSlug(portfolio.data.slug ?? portfolio.data.suggested_slug ?? "");
-    setHeadline(portfolio.data.headline ?? "");
-    setAbout(portfolio.data.about ?? "");
-    setTheme(portfolio.data.theme ?? "PROFESSIONAL");
-    setPublished(Boolean(portfolio.data.published));
-    setIndexing(Boolean(portfolio.data.indexing_allowed));
-    setVisibility(portfolio.data.visibility ?? {});
-  }, [portfolio.data]);
 
   const save = useMutation({
     mutationFn: () => growthApi.portfolio.save({
@@ -61,7 +49,9 @@ export function CandidatePortfolioWorkspace() {
       visible: true,
     }),
     onSuccess: async () => {
-      setProjectTitle(""); setProjectSummary(""); setProjectTech("");
+      setProjectTitle("");
+      setProjectSummary("");
+      setProjectTech("");
       await queryClient.invalidateQueries({ queryKey: ["candidate-portfolio"] });
       toast.success("Portfolio project added");
     },
@@ -71,14 +61,12 @@ export function CandidatePortfolioWorkspace() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["candidate-portfolio"] }),
   });
 
-  if (portfolio.isError) return <ErrorState message={portfolio.error.message} retry={() => portfolio.refetch()} />;
-
   return <>
     <PageHeader
       eyebrow="Portfolio Identity"
       title="Publish only what you choose."
       description="Build an opt-in career portfolio from candidate-owned and verified evidence. Nothing becomes public until you publish it."
-      action={portfolio.data?.public_path && portfolio.data.published ? <Link className="ui-button ui-button-secondary" href={portfolio.data.public_path} target="_blank"><ExternalLink size={16}/>View public portfolio</Link> : undefined}
+      action={initial.public_path && initial.published ? <Link className="ui-button ui-button-secondary" href={initial.public_path} target="_blank"><ExternalLink size={16}/>View public portfolio</Link> : undefined}
     />
     <div className="detail-grid">
       <div className="detail-main list-stack">
@@ -109,9 +97,18 @@ export function CandidatePortfolioWorkspace() {
           </form>
         </Card>
 
-        {(portfolio.data?.projects ?? []).map((project) => <Card className="detail-section" key={project.id}><div className="section-header"><div><h2>{project.title}</h2><p>{project.summary}</p></div><Button variant="ghost" size="small" onClick={() => removeProject.mutate(project.id)}><Trash2 size={15}/>Remove</Button></div>{project.technologies.length ? <div className="button-row">{project.technologies.map((technology) => <Badge key={technology}>{technology}</Badge>)}</div> : null}</Card>)}
+        {initial.projects.map((project) => <Card className="detail-section" key={project.id}><div className="section-header"><div><h2>{project.title}</h2><p>{project.summary}</p></div><Button variant="ghost" size="small" onClick={() => removeProject.mutate(project.id)}><Trash2 size={15}/>Remove</Button></div>{project.technologies.length ? <div className="button-row">{project.technologies.map((technology) => <Badge key={technology}>{technology}</Badge>)}</div> : null}</Card>)}
       </div>
       <aside className="detail-aside"><Card className="sticky-actions"><h2>Privacy boundary</h2><p>ApplyAI never publishes your portfolio automatically. Résumé files remain private unless you separately create a Resume Share link.</p><Link href="/career" className="ui-button ui-button-ghost">Career evidence</Link><Link href="/resume/signals" className="ui-button ui-button-ghost">Resume Share signals</Link></Card></aside>
     </div>
   </>;
+}
+
+export function CandidatePortfolioWorkspace() {
+  const portfolio = useQuery({ queryKey: ["candidate-portfolio"], queryFn: ({ signal }) => growthApi.portfolio.get(signal) });
+
+  if (portfolio.isError) return <ErrorState message={portfolio.error.message} retry={() => portfolio.refetch()} />;
+  if (!portfolio.data) return <p>Loading portfolio controls…</p>;
+
+  return <PortfolioEditor key={JSON.stringify(portfolio.data)} initial={portfolio.data} />;
 }

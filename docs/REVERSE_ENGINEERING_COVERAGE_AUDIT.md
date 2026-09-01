@@ -32,11 +32,12 @@ Hard product exclusions remain:
 | Websumes-inspired Market Intelligence | COMPLETE (source) | Candidate-side corpus-derived metrics are implemented with sample-size/freshness/coverage caveats. |
 | JAN-inspired Recruiter Lens core | COMPLETE (source) | Evidence-bound criteria, statuses, concerns, questions and readiness tier remain candidate-side. |
 | Recruiter Lens modes / reusable candidate criteria | COMPLETE (source) | DEFAULT_RECRUITER / STRICT_MUST_HAVE / HIRING_MANAGER / TECHNICAL / CUSTOM plus candidate-owned criteria sets exist. |
+| Recruiter Lens candidate report/share | COMPLETE (source) | Candidate can print or create a high-entropy private report link for the chosen perspective and revoke it; public report is noindex and has no named-viewer/company inference. |
 | JAN employer bulk screening / applicant ranking | DEFERRED_BY_LEGAL_RISK | Intentionally excluded from candidate ApplyAI. |
 | ResumeShareIQ-inspired smart links | COMPLETE (source) | Smart links, dwell/scroll/click/copy/download/return metrics, timeline, CSV and bounded notifications exist. |
 | Resume Share anonymous session report / trends | COMPLETE (source) | Privacy-safe anonymous session sequence and 7/30/90-day trend APIs added. |
 | Resume Share company/named viewer inference | DEFERRED_BY_PRIVACY | Intentionally excluded. |
-| Technical Interview Lab | PARTIAL | Job-specific behavioral/technical/system-design/SQL/coding practice and attempt history exist; secure arbitrary remote code execution is intentionally not included. |
+| Technical Interview Lab | COMPLETE (source foundation) | Job-specific behavioral/technical/system-design/SQL/coding practice, answer workspace, notes and attempt history exist; secure arbitrary remote code execution is separately deferred. |
 | Secure remote coding sandbox | DEFERRED_BY_COST | A hardened multi-language execution sandbox would add operational/security cost; not required for zero-cost launch. |
 | Live production acceptance | EXTERNAL_ACCEPTANCE_PENDING | Requires real Clerk, Vercel, backend/database, private object storage, real job ingestion and persistent candidate journey. |
 
@@ -104,11 +105,12 @@ The gap branch derives candidate-side market indicators only from ApplyAI's cano
 - candidate-side disclaimer;
 - identity/protected-field exclusion;
 - selectable assessment modes;
-- candidate-owned reusable criteria sets.
-
-### P1 still requiring explicit validation
-
-- report/print/share UX must be treated as `PARTIAL` until a candidate-controlled report surface and revoke semantics are evidenced in code/tests.
+- candidate-owned reusable criteria sets;
+- print-friendly candidate report;
+- candidate-created high-entropy private report link;
+- candidate revocation of report links;
+- noindex public report page;
+- no named-viewer or company-identity inference on report shares.
 
 ### DO NOT BUILD
 
@@ -171,7 +173,7 @@ The gap branch adds a lightweight zero-cost practice foundation for:
 - attempt history;
 - self-review.
 
-It intentionally does not create unsafe arbitrary remote code execution. Secure sandboxed execution remains `DEFERRED_BY_COST` until a hardened zero-cost mechanism is proven.
+This source foundation satisfies the safe P1 interview-practice requirement. It intentionally does not create unsafe arbitrary remote code execution. Secure sandboxed execution remains `DEFERRED_BY_COST` until a hardened zero-cost mechanism is proven.
 
 ## Job Source Platform V1
 
@@ -191,6 +193,8 @@ Already represented in source/repository gates:
 
 - authentication and candidate ownership;
 - user isolation tests in canonical platform flows;
+- dedicated gap-closure ownership tests for portfolio projects, criteria sets, interview attempts and Resume Share insights;
+- Recruiter Lens report-share owner/revocation regression tests;
 - resume parser bounds/security;
 - private storage abstraction;
 - transactional outbox and durable queue semantics;
@@ -203,7 +207,7 @@ Already represented in source/repository gates:
 - deterministic/local provider substitutes;
 - lint/typecheck/build/API/Alembic/OpenAPI/Playwright/scale/clean-room gates.
 
-Gap-closure code still requires exact-head CI before any new feature is promoted to validated source completion.
+Gap-closure source completion is promoted to validated source completion only after exact-head CI passes.
 
 ## Priority decisions
 
@@ -215,17 +219,14 @@ Gap-closure code still requires exact-head CI before any new feature is promoted
 - skill-gap / market intelligence;
 - deterministic resume intelligence.
 
-### P1 — implemented on gap branch, validation pending
+### P1 — implemented on gap branch
 
 - Recruiter Lens modes;
 - candidate-owned reusable criteria;
+- candidate-controlled Recruiter Lens report/print/share/revoke;
 - Technical Interview Lab foundation;
 - Resume Share anonymous session detail;
 - Resume Share trends.
-
-### P1 — still audit before merge
-
-- Recruiter Lens candidate-controlled report/export/share/revoke experience.
 
 ### P2 — useful but not production blockers
 

@@ -51,6 +51,11 @@ on:
         required: false
         default: false
         type: boolean
+      seed_source_identity:
+        description: "Stable identity of the single source to run"
+        required: false
+        default: "open-jobs"
+        type: string
 
 permissions:
   contents: read
@@ -97,7 +102,7 @@ jobs:
 
       - name: Run each due source once
         working-directory: services/api
-        run: uv run python scripts/sync_job_sources.py --source-identity open-jobs
+        run: uv run python scripts/sync_job_sources.py --source-identity '${{ inputs.seed_source_identity }}'
 
   lean-runtime:
     if: github.event_name != 'workflow_dispatch' || !inputs.seed_bounded_job_catalogue

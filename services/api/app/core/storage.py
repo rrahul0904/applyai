@@ -7,6 +7,7 @@ from typing import BinaryIO
 import boto3
 from botocore.config import Config
 from fastapi import Depends
+from sqlalchemy import func, select
 
 from app.core.config import Settings, get_settings
 
@@ -181,9 +182,79 @@ class S3ObjectStorageProvider(ObjectStorageProvider):
         )
 
 
+class DatabaseObjectStorageProvider(ObjectStorageProvider):
+    """Hard-capped object storage inside the pilot's Neon Free Postgres project."""
+
+    def __init__(self, settings: Settings) -> None:
+        self.hard_limit_bytes = settings.max_database_object_storage_bytes
+
+    def put(self, *, key: str, content: BinaryIO, content_type: str) -> None:
+        from app.core.database import SessionLocal
+        from app.zero_cost_models import DatabaseObject
+
+        payload = content.read()
+        with SessionLocal() as session:
+            existing = session.get(DatabaseObject, key)
+            existing_size = existing.size if existing is not None else 0
+            current_size = int(
+                session.scalar(select(func.coalesce(func.sum(DatabaseObject.size), 0))) or 0
+            )
+            if current_size - existing_size + len(payload) > self.hard_limit_bytes:
+                raise RuntimeError("ZERO_COST_OBJECT_STORAGE_LIMIT")
+            if existing is None:
+                session.add(
+                    DatabaseObject(
+                        key=key,
+                        content_type=content_type,
+                        size=len(payload),
+                        content=payload,
+                    )
+                )
+            else:
+                existing.content_type = content_type
+                existing.size = len(payload)
+                existing.content = payload
+            session.commit()
+
+    def delete(self, *, key: str) -> None:
+        from app.core.database import SessionLocal
+        from app.zero_cost_models import DatabaseObject
+
+        with SessionLocal() as session:
+            existing = session.get(DatabaseObject, key)
+            if existing is not None:
+                session.delete(existing)
+                session.commit()
+
+    def get(self, *, key: str) -> bytes:
+        from app.core.database import SessionLocal
+        from app.zero_cost_models import DatabaseObject
+
+        with SessionLocal() as session:
+            existing = session.get(DatabaseObject, key)
+            if existing is None:
+                raise FileNotFoundError(key)
+            return bytes(existing.content)
+
+    def head(self, *, key: str) -> StorageObjectMetadata:
+        from app.core.database import SessionLocal
+        from app.zero_cost_models import DatabaseObject
+
+        with SessionLocal() as session:
+            existing = session.get(DatabaseObject, key)
+            if existing is None:
+                raise FileNotFoundError(key)
+            return StorageObjectMetadata(
+                size=existing.size,
+                content_type=existing.content_type,
+            )
+
+
 def get_object_storage(
     settings: Settings = Depends(get_settings),
 ) -> ObjectStorageProvider:
     if settings.object_storage_provider == "s3":
         return S3ObjectStorageProvider(settings)
+    if settings.object_storage_provider == "postgres":
+        return DatabaseObjectStorageProvider(settings)
     return LocalObjectStorageProvider(settings.local_storage_path)

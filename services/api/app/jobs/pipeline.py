@@ -1,5 +1,6 @@
 import hashlib
 import json
+from dataclasses import replace
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -44,6 +45,26 @@ def payload_hash(payload: dict) -> str:
 
 def description_fingerprint(value: str) -> str:
     return hashlib.sha256(normalize_text(value).encode()).hexdigest()
+
+
+MAX_JOB_LOCATION_TEXT_LENGTH = 280
+
+
+def bounded_job_location(value: str) -> str:
+    """Keep a provider's primary location compatible with the canonical column."""
+    normalized = " ".join(value.split())
+    if len(normalized) <= MAX_JOB_LOCATION_TEXT_LENGTH:
+        return normalized
+    return f"{normalized[: MAX_JOB_LOCATION_TEXT_LENGTH - 1].rstrip()}…"
+
+
+def bounded_job_locations(locations: list[str]) -> list[str]:
+    bounded: list[str] = []
+    for location in locations:
+        value = bounded_job_location(location)
+        if value and value not in bounded:
+            bounded.append(value)
+    return bounded
 
 
 class JobIngestionPipeline:
@@ -449,6 +470,7 @@ class JobIngestionPipeline:
         *,
         source_company: str,
     ) -> str:
+        item = replace(item, locations=bounded_job_locations(item.locations))
         now = utcnow()
         company = self.resolve_company(
             connector_key=connector_key,

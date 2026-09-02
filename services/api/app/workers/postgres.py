@@ -6,7 +6,7 @@ import socket
 import threading
 import time
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import and_, or_, select, update
 
@@ -22,12 +22,11 @@ from app.core.queue import (
 )
 from app.postgres_queue_models import PostgresTask
 
-
 logger = logging.getLogger("applyai.postgres_worker")
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def claim_task(settings: Settings, *, worker_id: str) -> uuid.UUID | None:
@@ -94,7 +93,9 @@ def _heartbeat(
                 logger.warning("postgres_worker_lease_lost", extra={"task_id": str(task_id)})
                 return
         except Exception:
-            logger.exception("postgres_worker_lease_extension_failed", extra={"task_id": str(task_id)})
+            logger.exception(
+                "postgres_worker_lease_extension_failed", extra={"task_id": str(task_id)}
+            )
             return
 
 
@@ -278,6 +279,17 @@ def run_once(settings: Settings, *, worker_id: str) -> bool:
         return False
     process_claimed_task(task_id, worker_id=worker_id, settings=settings)
     return True
+
+
+def drain_bounded(settings: Settings, *, maximum_tasks: int) -> int:
+    """Process a small finite batch for request/scheduled zero-cost execution."""
+    worker_id = f"request:{socket.gethostname()}:{uuid.uuid4()}"
+    completed = 0
+    for _ in range(maximum_tasks):
+        if not run_once(settings, worker_id=worker_id):
+            break
+        completed += 1
+    return completed
 
 
 def run_worker(settings: Settings | None = None) -> None:

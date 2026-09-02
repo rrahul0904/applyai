@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     clerk_issuer: str | None = None
     clerk_jwks_url: str | None = None
     clerk_audience: str | None = None
+    clerk_mru_warning_threshold: int = Field(default=40_000, ge=1)
+    clerk_mru_critical_threshold: int = Field(default=45_000, ge=1)
+    clerk_mru_review_threshold: int = Field(default=50_000, ge=1)
     internal_api_token: str | None = None
 
     object_storage_provider: str = "local"
@@ -75,6 +78,8 @@ class Settings(BaseSettings):
     postgres_task_max_attempts: int = Field(default=5, ge=1, le=100)
     postgres_task_retry_base_seconds: int = Field(default=5, ge=1, le=300)
     postgres_worker_poll_seconds: float = Field(default=1.0, ge=0.1, le=30.0)
+    request_triggered_tasks_enabled: bool = False
+    request_triggered_task_limit: int = Field(default=1, ge=1, le=5)
     resume_processing_timeout_seconds: int = Field(default=900, ge=60, le=86_400)
     outbox_batch_size: int = Field(default=25, ge=1, le=100)
     outbox_retry_base_seconds: int = Field(default=5, ge=1, le=300)
@@ -97,6 +102,33 @@ class Settings(BaseSettings):
     web_origin: str = "http://localhost:3000"
     web_origins: list[str] = Field(default_factory=list)
     max_resume_bytes: int = 5 * 1024 * 1024
+    max_resume_versions_per_user: int = Field(default=5, ge=1, le=20)
+    max_resume_storage_bytes_per_user: int = Field(
+        default=25 * 1024 * 1024,
+        ge=5 * 1024 * 1024,
+        le=100 * 1024 * 1024,
+    )
+    max_r2_storage_bytes: int = Field(
+        default=5 * 1024 * 1024 * 1024,
+        ge=100 * 1024 * 1024,
+        le=10 * 1024 * 1024 * 1024,
+    )
+    r2_storage_warning_bytes: int = Field(
+        default=4 * 1024 * 1024 * 1024,
+        ge=50 * 1024 * 1024,
+    )
+    r2_storage_critical_bytes: int = Field(
+        default=int(4.5 * 1024 * 1024 * 1024),
+        ge=75 * 1024 * 1024,
+    )
+    max_monthly_r2_class_a_operations: int = Field(default=500_000, ge=1_000)
+    max_monthly_r2_class_b_operations: int = Field(default=5_000_000, ge=10_000)
+    max_database_object_storage_bytes: int = Field(
+        default=250 * 1024 * 1024,
+        ge=25 * 1024 * 1024,
+        le=400 * 1024 * 1024,
+    )
+    billing_enabled: bool = False
     seed_development_jobs: bool = False
 
     greenhouse_board_tokens: list[str] = Field(default_factory=list)
@@ -111,9 +143,7 @@ class Settings(BaseSettings):
     job_source_default_interval_seconds: int = Field(default=21_600, ge=300, le=2_592_000)
     job_source_min_interval_seconds: int = Field(default=900, ge=300, le=86_400)
     job_source_max_interval_seconds: int = Field(default=604_800, ge=3_600, le=7_776_000)
-    job_source_failure_max_backoff_seconds: int = Field(
-        default=604_800, ge=3_600, le=2_592_000
-    )
+    job_source_failure_max_backoff_seconds: int = Field(default=604_800, ge=3_600, le=2_592_000)
     job_source_request_timeout_seconds: float = Field(default=20.0, ge=1.0, le=120.0)
     job_source_max_pages: int = Field(default=20, ge=1, le=100)
 
@@ -151,15 +181,12 @@ class Settings(BaseSettings):
             "database_user",
             "database_password",
         )
-        supplied_components = [
-            name for name in component_names if values.get(name) is not None
-        ]
+        supplied_components = [name for name in component_names if values.get(name) is not None]
         if "database_url" not in values and supplied_components:
             if len(supplied_components) != len(component_names):
                 missing = [name.upper() for name in component_names if values.get(name) is None]
                 raise ValueError(
-                    "Database component configuration is incomplete; missing "
-                    + ", ".join(missing)
+                    "Database component configuration is incomplete; missing " + ", ".join(missing)
                 )
             user = quote(str(values["database_user"]), safe="")
             password = quote(str(values["database_password"]), safe="")
@@ -188,16 +215,19 @@ class Settings(BaseSettings):
         explicit_database_url = "database_url" in self.model_fields_set
         if explicit_database_url:
             if self.database_url.startswith("postgres://"):
-                self.database_url = "postgresql+psycopg://" + self.database_url[len("postgres://"):]
+                self.database_url = (
+                    "postgresql+psycopg://" + self.database_url[len("postgres://") :]
+                )
             elif self.database_url.startswith("postgresql://"):
-                self.database_url = "postgresql+psycopg://" + self.database_url[len("postgresql://"):]
+                self.database_url = (
+                    "postgresql+psycopg://" + self.database_url[len("postgresql://") :]
+                )
         elif supplied_database_components and len(supplied_database_components) != len(
             database_components
         ):
             missing = [name for name, value in database_components.items() if value is None]
             raise ValueError(
-                "Database component configuration is incomplete; missing "
-                + ", ".join(missing)
+                "Database component configuration is incomplete; missing " + ", ".join(missing)
             )
         elif supplied_database_components:
             user = quote(self.database_user or "", safe="")
@@ -231,9 +261,15 @@ class Settings(BaseSettings):
                 )
         if self.internal_api_token is not None and len(self.internal_api_token) < 24:
             raise ValueError("INTERNAL_API_TOKEN must contain at least 24 characters")
+        if not (
+            self.clerk_mru_warning_threshold
+            < self.clerk_mru_critical_threshold
+            < self.clerk_mru_review_threshold
+        ):
+            raise ValueError("Clerk MRU thresholds must increase from warning to review")
 
-        if self.object_storage_provider not in {"local", "s3"}:
-            raise ValueError("OBJECT_STORAGE_PROVIDER must be local or s3")
+        if self.object_storage_provider not in {"local", "postgres", "s3"}:
+            raise ValueError("OBJECT_STORAGE_PROVIDER must be local, postgres or s3")
         if self.object_storage_provider == "s3" and not self.s3_bucket:
             raise ValueError("S3_BUCKET is required when OBJECT_STORAGE_PROVIDER=s3")
         if bool(self.s3_access_key_id) != bool(self.s3_secret_access_key):
@@ -241,22 +277,45 @@ class Settings(BaseSettings):
         normalized_encryption = self.s3_server_side_encryption.strip().lower()
         if normalized_encryption not in {"aes256", "none", ""}:
             raise ValueError("S3_SERVER_SIDE_ENCRYPTION must be AES256 or none")
-        if durable_environment and self.object_storage_provider != "s3":
+        if (
+            durable_environment
+            and self.deployment_profile == "aws"
+            and self.object_storage_provider != "s3"
+        ):
             raise ValueError(f"{environment.title()} requires OBJECT_STORAGE_PROVIDER=s3")
+        if (
+            durable_environment
+            and self.deployment_profile == "lean"
+            and self.object_storage_provider not in {"postgres", "s3"}
+        ):
+            raise ValueError(f"{environment.title()} lean profile requires durable object storage")
 
         if self.task_queue_provider not in {"memory", "sqs", "postgres"}:
             raise ValueError("TASK_QUEUE_PROVIDER must be memory, postgres or sqs")
         if self.task_queue_provider == "sqs" and not self.sqs_queue_url:
             raise ValueError("SQS_QUEUE_URL is required when TASK_QUEUE_PROVIDER=sqs")
-        if durable_environment and self.deployment_profile == "aws" and self.task_queue_provider != "sqs":
+        if (
+            durable_environment
+            and self.deployment_profile == "aws"
+            and self.task_queue_provider != "sqs"
+        ):
             raise ValueError(f"{environment.title()} AWS profile requires TASK_QUEUE_PROVIDER=sqs")
-        if durable_environment and self.deployment_profile == "lean" and self.task_queue_provider != "postgres":
-            raise ValueError(f"{environment.title()} lean profile requires TASK_QUEUE_PROVIDER=postgres")
+        if (
+            durable_environment
+            and self.deployment_profile == "lean"
+            and self.task_queue_provider != "postgres"
+        ):
+            raise ValueError(
+                f"{environment.title()} lean profile requires TASK_QUEUE_PROVIDER=postgres"
+            )
         if durable_environment and self.task_queue_provider == "sqs" and not self.sqs_dlq_url:
             raise ValueError(f"{environment.title()} SQS profile requires SQS_DLQ_URL")
         if self.sqs_visibility_heartbeat_seconds >= self.sqs_visibility_timeout_seconds:
             raise ValueError("SQS visibility heartbeat must be shorter than visibility timeout")
-        if self.source_sqs_visibility_heartbeat_seconds >= self.source_sqs_visibility_timeout_seconds:
+        if (
+            self.source_sqs_visibility_heartbeat_seconds
+            >= self.source_sqs_visibility_timeout_seconds
+        ):
             raise ValueError("Source SQS heartbeat must be shorter than visibility timeout")
         if self.ai_sqs_visibility_heartbeat_seconds >= self.ai_sqs_visibility_timeout_seconds:
             raise ValueError("AI SQS heartbeat must be shorter than visibility timeout")
@@ -266,6 +325,11 @@ class Settings(BaseSettings):
             raise ValueError(
                 "RESUME_PROCESSING_TIMEOUT_SECONDS must be at least SQS visibility timeout"
             )
+
+        if self.r2_storage_warning_bytes >= self.r2_storage_critical_bytes:
+            raise ValueError("R2 storage warning threshold must be below the critical threshold")
+        if self.r2_storage_critical_bytes >= self.max_r2_storage_bytes:
+            raise ValueError("R2 storage critical threshold must be below the hard limit")
 
         if self.ai_provider not in {"deterministic", "openai"}:
             raise ValueError("AI_PROVIDER must be deterministic or openai")
@@ -281,27 +345,43 @@ class Settings(BaseSettings):
             raise ValueError("OPENAI_REASONING_EFFORT is invalid")
 
         if self.job_stale_after_misses <= self.job_unknown_after_misses:
-            raise ValueError(
-                "JOB_STALE_AFTER_MISSES must be greater than JOB_UNKNOWN_AFTER_MISSES"
-            )
+            raise ValueError("JOB_STALE_AFTER_MISSES must be greater than JOB_UNKNOWN_AFTER_MISSES")
         if self.job_source_min_interval_seconds > self.job_source_default_interval_seconds:
             raise ValueError("JOB_SOURCE_MIN_INTERVAL_SECONDS cannot exceed the default interval")
         if self.job_source_default_interval_seconds > self.job_source_max_interval_seconds:
-            raise ValueError("JOB_SOURCE_DEFAULT_INTERVAL_SECONDS cannot exceed the maximum interval")
+            raise ValueError(
+                "JOB_SOURCE_DEFAULT_INTERVAL_SECONDS cannot exceed the maximum interval"
+            )
         if self.career_discovery_max_pages < 2:
             raise ValueError("CAREER_DISCOVERY_MAX_PAGES must allow robots and one target page")
 
         if durable_environment:
             if not self.clerk_issuer or not self.clerk_jwks_url:
-                raise ValueError(
-                    f"{environment.title()} requires CLERK_ISSUER and CLERK_JWKS_URL"
-                )
+                raise ValueError(f"{environment.title()} requires CLERK_ISSUER and CLERK_JWKS_URL")
             if any(not origin.startswith("https://") for origin in self.allowed_web_origins):
                 raise ValueError(
                     f"{environment.title()} requires HTTPS WEB_ORIGIN and WEB_ORIGINS values"
                 )
 
         return self
+
+    @property
+    def object_storage_hard_limit_bytes(self) -> int:
+        if self.object_storage_provider == "postgres":
+            return self.max_database_object_storage_bytes
+        return self.max_r2_storage_bytes
+
+    @property
+    def object_storage_warning_bytes(self) -> int:
+        if self.object_storage_provider == "postgres":
+            return int(self.max_database_object_storage_bytes * 0.80)
+        return self.r2_storage_warning_bytes
+
+    @property
+    def object_storage_critical_bytes(self) -> int:
+        if self.object_storage_provider == "postgres":
+            return int(self.max_database_object_storage_bytes * 0.90)
+        return self.r2_storage_critical_bytes
 
     @property
     def allowed_web_origins(self) -> list[str]:

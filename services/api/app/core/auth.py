@@ -1,13 +1,14 @@
+import hashlib
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import lru_cache
-import hashlib
 from hmac import compare_digest
 
 import jwt
 from fastapi import Depends, HTTPException, Request, status
 from jwt import PyJWKClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -15,6 +16,8 @@ from app.core.config import Settings, get_settings
 from app.core.database import get_session
 from app.models import User
 from app.privacy_models import DeletedIdentity
+
+logger = logging.getLogger("applyai.zero_cost")
 
 
 @dataclass(frozen=True)
@@ -55,7 +58,10 @@ class ClerkAuthProvider(AuthProvider):
         if not self.jwks_client or not self.issuer:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail={"code": "AUTH_NOT_CONFIGURED", "message": "Clerk authentication is not configured"},
+                detail={
+                    "code": "AUTH_NOT_CONFIGURED",
+                    "message": "Clerk authentication is not configured",
+                },
             )
         try:
             signing_key = self.jwks_client.get_signing_key_from_jwt(token)
@@ -82,7 +88,10 @@ class ClerkAuthProvider(AuthProvider):
         if not isinstance(email, str) or not email:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={"code": "EMAIL_CLAIM_REQUIRED", "message": "The authenticated session is missing an email claim"},
+                detail={
+                    "code": "EMAIL_CLAIM_REQUIRED",
+                    "message": "The authenticated session is missing an email claim",
+                },
             )
         return AuthClaims(
             subject=str(payload["sub"]),
@@ -121,29 +130,44 @@ class DevTestAuthProvider(AuthProvider):
 
 
 @lru_cache(maxsize=8)
-def _cached_clerk_provider(jwks_url: str | None, issuer: str | None, audience: str | None) -> ClerkAuthProvider:
+def _cached_clerk_provider(
+    jwks_url: str | None, issuer: str | None, audience: str | None
+) -> ClerkAuthProvider:
     return ClerkAuthProvider(jwks_url=jwks_url, issuer=issuer, audience=audience)
 
 
 def get_auth_provider(settings: Settings = Depends(get_settings)) -> AuthProvider:
     if settings.auth_provider == "dev-test":
         return DevTestAuthProvider(settings)
-    return _cached_clerk_provider(settings.clerk_jwks_url, settings.clerk_issuer, settings.clerk_audience)
+    return _cached_clerk_provider(
+        settings.clerk_jwks_url, settings.clerk_issuer, settings.clerk_audience
+    )
 
 
-def get_auth_claims(request: Request, provider: AuthProvider = Depends(get_auth_provider)) -> AuthClaims:
+def get_auth_claims(
+    request: Request, provider: AuthProvider = Depends(get_auth_provider)
+) -> AuthClaims:
     return provider.authenticate(request)
 
 
 def get_current_user(
     claims: AuthClaims = Depends(get_auth_claims),
     session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
 ) -> User:
     subject_hash = hashlib.sha256(claims.subject.encode("utf-8")).hexdigest()
-    if session.scalar(select(DeletedIdentity.id).where(DeletedIdentity.subject_hash == subject_hash)) is not None:
+    if (
+        session.scalar(
+            select(DeletedIdentity.id).where(DeletedIdentity.subject_hash == subject_hash)
+        )
+        is not None
+    ):
         raise HTTPException(
             status_code=status.HTTP_410_GONE,
-            detail={"code": "ACCOUNT_DELETED", "message": "This ApplyAI account has been permanently deleted"},
+            detail={
+                "code": "ACCOUNT_DELETED",
+                "message": "This ApplyAI account has been permanently deleted",
+            },
         )
     user = session.scalar(select(User).where(User.clerk_user_id == claims.subject))
     if user is None:
@@ -163,6 +187,19 @@ def get_current_user(
             if user is None:
                 raise
         session.refresh(user)
+        retained_users = int(session.scalar(select(func.count()).select_from(User)) or 0)
+        if retained_users >= settings.clerk_mru_review_threshold:
+            logger.error("clerk_mru_business_review", extra={"retained_users": retained_users})
+        elif retained_users >= settings.clerk_mru_critical_threshold:
+            logger.error("clerk_mru_critical", extra={"retained_users": retained_users})
+        elif retained_users >= settings.clerk_mru_warning_threshold:
+            logger.warning("clerk_mru_warning", extra={"retained_users": retained_users})
     if user.account_status == "DELETED":
-        raise HTTPException(status_code=status.HTTP_410_GONE, detail={"code": "ACCOUNT_DELETED", "message": "This ApplyAI account has been permanently deleted"})
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail={
+                "code": "ACCOUNT_DELETED",
+                "message": "This ApplyAI account has been permanently deleted",
+            },
+        )
     return user

@@ -15,6 +15,7 @@ from app.jobs.contracts import (
     normalize_title,
     validate_raw_job,
 )
+from app.jobs.pipeline import MAX_JOB_LOCATION_TEXT_LENGTH, bounded_job_locations
 
 
 def lever_handler(request: httpx.Request) -> httpx.Response:
@@ -153,6 +154,16 @@ def test_adapter_factory_routes_registry_source_without_scattered_conditionals()
 
     assert isinstance(JobSourceAdapterFactory.create(lever_source), LeverJobPostingConnector)
     assert isinstance(JobSourceAdapterFactory.create(ashby_source), AshbyJobBoardConnector)
+
+
+def test_job_location_is_bounded_before_canonical_persistence():
+    oversized = "Remote, " + ("United States; " * 40)
+
+    locations = bounded_job_locations([oversized, "Remote"])
+
+    assert len(locations[0]) == MAX_JOB_LOCATION_TEXT_LENGTH
+    assert locations[0].endswith("…")
+    assert locations[1] == "Remote"
 
 
 def test_normalization_and_validation_are_conservative_and_explainable():

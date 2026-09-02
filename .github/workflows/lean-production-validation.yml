@@ -6,15 +6,22 @@ on:
       - services/api/app/core/config.py
       - services/api/app/core/queue.py
       - services/api/app/core/storage.py
+      - services/api/app/core/zero_cost.py
+      - services/api/app/zero_cost_models.py
       - services/api/app/postgres_queue_models.py
       - services/api/app/workers/postgres.py
       - services/api/alembic/**
       - services/api/tests/test_lean_production.py
+      - services/api/tests/test_zero_cost.py
+      - services/api/scripts/check_zero_cost_architecture.py
+      - services/api/scripts/zero_cost_maintenance.py
       - services/api/Dockerfile
       - scripts/railway-bootstrap.sh
       - docs/LEAN_PRODUCTION_ARCHITECTURE.md
       - docs/RAILWAY_DEPLOYMENT.md
       - docs/R2_STORAGE.md
+      - docs/ZERO_COST_INFRASTRUCTURE.md
+      - .github/workflows/zero-cost-maintenance.yml
       - .github/workflows/lean-production-validation.yml
   push:
     branches:
@@ -23,13 +30,20 @@ on:
       - services/api/app/core/config.py
       - services/api/app/core/queue.py
       - services/api/app/core/storage.py
+      - services/api/app/core/zero_cost.py
+      - services/api/app/zero_cost_models.py
       - services/api/app/postgres_queue_models.py
       - services/api/app/workers/postgres.py
       - services/api/alembic/**
       - services/api/tests/test_lean_production.py
+      - services/api/tests/test_zero_cost.py
+      - services/api/scripts/check_zero_cost_architecture.py
+      - services/api/scripts/zero_cost_maintenance.py
       - services/api/Dockerfile
       - scripts/railway-bootstrap.sh
       - .github/workflows/lean-production-validation.yml
+      - .github/workflows/zero-cost-maintenance.yml
+      - docs/ZERO_COST_INFRASTRUCTURE.md
   workflow_dispatch:
 
 permissions:
@@ -89,7 +103,11 @@ jobs:
 
       - name: Run lean production tests
         working-directory: services/api
-        run: uv run pytest tests/test_lean_production.py -q
+        run: uv run pytest tests/test_lean_production.py tests/test_zero_cost.py -q
+
+      - name: Enforce zero-cost architecture
+        working-directory: services/api
+        run: uv run python scripts/check_zero_cost_architecture.py
 
       - name: Verify production lean settings fail closed
         working-directory: services/api

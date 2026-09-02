@@ -476,7 +476,11 @@ class JobSourceAdapterFactory:
         company_name = configuration.get("company_name")
         if source_type == JobSourceType.GREENHOUSE:
             token = str(configuration.get("board_token") or source.source_identity)
-            return GreenhouseJobBoardConnector(token, client=client)
+            return GreenhouseJobBoardConnector(
+                token,
+                client=client,
+                timeout_seconds=float(configuration.get("timeout_seconds") or 30),
+            )
         if source_type == JobSourceType.LEVER:
             site = str(configuration.get("site") or source.source_identity)
             return LeverJobPostingConnector(

@@ -20,6 +20,7 @@ from app import (  # noqa: F401
     postgres_queue_models,
     privacy_models,
     resume_share_models,
+    zero_cost_models,
 )
 
 

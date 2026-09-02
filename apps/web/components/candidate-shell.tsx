@@ -5,7 +5,6 @@ import {
   Bell,
   BriefcaseBusiness,
   CircleUserRound,
-  CreditCard,
   Home,
   LogOut,
   Search,
@@ -100,7 +99,6 @@ export function CandidateShell({
 
         <div className="sidebar-user cx-sidebar-user">
           <div className="cx-account-links" aria-label="Account shortcuts">
-            <Link href="/billing"><CreditCard size={15} />Plan</Link>
             <Link href="/settings"><Settings size={15} />Settings</Link>
           </div>
           <div className="sidebar-user-row">

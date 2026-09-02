@@ -29,7 +29,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const document = (
-    <html lang="en">
+    <html lang="en" data-scroll-behavior="smooth">
       <body className={`${geist.variable} ${geistMono.variable}`}>
         <AppProviders>{children}</AppProviders>
       </body>

@@ -1,0 +1,504 @@
+/* Career Command OS — final 10/10 refinement layer.
+   Imported after the core redesign. This file focuses on responsive certification,
+   touch ergonomics, contrast, dense-screen disclosure, and short-height laptops. */
+
+:root {
+  --text-secondary: #464d5b;
+  --text-muted: #687386;
+  --touch-target: 44px;
+}
+
+/* Readability: important secondary copy should remain legible on dim laptop and outdoor mobile displays. */
+.field-hint,
+.job-meta,
+.job-origin,
+.results-meta,
+.application-row .company,
+.application-row .activity,
+.detail-copy,
+.detail-section li,
+.empty-state p,
+.error-state p,
+.page-header > div > p:not(.eyebrow),
+.section-header p {
+  color: var(--text-secondary);
+}
+
+.job-origin,
+.results-meta,
+.application-row .activity {
+  font-size: max(12px, .75rem);
+}
+
+/* Touch ergonomics. Icon size and hit area are intentionally separate. */
+.ui-button-icon,
+.dialog-close,
+.filter-mobile-button,
+.cx-icon-link,
+.job-card-actions .ui-button-icon {
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
+  width: var(--touch-target);
+  height: var(--touch-target);
+  padding: 0;
+}
+
+.ui-button-small,
+.cx-workspace-tab,
+.custom-trigger,
+.select-trigger {
+  min-height: var(--touch-target);
+}
+
+.cx-mobile-nav a {
+  min-height: 56px;
+  min-width: 56px;
+  padding: 7px 8px max(7px, env(safe-area-inset-bottom));
+}
+
+/* Dialogs are usable on short laptops and mobile without hiding controls below the fold. */
+.dialog-overlay {
+  overscroll-behavior: contain;
+}
+
+.dialog-content {
+  max-height: min(86dvh, 760px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.dialog-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Job discovery: slightly denser scanning, stronger metadata, comfortable action targets. */
+.job-card {
+  min-width: 0;
+}
+
+.job-card h2,
+.job-card .job-company,
+.job-card .job-meta {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.job-card-actions {
+  align-items: center;
+  gap: 9px;
+}
+
+.job-card-actions .ui-button-primary {
+  min-height: var(--touch-target);
+}
+
+.jobs-toolbar .ui-native-select,
+.jobs-toolbar .ui-input {
+  min-height: 46px;
+}
+
+.load-more .ui-button {
+  min-height: 46px;
+  min-width: 160px;
+}
+
+/* Application CRM: preserve scannability while avoiding spreadsheet density. */
+.application-row {
+  min-height: 72px;
+  gap: 14px;
+}
+
+.application-row .role {
+  color: var(--career-ink);
+  line-height: 1.25;
+}
+
+.application-row .company {
+  line-height: 1.45;
+}
+
+/* Detail decisions remain visible, but do not cover content on touch layouts. */
+.sticky-actions {
+  top: 92px;
+}
+
+.cx-prepare-card .ui-button,
+.cx-prepare-card > a.ui-button {
+  min-height: 46px;
+}
+
+/* Shared human states: descriptive copy, comfortable action spacing. */
+.empty-state,
+.error-state {
+  padding: clamp(28px, 5vw, 46px);
+}
+
+.empty-state p,
+.error-state p {
+  max-width: 580px;
+  line-height: 1.65;
+}
+
+.empty-state .ui-button,
+.error-state .ui-button {
+  min-height: 46px;
+}
+
+/* Tablet: compact desktop rather than stretched mobile. */
+@media (min-width: 901px) and (max-width: 1180px) {
+  .cx-sidebar {
+    width: 208px;
+    padding-inline: 13px;
+  }
+
+  .cx-app-content {
+    margin-left: 208px;
+  }
+
+  .cx-app-main {
+    padding: 32px 28px 56px;
+  }
+
+  .cx-topbar {
+    padding-inline: 28px;
+  }
+
+  .cx-brand-caption {
+    margin-left: 42px;
+  }
+
+  .job-layout {
+    grid-template-columns: minmax(190px, 220px) minmax(0, 1fr);
+    gap: 20px;
+  }
+
+  .filter-panel {
+    padding: 18px;
+  }
+
+  .detail-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(270px, 310px);
+    gap: 20px;
+  }
+
+  .application-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .application-row .activity {
+    grid-column: 1;
+  }
+
+  .application-row > svg {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+}
+
+/* iPad portrait / larger touch layout. */
+@media (min-width: 701px) and (max-width: 900px) {
+  .cx-app-main {
+    padding: 30px 28px 106px;
+  }
+
+  .page-header {
+    margin-bottom: 26px;
+  }
+
+  .job-layout,
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-panel {
+    display: none;
+  }
+
+  .filter-mobile-button {
+    display: inline-flex;
+  }
+
+  .detail-aside {
+    order: -1;
+  }
+
+  .sticky-actions {
+    position: static;
+  }
+
+  .application-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    padding: 12px;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+  }
+
+  .application-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-content: start;
+    min-height: 150px;
+    padding: 18px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 16px;
+    background: var(--surface);
+    box-shadow: var(--command-shadow-sm);
+  }
+
+  .application-row .activity {
+    grid-column: 1 / -1;
+  }
+
+  .application-row > svg {
+    align-self: end;
+    justify-self: end;
+  }
+}
+
+/* Mobile-native composition. */
+@media (max-width: 700px) {
+  :root { --touch-target: 48px; }
+
+  .page-header {
+    margin-bottom: 22px;
+  }
+
+  .page-header h1 {
+    font-size: clamp(31px, 9vw, 38px);
+    line-height: 1.04;
+  }
+
+  .page-header > div > p:not(.eyebrow) {
+    font-size: 15px;
+    line-height: 1.6;
+  }
+
+  .cx-workspace-tabs {
+    display: flex;
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+    scroll-snap-type: x proximity;
+  }
+
+  .cx-workspace-tabs::-webkit-scrollbar { display: none; }
+
+  .cx-workspace-tab {
+    flex: 0 0 auto;
+    min-height: 44px;
+    scroll-snap-align: start;
+  }
+
+  .jobs-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+
+  .jobs-toolbar .search-input-wrap {
+    grid-column: 1 / -1;
+  }
+
+  .jobs-toolbar .ui-native-select {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .job-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-panel { display: none; }
+  .filter-mobile-button { display: inline-flex; }
+
+  .job-card {
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 12px;
+    padding: 16px;
+  }
+
+  .job-card .company-logo {
+    width: 42px;
+    height: 42px;
+  }
+
+  .job-card h2 {
+    font-size: 17px;
+    line-height: 1.3;
+  }
+
+  .job-meta {
+    gap: 7px 10px;
+  }
+
+  .job-card-actions {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: var(--touch-target) minmax(0, 1fr);
+    width: 100%;
+    margin-top: 4px;
+  }
+
+  .job-card-actions .ui-button-primary {
+    width: 100%;
+  }
+
+  .detail-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .detail-aside {
+    order: -1;
+  }
+
+  .sticky-actions {
+    position: static;
+  }
+
+  .detail-hero,
+  .detail-section,
+  .cx-prepare-card {
+    border-radius: 16px;
+  }
+
+  .application-list {
+    border-radius: 16px;
+  }
+
+  .application-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 10px;
+    min-height: 104px;
+    padding: 15px 14px;
+  }
+
+  .application-row .company,
+  .application-row .activity {
+    grid-column: 1 / -1;
+  }
+
+  .application-row > svg {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+  }
+
+  .dialog-content {
+    inset: auto 0 0 0;
+    transform: none;
+    width: 100%;
+    max-width: none;
+    max-height: min(88dvh, 760px);
+    border-radius: 22px 22px 0 0;
+    padding: 22px 18px max(24px, env(safe-area-inset-bottom));
+  }
+
+  .dialog-overlay {
+    background: rgba(17, 24, 39, .48);
+    backdrop-filter: blur(4px);
+  }
+
+  .form-field > label,
+  .form-field > span:first-child {
+    font-size: 13px;
+  }
+
+  .ui-input,
+  .ui-native-select,
+  .select-trigger {
+    min-height: 48px;
+    font-size: 16px; /* prevents unwanted iOS input zoom */
+  }
+
+  .button-row {
+    gap: 9px;
+  }
+
+  .button-row > .ui-button,
+  .button-row > a.ui-button {
+    min-height: 48px;
+  }
+}
+
+/* Small phones: protect primary actions and long titles. */
+@media (max-width: 390px) {
+  .cx-app-main {
+    padding-inline: 14px;
+  }
+
+  .job-card {
+    padding: 14px;
+  }
+
+  .jobs-toolbar {
+    padding: 7px;
+  }
+
+  .cx-mobile-nav a {
+    min-width: 0;
+    font-size: 10px;
+  }
+}
+
+/* 13-inch and short-height laptops: retain hierarchy while reducing dead vertical travel. */
+@media (min-width: 901px) and (max-width: 1440px), (min-width: 901px) and (max-height: 850px) {
+  .cx-app-main {
+    padding-top: 34px;
+    padding-bottom: 50px;
+  }
+
+  .page-header {
+    margin-bottom: 26px;
+  }
+
+  .page-header h1 {
+    font-size: clamp(34px, 4vw, 44px);
+  }
+
+  .first-value-grid {
+    gap: 22px;
+  }
+
+  .first-value-next-card {
+    min-height: 148px;
+    padding-block: 24px;
+  }
+
+  .ui-card {
+    scroll-margin-top: 86px;
+  }
+}
+
+@media (min-width: 1600px) {
+  .cx-app-main {
+    max-width: 1360px;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text-secondary: #c0c7d5;
+    --text-muted: #929bab;
+  }
+
+  .application-row,
+  .dialog-content {
+    background: var(--surface);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+  }
+}

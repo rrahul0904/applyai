@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 const candidate = "e2e.candidate@example.test";
 const captureDir = process.env.DEMO_CAPTURE_DIR;
@@ -34,6 +34,15 @@ async function expectNoHorizontalOverflow(page: Page) {
   expect(dimensions.documentWidth).toBeLessThanOrEqual(dimensions.viewportWidth + 1);
 }
 
+async function expectMinimumHitArea(target: Locator, minimumSize = 44) {
+  await expect(target).toBeVisible();
+  const box = await target.boundingBox();
+  expect(box, "Expected a visible interactive control with a measurable hit area").not.toBeNull();
+  if (!box) throw new Error("Interactive control did not expose a measurable hit area");
+  expect(box.height).toBeGreaterThanOrEqual(minimumSize);
+  expect(box.width).toBeGreaterThanOrEqual(minimumSize);
+}
+
 async function capture(page: Page, name: string) {
   if (!captureDir) return;
   mkdirSync(captureDir, { recursive: true });
@@ -51,8 +60,7 @@ async function expectPrimaryNavigation(page: Page, width: number) {
     await expect(mobileNav).toBeVisible();
     await expect(sidebar).toBeHidden();
     const homeTarget = mobileNav.getByRole("link", { name: "Home" });
-    const box = await homeTarget.boundingBox();
-    expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+    await expectMinimumHitArea(homeTarget, 44);
   } else {
     await expect(sidebar).toBeVisible();
     await expect(mobileNav).toBeHidden();
@@ -65,38 +73,41 @@ test("Career Command OS is responsive across certified mobile, tablet, and deskt
   await signIn(page);
 
   for (const viewport of viewports) {
-    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await test.step(viewport.name, async () => {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
 
-    await page.goto("/dashboard");
-    await expect(page.getByRole("heading", { name: "Your career workspace is ready." })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Opportunities worth inspecting" })).toBeVisible();
-    await expectPrimaryNavigation(page, viewport.width);
-    await expectNoHorizontalOverflow(page);
-    await capture(page, `responsive-${viewport.name}-home`);
+      await page.goto("/dashboard");
+      await expect(page.getByRole("heading", { name: "Your career workspace is ready." })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Opportunities worth inspecting" })).toBeVisible();
+      await expectPrimaryNavigation(page, viewport.width);
+      await expectNoHorizontalOverflow(page);
+      await capture(page, `responsive-${viewport.name}-home`);
 
-    await page.goto("/jobs");
-    await expect(page.getByLabel("Search jobs")).toBeVisible();
-    await expect(page.locator(".job-card").first()).toBeVisible();
-    await expectNoHorizontalOverflow(page);
+      await page.goto("/jobs");
+      await expect(page.getByLabel("Search jobs")).toBeVisible();
+      const firstCard = page.locator(".job-card").first();
+      await expect(firstCard).toBeVisible();
+      await expectNoHorizontalOverflow(page);
 
-    if (viewport.width <= 900) {
-      const filterButton = page.getByRole("button", { name: /Filter/i });
-      await expect(filterButton).toBeVisible();
-      const filterBox = await filterButton.boundingBox();
-      expect(filterBox?.height ?? 0).toBeGreaterThanOrEqual(44);
-    }
+      if (viewport.width <= 900) {
+        const filterButton = page.getByRole("button", { name: /Filter/i });
+        await expectMinimumHitArea(filterButton, viewport.width <= 700 ? 48 : 44);
+      }
 
-    const saveButton = page.locator(".job-card").first().getByRole("button", { name: /Save job|Remove from saved jobs/i });
-    const saveBox = await saveButton.boundingBox();
-    expect(saveBox?.height ?? 0).toBeGreaterThanOrEqual(44);
-    expect(saveBox?.width ?? 0).toBeGreaterThanOrEqual(44);
-    await capture(page, `responsive-${viewport.name}-jobs`);
+      // JobCard intentionally names the bookmark action with the concrete job title,
+      // e.g. "Save Senior Analyst" / "Unsave Senior Analyst". Certify that semantic
+      // contract instead of relying on copy that the product does not render.
+      const saveButton = firstCard.getByRole("button", { name: /^(Save|Unsave) .+/i });
+      await expect(saveButton).toBeEnabled();
+      await expectMinimumHitArea(saveButton, viewport.width <= 700 ? 48 : 44);
+      await capture(page, `responsive-${viewport.name}-jobs`);
 
-    await page.goto("/applications");
-    await expect(page.getByRole("heading", { name: "Keep every opportunity moving." })).toBeVisible();
-    await expect(page.locator("a.application-row").first()).toBeVisible();
-    await expectNoHorizontalOverflow(page);
-    await capture(page, `responsive-${viewport.name}-applications`);
+      await page.goto("/applications");
+      await expect(page.getByRole("heading", { name: "Keep every opportunity moving." })).toBeVisible();
+      await expect(page.locator("a.application-row").first()).toBeVisible();
+      await expectNoHorizontalOverflow(page);
+      await capture(page, `responsive-${viewport.name}-applications`);
+    });
   }
 });
 
@@ -110,14 +121,16 @@ test("mobile job detail keeps decisions and Recruiter Lens readable without over
   await firstCard.getByRole("link", { name: "Review role" }).click();
   await page.waitForURL(/\/jobs\/[0-9a-f-]+$/i);
 
-  await expect(page.getByRole("heading", { name: "Should you pursue this?" })).toBeVisible();
+  // The deliberate candidate decision heading in JobDetailView is "Pursue this opportunity?".
+  // Keep certification aligned to the rendered accessible contract rather than historical copy.
+  await expect(page.getByRole("heading", { name: "Pursue this opportunity?" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Recruiter Lens" })).toBeVisible();
   await expect(page.getByText(/not an employer decision/i)).toBeVisible();
   await expectNoHorizontalOverflow(page);
 
   const startApplication = page.getByRole("button", { name: "Start application" });
-  const actionBox = await startApplication.boundingBox();
-  expect(actionBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+  await expect(startApplication).toBeEnabled();
+  await expectMinimumHitArea(startApplication, 48);
 
   const perspectiveSelect = page.getByLabel("Perspective");
   await expect(perspectiveSelect).toBeVisible();

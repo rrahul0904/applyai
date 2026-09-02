@@ -45,6 +45,12 @@ on:
       - .github/workflows/zero-cost-maintenance.yml
       - docs/ZERO_COST_INFRASTRUCTURE.md
   workflow_dispatch:
+    inputs:
+      seed_bounded_job_catalogue:
+        description: "Run the one-off bounded source refresh against Neon"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -54,6 +60,45 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  seed-bounded-job-catalogue:
+    if: github.event_name == 'workflow_dispatch' && inputs.seed_bounded_job_catalogue
+    name: Seed bounded job catalogue
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      APP_ENV: production
+      DEPLOYMENT_PROFILE: lean
+      AUTH_PROVIDER: clerk
+      CLERK_ISSUER: ${{ secrets.CLERK_ISSUER }}
+      CLERK_JWKS_URL: ${{ secrets.CLERK_JWKS_URL }}
+      DATABASE_URL: ${{ secrets.APPLYAI_DATABASE_URL }}
+      OBJECT_STORAGE_PROVIDER: postgres
+      TASK_QUEUE_PROVIDER: postgres
+      AI_PROVIDER: deterministic
+      WEB_ORIGIN: https://applyai-preview.vercel.app
+      BILLING_ENABLED: "false"
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+        with:
+          version: "0.9.21"
+
+      - name: Install locked dependencies
+        working-directory: services/api
+        run: uv sync --frozen --no-dev
+
+      - name: Run each due source once
+        working-directory: services/api
+        run: uv run python scripts/sync_job_sources.py --mode synchronous
+
   lean-runtime:
     name: Postgres queue and R2 compatibility
     runs-on: ubuntu-24.04

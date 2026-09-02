@@ -132,7 +132,9 @@ test("mobile job detail keeps decisions and Recruiter Lens readable without over
   await expect(startApplication).toBeEnabled();
   await expectMinimumHitArea(startApplication, 48);
 
-  const perspectiveSelect = page.getByLabel("Perspective");
+  // Restrict the semantic query to the native select so the desktop perspective button group
+  // cannot collide with the mobile fallback's accessible label.
+  const perspectiveSelect = page.getByRole("combobox", { name: /Perspective/i });
   await expect(perspectiveSelect).toBeVisible();
   await capture(page, "responsive-mobile-390-job-detail-recruiter-lens");
 });

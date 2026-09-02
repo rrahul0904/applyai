@@ -369,6 +369,11 @@
     border-radius: 16px;
   }
 
+  .cx-prepare-card .ui-button,
+  .cx-prepare-card > a.ui-button {
+    min-height: var(--touch-target);
+  }
+
   .application-list {
     border-radius: 16px;
   }

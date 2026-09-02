@@ -138,16 +138,18 @@ export function EmptyState({
 }
 
 export function ErrorState({
+  title = "We couldn’t load this view",
   message,
   retry,
 }: {
+  title?: string;
   message?: string;
   retry?: () => void;
 }) {
   return (
     <div className="error-state" role="alert">
-      <strong>Something went wrong</strong>
-      <p>{message ?? "We couldn’t load this content. Please try again."}</p>
+      <strong>{title}</strong>
+      <p>{message ?? "The information you asked for isn’t available right now. Try again, or return to the previous workspace."}</p>
       {retry ? <Button onClick={retry} variant="secondary">Try again</Button> : null}
     </div>
   );

@@ -26,13 +26,14 @@ function WorkspaceTabs({ tabs, activeHref, label }: { tabs: Tab[]; activeHref: s
 export function JobWorkspaceTabs({ activeHref }: { activeHref: string }) {
   return (
     <WorkspaceTabs
-      label="Job workspace"
+      label="Jobs workspace"
       activeHref={activeHref}
       tabs={[
         { href: "/jobs", label: "Discover" },
-        { href: "/matches", label: "Recommended" },
+        { href: "/matches", label: "For You" },
         { href: "/saved", label: "Saved" },
         { href: "/alerts", label: "Alerts" },
+        { href: "/import-job", label: "Import Job" },
       ]}
     />
   );
@@ -41,15 +42,29 @@ export function JobWorkspaceTabs({ activeHref }: { activeHref: string }) {
 export function CareerWorkspaceTabs({ activeHref }: { activeHref: string }) {
   return (
     <WorkspaceTabs
-      label="Career coach workspace"
+      label="Career Coach workspace"
       activeHref={activeHref}
       tabs={[
-        { href: "/career", label: "Coach" },
+        { href: "/career", label: "Career Memory" },
         { href: "/career/navigation", label: "Navigation" },
-        { href: "/resume/studio", label: "Resume" },
+        { href: "/resume/studio", label: "Resume Studio" },
         { href: "/portfolio", label: "Portfolio" },
         { href: "/network", label: "Network" },
-        { href: "/analytics", label: "Progress" },
+        { href: "/analytics", label: "Analytics" },
+      ]}
+    />
+  );
+}
+
+export function ApplicationWorkspaceTabs({ activeHref }: { activeHref: string }) {
+  return (
+    <WorkspaceTabs
+      label="Applications workspace"
+      activeHref={activeHref}
+      tabs={[
+        { href: "/applications", label: "Active" },
+        { href: "/alerts", label: "Follow-ups" },
+        { href: "/resume/signals", label: "Resume Shares" },
       ]}
     />
   );

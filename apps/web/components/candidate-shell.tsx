@@ -10,6 +10,7 @@ import {
   LogOut,
   Search,
   Settings,
+  ShieldCheck,
   Sparkles,
 } from "lucide-react";
 import Link from "next/link";
@@ -44,7 +45,7 @@ const navigation: NavigationItem[] = [
     href: "/career",
     label: "Career Coach",
     icon: Sparkles,
-    activePrefixes: ["/career", "/resume", "/network", "/interview", "/analytics"],
+    activePrefixes: ["/career", "/resume", "/network", "/interview", "/analytics", "/portfolio"],
   },
   {
     href: "/profile",
@@ -78,7 +79,7 @@ export function CandidateShell({
           <span className="brand-mark">A</span>
           ApplyAI
         </Link>
-        <p className="cx-brand-caption">Your career, in motion.</p>
+        <p className="cx-brand-caption">CAREER COMMAND OS</p>
 
         <nav aria-label="Candidate workspace" className="cx-primary-nav">
           {navigation.map((item) => {
@@ -128,10 +129,13 @@ export function CandidateShell({
         <header className="app-topbar cx-topbar">
           <Link className="top-search cx-top-search" href="/jobs">
             <Search size={18} aria-hidden="true" />
-            <span>Search roles or companies</span>
+            <span>Search roles, companies, or skills</span>
             <kbd aria-hidden="true">⌘ K</kbd>
           </Link>
           <div className="cx-topbar-actions">
+            <span className="cx-private-status" title="Candidate evidence is private unless you explicitly share or publish it">
+              <ShieldCheck size={14} /> Private workspace
+            </span>
             <Link href="/alerts" className="cx-icon-link" aria-label="Alerts and follow-ups">
               <Bell size={19} />
             </Link>

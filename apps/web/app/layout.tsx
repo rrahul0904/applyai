@@ -11,6 +11,7 @@ import "./candidate-cx-resume.css";
 import "./candidate-cx-plan.css";
 import "./candidate-first-value.css";
 import "./career-command-os.css";
+import "./career-command-os-details.css";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 const geistMono = Geist_Mono({

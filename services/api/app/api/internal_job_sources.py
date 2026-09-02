@@ -119,6 +119,11 @@ class OfficialGreenhouseImport(BaseModel):
 class _ImportedGreenhousePayloadConnector(GreenhouseJobBoardConnector):
     """Ingest a bounded, operator-supplied Greenhouse response without outbound API egress."""
 
+    # This endpoint accepts at most 50 postings, so it cannot represent the board's
+    # full snapshot.  Never use one of these bounded imports to close jobs omitted
+    # from the operator-provided page.
+    source_completeness = "PARTIAL"
+
     def __init__(
         self,
         *,

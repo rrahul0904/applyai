@@ -17,6 +17,7 @@ from app.jobs.contracts import (
 )
 from app.jobs.pipeline import MAX_JOB_LOCATION_TEXT_LENGTH, bounded_job_locations
 from app.api.internal_job_sources import _ImportedGreenhousePayloadConnector
+from app.jobs.source_completeness import SourceCompleteness, connector_completeness
 
 
 def lever_handler(request: httpx.Request) -> httpx.Response:
@@ -189,6 +190,7 @@ def test_imported_greenhouse_payload_preserves_official_source_metadata():
     assert record["_applyai_board_token"] == "example"
     assert record["_applyai_internal_job_id"] == "77"
     assert record["data_origin"] == "GREENHOUSE_PUBLIC_API"
+    assert connector_completeness(connector) == SourceCompleteness.PARTIAL
 
 
 def test_normalization_and_validation_are_conservative_and_explainable():

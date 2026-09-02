@@ -208,7 +208,19 @@ def assert_local_api_and_stripe() -> None:
         user = me.json()
         user_id = user["id"]
 
+        subscription = client.get("/api/v1/billing/subscription", headers=dev_headers())
+        assert subscription.status_code == 200, subscription.text
+        assert subscription.json()["plan"] == "FREE"
+
         checkout = client.post("/api/v1/billing/checkout", headers=dev_headers(), json={"plan": "PRO"})
+        if not get_settings().billing_enabled:
+            # The production pilot deliberately runs with paid plans disabled.  Keep the
+            # clean-room test honest about that configuration instead of treating the
+            # fail-closed response as a Stripe regression.
+            assert checkout.status_code == 503, checkout.text
+            assert checkout.json()["detail"] == "Paid plans are disabled for the zero-cost pilot"
+            return
+
         assert checkout.status_code == 200, checkout.text
         checkout_payload = checkout.json()
         assert checkout_payload["provider"] == "stripe"

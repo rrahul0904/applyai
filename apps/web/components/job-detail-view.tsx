@@ -52,7 +52,7 @@ export function JobDetailView({ jobId }: { jobId: string }) {
             <div className="detail-title-row">
               <div className="company-logo" aria-hidden="true">{item.company_name.charAt(0)}</div>
               <div>
-                <p className="eyebrow">Opportunity</p>
+                <p className="eyebrow">Opportunity intelligence</p>
                 <h1>{item.title}</h1>
                 <p className="job-company">{item.company_name}</p>
                 <div className="job-meta">
@@ -78,12 +78,12 @@ export function JobDetailView({ jobId }: { jobId: string }) {
           <Card className="sticky-actions cx-prepare-card">
             <div className="cx-prepare-heading">
               <div className="cx-action-icon"><Sparkles size={19} /></div>
-              <div><span className="cx-action-label">Ready when you are</span><h2>Prepare your application</h2></div>
+              <div><span className="cx-action-label">Decide deliberately</span><h2>Pursue this opportunity?</h2></div>
             </div>
-            <p>Keep your research, application progress, and verified career evidence together for this role.</p>
-            <Button onClick={() => applying.mutate()} disabled={applying.isPending}><Sparkles size={17} />{applying.isPending ? "Preparing…" : "Prepare application"}</Button>
-            <Button variant="secondary" onClick={() => saving.mutate()} disabled={saving.isPending} aria-pressed={item.saved}><Bookmark size={17} fill={item.saved ? "currentColor" : "none"} />{item.saved ? "Saved" : "Save for later"}</Button>
-            <Link className="ui-button ui-button-secondary" href={shareHref}><Share2 size={17} />Create tracked resume link</Link>
+            <p>Saving keeps the role on your radar. Starting an application creates an active opportunity workspace with résumé, outreach, interview, follow-up, and share context.</p>
+            <Button onClick={() => applying.mutate()} disabled={applying.isPending}><Sparkles size={17} />{applying.isPending ? "Starting…" : "Start application"}</Button>
+            <Button variant="secondary" onClick={() => saving.mutate()} disabled={saving.isPending} aria-pressed={item.saved}><Bookmark size={17} fill={item.saved ? "currentColor" : "none"} />{item.saved ? "Saved for later" : "Save for later"}</Button>
+            <Link className="ui-button ui-button-secondary" href={shareHref}><Share2 size={17} />Create private resume share</Link>
 
             <div className="cx-trust-list" aria-label="ApplyAI preparation safeguards">
               <div><CheckCircle2 size={16} /><span>Uses your verified experience</span></div>

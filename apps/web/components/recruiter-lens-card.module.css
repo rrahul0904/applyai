@@ -1,6 +1,6 @@
 .card {
   display: grid;
-  gap: 22px;
+  gap: 20px;
   padding: clamp(20px, 3vw, 28px);
   border: 1px solid rgba(49, 92, 255, .11);
   border-radius: 22px;
@@ -40,9 +40,9 @@
   display: block;
   margin-bottom: 4px;
   color: var(--career-blue, #315cff);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 800;
-  letter-spacing: .11em;
+  letter-spacing: .10em;
   text-transform: uppercase;
 }
 
@@ -59,8 +59,8 @@
 
 .title p {
   margin-top: 6px;
-  color: var(--muted-foreground);
-  line-height: 1.58;
+  color: var(--text-secondary, #464d5b);
+  line-height: 1.62;
 }
 
 .scoreCluster {
@@ -98,13 +98,41 @@
 .scoreVisual span,
 .tier span {
   margin-top: 5px;
-  color: var(--muted-foreground);
+  color: var(--text-muted, #687386);
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
 
-.scoreVisual span { color: rgba(255,255,255,.65); }
+.scoreVisual span { color: rgba(255,255,255,.72); }
+
+.summaryStrip {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 15px 16px;
+  border: 1px solid rgba(49, 92, 255, .12);
+  border-radius: 15px;
+  background: linear-gradient(135deg, rgba(49,92,255,.065), rgba(124,58,237,.035));
+}
+
+.summaryStrip > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--career-blue, #315cff);
+}
+
+.summaryStrip strong {
+  color: var(--career-ink, #172033);
+  font-size: 13px;
+}
+
+.summaryStrip p {
+  margin: 3px 0 0;
+  color: var(--text-secondary, #464d5b);
+  font-size: 13px;
+  line-height: 1.55;
+}
 
 .perspectivePanel {
   display: grid;
@@ -139,14 +167,19 @@
 
 .blockHeader p {
   margin-top: 4px;
-  color: var(--muted-foreground);
+  color: var(--text-secondary, #464d5b);
   font-size: 12px;
+  line-height: 1.5;
 }
 
 .reportActions {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.reportActions > * {
+  min-height: 44px;
 }
 
 .perspectiveButtons {
@@ -157,12 +190,12 @@
 
 .perspectiveButton,
 .perspectiveActive {
-  min-height: 38px;
-  padding: 0 13px;
+  min-height: 44px;
+  padding: 0 14px;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--surface);
-  color: var(--muted-foreground);
+  color: var(--text-secondary, #464d5b);
   cursor: pointer;
   font: inherit;
   font-size: 12px;
@@ -210,11 +243,14 @@
 }
 
 .customCriteria summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
   cursor: pointer;
   color: var(--career-blue, #315cff);
   font-size: 12px;
   font-weight: 750;
-  padding: 13px 14px;
+  padding: 0 14px;
 }
 
 .customCriteriaForm {
@@ -226,9 +262,9 @@
 .microcopy,
 .clearState {
   margin: 0;
-  color: var(--muted-foreground);
+  color: var(--text-secondary, #464d5b);
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
 .metrics {
@@ -266,9 +302,13 @@
 }
 
 .metric span {
-  color: var(--muted-foreground);
+  color: var(--text-secondary, #464d5b);
   font-size: 11px;
 }
+
+.metric[data-evidence-state="supported"] { border-color: rgba(22,163,74,.17); }
+.metric[data-evidence-state="partial"] { border-color: rgba(217,119,6,.17); }
+.metric[data-evidence-state="missing"] { border-color: rgba(220,38,38,.14); }
 
 .criteria {
   display: grid;
@@ -295,17 +335,31 @@
   display: grid;
   gap: 3px;
   margin: 0;
-  color: var(--muted-foreground);
+  color: var(--text-secondary, #464d5b);
   font-size: 13px;
-  line-height: 1.48;
+  line-height: 1.52;
 }
 
 .criterion p span {
   color: var(--career-blue, #315cff);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 800;
   letter-spacing: .08em;
   text-transform: uppercase;
+}
+
+.disclosureButton {
+  justify-self: start;
+  min-height: 44px;
+  padding-inline: 10px;
+}
+
+.disclosureButton svg {
+  transition: transform .16s ease;
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
 }
 
 .insightGrid {
@@ -316,17 +370,49 @@
 
 .insightGrid > .block {
   align-content: start;
-  min-height: 150px;
-  padding: 16px;
+  min-height: 72px;
+  padding: 0;
   border: 1px solid var(--border);
   border-radius: 16px;
   background: color-mix(in srgb, var(--surface) 97%, #f7f8ff 3%);
+  overflow: hidden;
+}
+
+.insightSummary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 58px;
+  padding: 0 16px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--career-ink, #172033);
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.insightSummary::-webkit-details-marker { display: none; }
+
+.insightSummary > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.insightSummary > span:first-child svg {
+  color: var(--career-blue, #315cff);
+}
+
+.insightDisclosure[open] .insightSummary {
+  border-bottom: 1px solid var(--border);
 }
 
 .concerns,
 .questions {
   display: grid;
   gap: 8px;
+  padding: 12px 14px 14px;
 }
 
 .concern,
@@ -351,9 +437,13 @@
 .concern p,
 .question p {
   margin: 0;
-  color: var(--muted-foreground);
+  color: var(--text-secondary, #464d5b);
   font-size: 13px;
   line-height: 1.5;
+}
+
+.insightDisclosure > .clearState {
+  padding: 12px 16px 16px;
 }
 
 .disclaimer {
@@ -365,9 +455,9 @@
   border: 1px solid rgba(49,92,255,.10);
   border-radius: 13px;
   background: #f5f7ff;
-  color: var(--muted-foreground);
+  color: var(--text-secondary, #464d5b);
   font-size: 12px;
-  line-height: 1.55;
+  line-height: 1.58;
 }
 
 .disclaimer svg {
@@ -380,17 +470,18 @@
   align-items: center;
   gap: 9px;
   margin: 0;
-  color: var(--muted-foreground);
+  color: var(--text-secondary, #464d5b);
 }
 
 .loading svg { color: var(--career-violet, #7c3aed); }
-.error { margin: 0; color: var(--destructive); }
+.error { margin: 0; color: var(--destructive); line-height: 1.55; }
 
 @media (prefers-color-scheme: dark) {
   .scoreVisual { background: linear-gradient(145deg, #25345b, #315cff); }
   .concern { background: rgba(217,119,6,.10); }
   .question { background: rgba(124,58,237,.11); }
-  .disclaimer { background: rgba(49,92,255,.08); }
+  .disclaimer,
+  .summaryStrip { background: rgba(49,92,255,.08); }
 }
 
 @media (max-width: 860px) {
@@ -404,8 +495,14 @@
 }
 
 @media (max-width: 620px) {
-  .card { padding: 18px; }
-  .title { display: grid; }
+  .card { gap: 16px; padding: 16px; border-radius: 18px; }
+  .title { display: grid; gap: 10px; }
+  .title h3 { font-size: 22px; }
+  .title p { font-size: 14px; }
+  .scoreVisual,
+  .tier { min-height: 76px; }
+  .summaryStrip { padding: 13px; }
+  .perspectivePanel { padding: 14px; }
   .perspectiveButtons { display: none; }
   .selectFallback {
     position: static;
@@ -417,7 +514,23 @@
     clip: auto;
     white-space: normal;
   }
-  .reportActions { width: 100%; }
-  .reportActions > * { flex: 1; }
+  .blockHeader { align-items: stretch; flex-direction: column; }
+  .reportActions { display: grid; grid-template-columns: 1fr; width: 100%; }
+  .reportActions > * { width: 100%; }
   .metrics { grid-template-columns: 1fr 1fr; }
+  .metric { min-height: 74px; padding: 12px; }
+  .criterion { grid-template-columns: 1fr; }
+  .criterion p { grid-column: 1; }
+  .criterion :global(.ui-badge) { justify-self: start; }
+  .disclosureButton { width: 100%; justify-content: center; }
+}
+
+@media (max-width: 390px) {
+  .metrics { grid-template-columns: 1fr; }
+  .scoreCluster { display: grid; grid-template-columns: 1fr 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .perspectiveButton:hover { transform: none; }
+  .disclosureButton svg { transition: none; }
 }

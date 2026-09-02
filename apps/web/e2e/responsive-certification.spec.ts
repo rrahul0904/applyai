@@ -128,7 +128,7 @@ test("mobile job detail keeps decisions and Recruiter Lens readable without over
   await expect(page.getByText(/not an employer decision/i)).toBeVisible();
   await expectNoHorizontalOverflow(page);
 
-  const startApplication = page.getByRole("button", { name: "Start application" });
+  const startApplication = page.getByRole("button", { name: "Start application", exact: true });
   await expect(startApplication).toBeEnabled();
   await expectMinimumHitArea(startApplication, 48);
 

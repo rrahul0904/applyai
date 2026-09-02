@@ -148,7 +148,8 @@ test("mobile job detail keeps decisions and Recruiter Lens readable and keyboard
 
   await capture(page, "responsive-mobile-390-job-detail-recruiter-lens");
 
-  const criteriaDisclosure = page.getByRole("button", { name: /^Show \d+ more criteria$/i });
+  // The button copy changes after expansion, so anchor to the stable disclosure relationship.
+  const criteriaDisclosure = page.locator('button[aria-controls="recruiter-lens-criteria"]');
   await expect(criteriaDisclosure).toHaveAttribute("aria-expanded", "false");
   await criteriaDisclosure.focus();
   await expect(criteriaDisclosure).toBeFocused();

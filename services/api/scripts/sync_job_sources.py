@@ -2,6 +2,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
+from pathlib import Path
+
+
+API_ROOT = Path(__file__).resolve().parents[1]
+if str(API_ROOT) not in sys.path:
+    sys.path.insert(0, str(API_ROOT))
 
 from app.jobs.dispatcher import dispatch_due_sources, dispatch_due_verifications
 from app.jobs.registry import run_due_sources

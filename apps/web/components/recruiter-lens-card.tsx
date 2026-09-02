@@ -3,11 +3,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
+  CheckCircle2,
   Link2,
   MessageCircleQuestion,
   Printer,
   ScanSearch,
   ShieldCheck,
+  Sparkles,
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -17,6 +19,14 @@ import { growthApi } from "@/lib/api/growth";
 import { recruiterLensApi, type RecruiterLensMode } from "@/lib/api/recruiter-lens";
 import { titleCase } from "@/lib/utils";
 import styles from "./recruiter-lens-card.module.css";
+
+const perspectives: Array<{ value: RecruiterLensMode; label: string }> = [
+  { value: "DEFAULT_RECRUITER", label: "Default Recruiter" },
+  { value: "STRICT_MUST_HAVE", label: "Strict Must-Have" },
+  { value: "HIRING_MANAGER", label: "Hiring Manager" },
+  { value: "TECHNICAL", label: "Technical" },
+  { value: "CUSTOM", label: "Custom" },
+];
 
 function criterionTone(status: "SUPPORTED" | "PARTIAL" | "NOT_EVIDENCED") {
   if (status === "SUPPORTED") return "success" as const;
@@ -78,7 +88,7 @@ export function RecruiterLensCard({ jobId }: { jobId: string }) {
   if (lens.isLoading) {
     return (
       <section className={styles.card} aria-label="Recruiter Lens">
-        <p className={styles.loading}>Building your Recruiter Lens…</p>
+        <div className={styles.loading}><Sparkles size={18} /> Building your evidence-based Recruiter Lens…</div>
       </section>
     );
   }
@@ -101,25 +111,34 @@ export function RecruiterLensCard({ jobId }: { jobId: string }) {
     <section className={styles.card} aria-labelledby="recruiter-lens-title">
       <div className={styles.header}>
         <div className={styles.title}>
-          <ScanSearch size={21} />
+          <span className={styles.titleIcon}><ScanSearch size={22} /></span>
           <div>
+            <span className={styles.kicker}>Candidate preparation mirror</span>
             <h3 id="recruiter-lens-title">Recruiter Lens</h3>
             <p>
-              A candidate-side screening mirror: what your verified evidence makes obvious,
-              what still looks thin, and where an interviewer is likely to dig deeper.
+              If someone screened your résumé against this role, what would your verified evidence make obvious—and where would they ask for more?
             </p>
           </div>
         </div>
-        <div className={styles.tier} aria-label={`Recruiter Lens tier ${item.tier}`}>
-          <strong>{item.tier}</strong>
-          <span>readiness tier</span>
+        <div className={styles.scoreCluster}>
+          <div className={styles.scoreVisual}>
+            <strong>{item.score}</strong>
+            <span>readiness</span>
+          </div>
+          <div className={styles.tier} aria-label={`Recruiter Lens tier ${item.tier}`}>
+            <strong>{item.tier}</strong>
+            <span>tier</span>
+          </div>
         </div>
       </div>
 
-      <div className={styles.block}>
+      <div className={styles.perspectivePanel}>
         <div className={styles.blockHeader}>
-          <h4>Screening perspective</h4>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div>
+            <h4>Screening perspective</h4>
+            <p>Change the lens without changing your underlying career evidence.</p>
+          </div>
+          <div className={styles.reportActions}>
             <Button variant="ghost" size="small" onClick={() => window.print()}>
               <Printer size={15} />Print report
             </Button>
@@ -133,7 +152,25 @@ export function RecruiterLensCard({ jobId }: { jobId: string }) {
             </Button>
           </div>
         </div>
-        <div className="form-grid">
+
+        <div className={styles.perspectiveButtons} aria-label="Recruiter Lens perspectives">
+          {perspectives.map((perspective) => (
+            <button
+              key={perspective.value}
+              type="button"
+              className={mode === perspective.value && !criteriaSetId ? styles.perspectiveActive : styles.perspectiveButton}
+              onClick={() => {
+                setCriteriaSetId("");
+                setMode(perspective.value);
+              }}
+              aria-pressed={mode === perspective.value && !criteriaSetId}
+            >
+              {perspective.label}
+            </button>
+          ))}
+        </div>
+
+        <div className={styles.selectFallback}>
           <label className="form-field">
             <span>Perspective</span>
             <NativeSelect
@@ -150,6 +187,9 @@ export function RecruiterLensCard({ jobId }: { jobId: string }) {
               <option value="CUSTOM">Custom</option>
             </NativeSelect>
           </label>
+        </div>
+
+        <div className={styles.savedCriteriaRow}>
           <label className="form-field">
             <span>Saved self-assessment criteria</span>
             <NativeSelect
@@ -165,54 +205,55 @@ export function RecruiterLensCard({ jobId }: { jobId: string }) {
               ))}
             </NativeSelect>
           </label>
+          <details className={styles.customCriteria}>
+            <summary>Create reusable criteria</summary>
+            <div className={styles.customCriteriaForm}>
+              <label className="form-field">
+                <span>Set name</span>
+                <Input value={setName} maxLength={120} onChange={(event) => setSetName(event.target.value)} placeholder="Strict technical" />
+              </label>
+              <label className="form-field">
+                <span>Criterion</span>
+                <Input value={criterionLabel} maxLength={300} onChange={(event) => setCriterionLabel(event.target.value)} placeholder="Production Python experience" />
+              </label>
+              <Button
+                type="button"
+                disabled={!setName.trim() || !criterionLabel.trim() || createSet.isPending}
+                onClick={() => createSet.mutate()}
+              >
+                Save criteria set
+              </Button>
+              <p className={styles.microcopy}>
+                Protected-characteristic criteria are blocked. These sets only help you prepare your own application.
+              </p>
+            </div>
+          </details>
         </div>
-        <details>
-          <summary>Create a reusable candidate-only criterion</summary>
-          <div className="form-grid" style={{ marginTop: 12 }}>
-            <label className="form-field">
-              <span>Set name</span>
-              <Input value={setName} maxLength={120} onChange={(event) => setSetName(event.target.value)} placeholder="Strict technical" />
-            </label>
-            <label className="form-field">
-              <span>Criterion</span>
-              <Input value={criterionLabel} maxLength={300} onChange={(event) => setCriterionLabel(event.target.value)} placeholder="Production Python experience" />
-            </label>
-            <Button
-              type="button"
-              disabled={!setName.trim() || !criterionLabel.trim() || createSet.isPending}
-              onClick={() => createSet.mutate()}
-            >
-              Save criteria set
-            </Button>
-          </div>
-          <p className={styles.disclaimer}>
-            Protected-characteristic criteria are blocked. These sets are for your own preparation and never rank other candidates.
-          </p>
-        </details>
       </div>
 
       <div className={styles.metrics}>
         <div className={styles.metric}>
-          <strong>{item.score}%</strong>
-          <span>screening readiness</span>
-        </div>
-        <div className={styles.metric}>
+          <CheckCircle2 size={16} />
           <strong>{item.counts.supported}</strong>
           <span>supported</span>
         </div>
         <div className={styles.metric}>
           <strong>{item.counts.partial}</strong>
-          <span>partial</span>
+          <span>partial evidence</span>
         </div>
         <div className={styles.metric}>
           <strong>{item.counts.not_evidenced}</strong>
           <span>not evidenced</span>
         </div>
+        <div className={styles.metric}>
+          <strong>{titleCase(item.confidence)}</strong>
+          <span>analysis confidence</span>
+        </div>
       </div>
 
       <div className={styles.block}>
         <div className={styles.blockHeader}>
-          <h4>What this perspective screens for</h4>
+          <div><h4>What this perspective screens for</h4><p>Every status is tied to evidence in your saved candidate profile.</p></div>
           <Badge>{titleCase(item.confidence)} confidence</Badge>
         </div>
         <div className={styles.criteria}>
@@ -223,46 +264,48 @@ export function RecruiterLensCard({ jobId }: { jobId: string }) {
                 {titleCase(criterion.status)}
               </Badge>
               {criterion.evidence ? (
-                <p>Evidence: {criterion.evidence.snippet}</p>
+                <p><span>Evidence</span>{criterion.evidence.snippet}</p>
               ) : (
-                <p>No explicit verified evidence found in your saved profile.</p>
+                <p><span>Evidence</span>No explicit verified evidence found in your saved profile.</p>
               )}
             </div>
           ))}
         </div>
       </div>
 
-      {item.concerns.length ? (
+      <div className={styles.insightGrid}>
         <div className={styles.block}>
-          <div className={styles.blockHeader}><h4>Likely recruiter concerns</h4></div>
-          <div className={styles.concerns}>
-            {item.concerns.slice(0, 4).map((concern) => (
-              <div className={styles.concern} key={`${concern.criterion_id}-${concern.message}`}>
-                <AlertTriangle size={16} />
-                <p>{concern.message}</p>
-              </div>
-            ))}
-          </div>
+          <div className={styles.blockHeader}><h4>Potential concerns</h4></div>
+          {item.concerns.length ? (
+            <div className={styles.concerns}>
+              {item.concerns.slice(0, 4).map((concern) => (
+                <div className={styles.concern} key={`${concern.criterion_id}-${concern.message}`}>
+                  <AlertTriangle size={16} />
+                  <p>{concern.message}</p>
+                </div>
+              ))}
+            </div>
+          ) : <p className={styles.clearState}>No additional evidence concerns surfaced in this perspective.</p>}
         </div>
-      ) : null}
 
-      {item.interview_questions.length ? (
         <div className={styles.block}>
-          <div className={styles.blockHeader}><h4>Questions those gaps could create</h4></div>
-          <div className={styles.questions}>
-            {item.interview_questions.slice(0, 4).map((question) => (
-              <div className={styles.question} key={`${question.criterion_id}-${question.question}`}>
-                <MessageCircleQuestion size={16} />
-                <p>{question.question}</p>
-              </div>
-            ))}
-          </div>
+          <div className={styles.blockHeader}><h4>Questions to prepare for</h4></div>
+          {item.interview_questions.length ? (
+            <div className={styles.questions}>
+              {item.interview_questions.slice(0, 4).map((question) => (
+                <div className={styles.question} key={`${question.criterion_id}-${question.question}`}>
+                  <MessageCircleQuestion size={16} />
+                  <p>{question.question}</p>
+                </div>
+              ))}
+            </div>
+          ) : <p className={styles.clearState}>No gap-driven questions are needed from this evidence set.</p>}
         </div>
-      ) : null}
+      </div>
 
       <p className={styles.disclaimer}>
         <ShieldCheck size={16} />
-        <span>{item.disclaimer}</span>
+        <span>{item.disclaimer} Recruiter Lens is preparation guidance—not an employer decision, viewer identity signal, or hiring probability.</span>
       </p>
     </section>
   );

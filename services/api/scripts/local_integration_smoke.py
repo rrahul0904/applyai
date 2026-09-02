@@ -218,7 +218,10 @@ def assert_local_api_and_stripe() -> None:
             # clean-room test honest about that configuration instead of treating the
             # fail-closed response as a Stripe regression.
             assert checkout.status_code == 503, checkout.text
-            assert checkout.json()["detail"] == "Paid plans are disabled for the zero-cost pilot"
+            assert checkout.json()["error"] == {
+                "code": "NOT_READY",
+                "message": "Paid plans are disabled for the zero-cost pilot",
+            }
             return
 
         assert checkout.status_code == 200, checkout.text

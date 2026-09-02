@@ -10,6 +10,7 @@ import "./candidate-cx-application.css";
 import "./candidate-cx-resume.css";
 import "./candidate-cx-plan.css";
 import "./candidate-first-value.css";
+import "./career-command-os.css";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 const geistMono = Geist_Mono({
@@ -18,8 +19,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ApplyAI",
-  description: "A structured career platform for focused job searches.",
+  title: "ApplyAI — Your Career Command OS",
+  description:
+    "A private, evidence-driven career operating system for discovering opportunities, preparing stronger applications, and keeping every next step clear.",
 };
 
 export default function RootLayout({

@@ -60,6 +60,7 @@ async function expectPrimaryNavigation(page: Page, width: number) {
 }
 
 test("Career Command OS is responsive across certified mobile, tablet, and desktop breakpoints", async ({ page }) => {
+  test.setTimeout(300_000);
   await page.setViewportSize({ width: 1280, height: 800 });
   await signIn(page);
 

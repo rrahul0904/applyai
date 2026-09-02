@@ -97,7 +97,7 @@ jobs:
 
       - name: Run each due source once
         working-directory: services/api
-        run: uv run python scripts/sync_job_sources.py --mode synchronous
+        run: uv run python scripts/sync_job_sources.py --source-identity open-jobs
 
   lean-runtime:
     if: github.event_name != 'workflow_dispatch' || !inputs.seed_bounded_job_catalogue

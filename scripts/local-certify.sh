@@ -161,7 +161,7 @@ printf '%s\n' \
   "  - governed Agent Runtime + dedicated agent SQS/DLQ + Agent Worker" \
   "  - deterministic Scout -> Research -> Resume -> Verifier workflow" \
   "  - Mailpit SMTP delivery" \
-  "  - Stripe schema mock health plus checkout/portal protocol + signed webhook persistence" \
+  "  - Stripe schema mock health; paid checkout/portal protocol when billing is enabled" \
   "  - deterministic local AI provider" \
   "  - Clerk RS256 JWT/JWKS protocol through the real ClerkAuthProvider" \
   "  - OpenAI Responses + embeddings HTTP protocol through the real provider clients" \

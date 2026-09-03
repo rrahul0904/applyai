@@ -16,6 +16,8 @@
     "local:certify": "bash scripts/local-certify.sh",
     "job-supply:acceptance": "uv run --project services/api python -m scripts.job_supply_acceptance",
     "job-supply:acceptance:report": "uv run --project services/api python -m scripts.job_supply_acceptance --allow-blocked",
+    "job-supply:initial-acceptance": "uv run --project services/api python -m scripts.job_supply_initial_acceptance",
+    "job-supply:initial-acceptance:report": "uv run --project services/api python -m scripts.job_supply_initial_acceptance --allow-blocked",
     "agent:demo": "uv run --project services/api python -m scripts.agent_demo",
     "agent:acceptance": "uv run --project services/api python -m scripts.agent_acceptance",
     "agent:acceptance:report": "uv run --project services/api python -m scripts.agent_acceptance --allow-blocked",

@@ -23,6 +23,12 @@ class DirectMemoryStorage(MemoryStorage):
     def supports_direct_upload(self) -> bool:
         return True
 
+    def direct_upload_headers(self, *, content_type: str) -> dict[str, str]:
+        return {
+            "content-type": content_type,
+            "x-amz-server-side-encryption": "AES256",
+        }
+
     def create_presigned_put(
         self,
         *,

@@ -1,10 +1,11 @@
 import io
+import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -15,8 +16,10 @@ from app.core.database import get_session
 from app.core.outbox import add_task_outbox_event, publish_outbox_once
 from app.core.queue import Task, TaskQueue, get_task_queue
 from app.core.storage import ObjectStorageProvider, get_object_storage
+from app.core.zero_cost import resume_storage_usage, resume_upload_block_reason
 from app.durability_models import ResumeUploadIntent
 from app.models import Resume, ResumeExtraction, ResumeVersion, User
+from app.resumes.processor import process_resume_version
 from app.schemas import (
     ProfileResponse,
     ProfileReviewWrite,
@@ -25,10 +28,10 @@ from app.schemas import (
     ResumeUploadIntentWrite,
     ResumeVersionResponse,
 )
-from app.resumes.processor import process_resume_version
-
 
 router = APIRouter(prefix="/resumes", tags=["resumes"])
+logger = logging.getLogger("applyai.zero_cost")
+RESUME_QUOTA_LOCK_KEY = 4_291_001
 ALLOWED_TYPES = {
     "application/pdf": ".pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
@@ -58,6 +61,49 @@ def validate_resume_identity(
             detail=f"Resume file exceeds the {settings.max_resume_bytes} byte limit",
         )
     return safe_filename, extension
+
+
+def enforce_resume_upload_quota(
+    session: Session,
+    *,
+    user: User,
+    requested_bytes: int,
+    settings: Settings,
+) -> None:
+    # Serialize reservations so concurrent uploads cannot race past the hard free-tier cap.
+    session.execute(
+        text("SELECT pg_advisory_xact_lock(:lock_key)"),
+        {"lock_key": RESUME_QUOTA_LOCK_KEY},
+    )
+    usage = resume_storage_usage(session, user=user)
+    blocked = resume_upload_block_reason(
+        usage,
+        requested_bytes=requested_bytes,
+        settings=settings,
+    )
+    if blocked is not None:
+        code, message = blocked
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={"code": code, "message": message},
+        )
+    projected_storage = usage.global_reserved_bytes + requested_bytes
+    if projected_storage >= settings.object_storage_critical_bytes:
+        logger.error(
+            "r2_storage_critical",
+            extra={
+                "reserved_bytes": projected_storage,
+                "hard_limit": settings.object_storage_hard_limit_bytes,
+            },
+        )
+    elif projected_storage >= settings.object_storage_warning_bytes:
+        logger.warning(
+            "r2_storage_warning",
+            extra={
+                "reserved_bytes": projected_storage,
+                "hard_limit": settings.object_storage_hard_limit_bytes,
+            },
+        )
 
 
 def get_or_create_master_resume(
@@ -171,7 +217,7 @@ def create_direct_upload_intent(
         content_type=content_type,
         file_size=file_size,
         storage_key=storage_key,
-        expires_at=datetime.now(timezone.utc) + timedelta(seconds=expires_in_seconds),
+        expires_at=datetime.now(UTC) + timedelta(seconds=expires_in_seconds),
         status="PENDING",
     )
     session.add(intent)
@@ -207,6 +253,12 @@ def create_resume_upload_intent(
         file_size=payload.file_size,
         settings=settings,
     )
+    enforce_resume_upload_quota(
+        session,
+        user=user,
+        requested_bytes=payload.file_size,
+        settings=settings,
+    )
     if not storage.supports_direct_upload:
         return ResumeUploadIntentResponse(upload_mode="PROXY")
 
@@ -234,10 +286,7 @@ def create_resume_upload_intent(
         resume_id=intent.resume_id,
         resume_version_id=intent.resume_version_id,
         upload_url=upload_url,
-        upload_headers={
-            "content-type": intent.content_type,
-            "x-amz-server-side-encryption": "AES256",
-        },
+        upload_headers=storage.direct_upload_headers(content_type=intent.content_type),
         expires_in_seconds=settings.s3_upload_expiration_seconds,
     )
 
@@ -276,11 +325,14 @@ def complete_resume_upload(
         if completed_version is None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail={"code": "UPLOAD_STATE_INVALID", "message": "Completed upload has no resume version"},
+                detail={
+                    "code": "UPLOAD_STATE_INVALID",
+                    "message": "Completed upload has no resume version",
+                },
             )
         return completed_version
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if intent.expires_at <= now:
         intent.status = "EXPIRED"
         session.commit()
@@ -299,12 +351,18 @@ def complete_resume_upload(
     if metadata.size != intent.file_size:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "UPLOAD_SIZE_MISMATCH", "message": "Uploaded resume size did not match intent"},
+            detail={
+                "code": "UPLOAD_SIZE_MISMATCH",
+                "message": "Uploaded resume size did not match intent",
+            },
         )
     if metadata.content_type and metadata.content_type != intent.content_type:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "UPLOAD_TYPE_MISMATCH", "message": "Uploaded resume type did not match intent"},
+            detail={
+                "code": "UPLOAD_TYPE_MISMATCH",
+                "message": "Uploaded resume type did not match intent",
+            },
         )
 
     resume = session.scalar(
@@ -387,6 +445,12 @@ async def upload_resume(
         filename=filename,
         content_type=file.content_type or "",
         file_size=len(content),
+        settings=settings,
+    )
+    enforce_resume_upload_quota(
+        session,
+        user=user,
+        requested_bytes=len(content),
         settings=settings,
     )
     version = create_pending_version(

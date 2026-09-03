@@ -112,8 +112,7 @@ export function InterviewWorkspace({ jobId }: { jobId: string }) {
 
 export function BillingWorkspace() {
   const subscription = useQuery({ queryKey: ["billing-subscription"], queryFn: platformApi.billing.subscription });
-  const checkout = useMutation({ mutationFn: platformApi.billing.checkout, onSuccess: (data) => { if (data.checkout_url) window.location.assign(data.checkout_url); }, onError: () => toast.error("Billing checkout is not configured in this environment.") });
   if (subscription.isLoading) return <Skeleton className="page-skeleton" />;
   const data = subscription.data ?? {};
-  return <><PageHeader eyebrow="Plan and usage" title="Subscription" description="Manage AI usage entitlements and the ApplyAI plan attached to your account." /><Card className="detail-section"><div className="section-header"><div><h2>{String(data.plan ?? "FREE")}</h2><p>Status: {String(data.status ?? "ACTIVE")}</p></div><Badge tone="info">{String(data.provider ?? "INTERNAL")}</Badge></div><pre style={{whiteSpace:"pre-wrap"}}>{JSON.stringify(data.entitlements ?? {}, null, 2)}</pre><div className="button-row"><Button onClick={() => checkout.mutate("PRO")}>Upgrade to Pro</Button><Button variant="secondary" onClick={() => checkout.mutate("TEAM")}>Team plan</Button></div></Card></>;
+  return <><PageHeader eyebrow="Pilot access" title="Free validation plan" description="ApplyAI is operating as a non-commercial, zero-cost pilot. Paid plans and checkout are disabled." /><Card className="detail-section"><div className="section-header"><div><h2>{String(data.plan ?? "FREE")}</h2><p>Status: {String(data.status ?? "ACTIVE")}</p></div><Badge tone="info">Zero-cost pilot</Badge></div><pre style={{whiteSpace:"pre-wrap"}}>{JSON.stringify(data.entitlements ?? {}, null, 2)}</pre></Card></>;
 }

@@ -33,7 +33,11 @@ def _seed_resume_and_job(client, database_url: str):
         )
         session.add(version)
         session.flush()
-        application = Application(user_id=user.id, job_id=job.id, current_status="PREPARING")
+        application = Application(
+            user_id=user.id,
+            job_id=job.id,
+            current_status="PREPARING",
+        )
         session.add(application)
         session.commit()
         values = {
@@ -89,6 +93,9 @@ def test_resume_share_tracks_privacy_preserving_engagement(client, database_url:
         {"session_id": sid, "event_type": "DWELL", "value": 150000},
         {"session_id": sid, "event_type": "SCROLL", "value": 92},
         {"session_id": sid, "event_type": "VIEW"},
+        # A third view represents the reload/repeat-view behavior that used to create
+        # unbounded RESUME_SHARE_RETURNED notifications. It remains analytics only.
+        {"session_id": sid, "event_type": "VIEW"},
     ):
         event = client.post(
             f"/api/v1/resume-shares/public/{token}/events",
@@ -115,7 +122,7 @@ def test_resume_share_tracks_privacy_preserving_engagement(client, database_url:
     detail = client.get(f"/api/v1/resume-shares/{share['id']}")
     assert detail.status_code == 200
     analytics = detail.json()["analytics"]
-    assert analytics["views"] == 2
+    assert analytics["views"] == 3
     assert analytics["unique_viewers"] == 1
     assert analytics["returning_viewers"] == 1
     assert analytics["downloads"] == 1
@@ -132,17 +139,23 @@ def test_resume_share_tracks_privacy_preserving_engagement(client, database_url:
     with Session(engine) as session:
         notifications = list(
             session.scalars(
-                select(Notification).where(Notification.user_id == uuid.UUID(seeded["user_id"]))
+                select(Notification).where(
+                    Notification.user_id == uuid.UUID(seeded["user_id"])
+                )
             ).all()
         )
         kinds = [item.notification_type for item in notifications]
-        assert "RESUME_SHARE_VIEWED" in kinds
-        assert "RESUME_SHARE_RETURNED" in kinds
-        assert "RESUME_SHARE_DOWNLOADED" in kinds
+        assert kinds.count("RESUME_SHARE_VIEWED") == 1
+        assert kinds.count("RESUME_SHARE_RETURNED") == 1
+        assert kinds.count("RESUME_SHARE_DOWNLOADED") == 1
     engine.dispose()
 
 
-def test_resume_share_can_be_revoked_and_is_owner_scoped(client, switch_user, database_url: str):
+def test_resume_share_can_be_revoked_and_is_owner_scoped(
+    client,
+    switch_user,
+    database_url: str,
+):
     seeded = _seed_resume_and_job(client, database_url)
     created = client.post(
         "/api/v1/resume-shares",
@@ -161,7 +174,12 @@ def test_resume_share_can_be_revoked_and_is_owner_scoped(client, switch_user, da
     )
     assert revoked.status_code == 200
     assert revoked.json()["active"] is False
-    assert client.get(f"/api/v1/resume-shares/public/{share['public_token']}").status_code == 410
+    assert (
+        client.get(
+            f"/api/v1/resume-shares/public/{share['public_token']}"
+        ).status_code
+        == 410
+    )
 
     switch_user("clerk_user_b", "b@example.com")
     assert client.get("/api/v1/resume-shares").json() == []

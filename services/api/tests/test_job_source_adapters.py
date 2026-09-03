@@ -15,6 +15,9 @@ from app.jobs.contracts import (
     normalize_title,
     validate_raw_job,
 )
+from app.jobs.pipeline import MAX_JOB_LOCATION_TEXT_LENGTH, bounded_job_locations
+from app.api.internal_job_sources import _ImportedGreenhousePayloadConnector
+from app.jobs.source_completeness import SourceCompleteness, connector_completeness
 
 
 def lever_handler(request: httpx.Request) -> httpx.Response:
@@ -153,6 +156,41 @@ def test_adapter_factory_routes_registry_source_without_scattered_conditionals()
 
     assert isinstance(JobSourceAdapterFactory.create(lever_source), LeverJobPostingConnector)
     assert isinstance(JobSourceAdapterFactory.create(ashby_source), AshbyJobBoardConnector)
+
+
+def test_job_location_is_bounded_before_canonical_persistence():
+    oversized = "Remote, " + ("United States; " * 40)
+
+    locations = bounded_job_locations([oversized, "Remote"])
+
+    assert len(locations[0]) == MAX_JOB_LOCATION_TEXT_LENGTH
+    assert locations[0].endswith("…")
+    assert locations[1] == "Remote"
+
+
+def test_imported_greenhouse_payload_preserves_official_source_metadata():
+    connector = _ImportedGreenhousePayloadConnector(
+        board_token="example",
+        company_name="Example Labs",
+        postings=[
+            {
+                "id": 101,
+                "internal_job_id": 77,
+                "title": "Data Engineer",
+                "absolute_url": "https://boards.greenhouse.io/example/jobs/101",
+                "content": "Build production data systems.",
+                "updated_at": "2026-09-01T00:00:00Z",
+            }
+        ],
+    )
+
+    record = connector.fetch(None)[0]
+
+    assert record["_applyai_company_name"] == "Example Labs"
+    assert record["_applyai_board_token"] == "example"
+    assert record["_applyai_internal_job_id"] == "77"
+    assert record["data_origin"] == "GREENHOUSE_PUBLIC_API"
+    assert connector_completeness(connector) == SourceCompleteness.PARTIAL
 
 
 def test_normalization_and_validation_are_conservative_and_explainable():

@@ -17,8 +17,10 @@ from app import (  # noqa: F401
     job_source_models,
     models,
     platform_models,
+    postgres_queue_models,
     privacy_models,
     resume_share_models,
+    zero_cost_models,
 )
 
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
@@ -12,8 +12,10 @@ from app.core.database import get_session
 from app.core.internal_auth import require_internal_api
 from app.durability_models import JobIngestionRun
 from app.job_source_models import JobSourceRegistry
+from app.jobs.connectors import ConnectorHealth, GreenhouseJobBoardConnector
 from app.jobs.contracts import JobSourceType, SourceHealthStatus, SourceTrustLevel
 from app.jobs.registry import run_registered_source
+from app.jobs.source_pipeline import RegisteredSourceIngestionPipeline
 
 
 router = APIRouter(
@@ -107,6 +109,69 @@ class JobSourceRunResponse(BaseModel):
 class ManualRunResponse(BaseModel):
     source_id: uuid.UUID
     counts: dict[str, int]
+
+
+class OfficialGreenhouseImport(BaseModel):
+    company_name: str = Field(min_length=1, max_length=255)
+    postings: list[dict] = Field(min_length=1, max_length=50)
+
+
+class _ImportedGreenhousePayloadConnector(GreenhouseJobBoardConnector):
+    """Ingest a bounded, operator-supplied Greenhouse response without outbound API egress."""
+
+    # This endpoint accepts at most 50 postings, so it cannot represent the board's
+    # full snapshot.  Never use one of these bounded imports to close jobs omitted
+    # from the operator-provided page.
+    source_completeness = "PARTIAL"
+
+    def __init__(
+        self,
+        *,
+        board_token: str,
+        company_name: str,
+        postings: list[dict],
+    ) -> None:
+        super().__init__(board_token)
+        self.company_name = company_name
+        self.postings = postings
+
+    def fetch(self, checkpoint: dict | None) -> list[dict]:
+        del checkpoint
+        fetched_at = datetime.now(timezone.utc)
+        records: list[dict] = []
+        for item in self.postings:
+            if not isinstance(item, dict) or item.get("id") is None or not item.get("title"):
+                continue
+            post_id = str(item["id"])
+            internal_job_id = item.get("internal_job_id")
+            records.append(
+                {
+                    **item,
+                    "_applyai_company_name": self.company_name,
+                    "_applyai_board_token": self.board_token,
+                    "_applyai_greenhouse_post_id": post_id,
+                    "_applyai_internal_job_id": (
+                        str(internal_job_id) if internal_job_id is not None else None
+                    ),
+                    "_applyai_source_updated_at": item.get("updated_at"),
+                    "_applyai_fetched_at": fetched_at.isoformat(),
+                    "_applyai_company_source_url": (
+                        f"{self.base_url}/{self.board_token}"
+                    ),
+                    "data_origin": "GREENHOUSE_PUBLIC_API",
+                }
+            )
+        self._last_fetch_at = fetched_at
+        self._last_count = len(records)
+        self._company_name = self.company_name
+        return records
+
+    def health(self) -> ConnectorHealth:
+        return ConnectorHealth(
+            healthy=True,
+            checked_at=datetime.now(timezone.utc),
+            detail="Operator-supplied official Greenhouse payload",
+        )
 
 
 def _get_source(session: Session, source_id: uuid.UUID) -> JobSourceRegistry:
@@ -213,6 +278,30 @@ def run_job_source(
         raise HTTPException(status_code=409, detail="Job source is disabled or blocked")
     session.commit()
     counts = run_registered_source(source_id)
+    return ManualRunResponse(source_id=source_id, counts=counts)
+
+
+@router.post("/{source_id}/import-greenhouse", response_model=ManualRunResponse)
+def import_official_greenhouse_payload(
+    source_id: uuid.UUID,
+    payload: OfficialGreenhouseImport,
+    session: Session = Depends(get_session),
+):
+    source = _get_source(session, source_id)
+    if source.source_type != JobSourceType.GREENHOUSE.value:
+        raise HTTPException(status_code=409, detail="Source is not a Greenhouse board")
+    if not source.enabled or not source.crawl_allowed:
+        raise HTTPException(status_code=409, detail="Job source is disabled or blocked")
+    board_token = str(
+        (source.configuration or {}).get("board_token") or source.source_identity
+    ).strip()
+    connector = _ImportedGreenhousePayloadConnector(
+        board_token=board_token,
+        company_name=payload.company_name,
+        postings=payload.postings,
+    )
+    counts = RegisteredSourceIngestionPipeline(session).run(source, connector)
+    connector.close()
     return ManualRunResponse(source_id=source_id, counts=counts)
 
 

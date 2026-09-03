@@ -1,3 +1,4 @@
+import anyio
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -42,7 +43,7 @@ from app.api import (
 )
 from app.core.config import get_settings
 from app.core.database import engine
-
+from app.workers.postgres import drain_bounded
 
 settings = get_settings()
 app = FastAPI(
@@ -53,11 +54,29 @@ app = FastAPI(
 )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.web_origin],
+    allow_origins=settings.allowed_web_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type", "X-ApplyAI-Internal-Token", "Stripe-Signature"],
 )
+
+
+@app.middleware("http")
+async def request_triggered_tasks(request: Request, call_next):
+    response = await call_next(request)
+    if (
+        settings.request_triggered_tasks_enabled
+        and settings.task_queue_provider == "postgres"
+        and request.method not in {"GET", "HEAD", "OPTIONS"}
+        and response.status_code < 500
+    ):
+        await anyio.to_thread.run_sync(
+            lambda: drain_bounded(
+                settings,
+                maximum_tasks=settings.request_triggered_task_limit,
+            )
+        )
+    return response
 
 
 @app.exception_handler(HTTPException)
@@ -90,7 +109,13 @@ async def validation_error(_request: Request, exc: RequestValidationError) -> JS
     ]
     return JSONResponse(
         status_code=422,
-        content={"error": {"code": "VALIDATION_ERROR", "message": "Please check the highlighted fields", "fields": fields}},
+        content={
+            "error": {
+                "code": "VALIDATION_ERROR",
+                "message": "Please check the highlighted fields",
+                "fields": fields,
+            }
+        },
     )
 
 
@@ -98,7 +123,12 @@ async def validation_error(_request: Request, exc: RequestValidationError) -> JS
 async def unexpected_error(_request: Request, _exc: Exception) -> JSONResponse:
     return JSONResponse(
         status_code=500,
-        content={"error": {"code": "INTERNAL_ERROR", "message": "Something went wrong. Please try again."}},
+        content={
+            "error": {
+                "code": "INTERNAL_ERROR",
+                "message": "Something went wrong. Please try again.",
+            }
+        },
     )
 
 
@@ -113,7 +143,10 @@ def ready() -> dict[str, str]:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
     except SQLAlchemyError as exc:
-        raise HTTPException(status_code=503, detail={"code": "NOT_READY", "message": "A required service is unavailable"}) from exc
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "NOT_READY", "message": "A required service is unavailable"},
+        ) from exc
     return {"status": "ready"}
 
 

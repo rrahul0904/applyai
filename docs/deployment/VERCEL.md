@@ -1,20 +1,23 @@
 # ApplyAI Web on Vercel
 
+Updated: 2026-08-31
+
 ## Deployment model
 
 Vercel hosts the **Next.js web application only**.
 
-The existing ApplyAI backend remains the canonical runtime for:
+The lean production backend is:
 
-- FastAPI APIs
-- PostgreSQL
-- S3 resume objects
-- durable resume processing
-- background workers / queues
-- application-agent execution
-- other long-running backend services
+```text
+Railway / FastAPI
+  -> Railway PostgreSQL
+  -> Cloudflare R2
+  -> TaskOutbox -> postgres_tasks -> Railway worker
+```
 
-The Next.js application proxies authenticated browser requests through `/api/backend/*` to `APPLYAI_API_URL`, so browser code never needs a public backend credential.
+AWS remains an optional scale profile and is not required for the launch deployment.
+
+The Next.js application proxies authenticated browser requests through `/api/backend/*` to `APPLYAI_API_URL`, so browser code never needs database, R2 or backend provider credentials.
 
 ## Vercel project
 
@@ -28,11 +31,11 @@ Use one dedicated Vercel project:
 - Install command: `cd ../.. && pnpm install --frozen-lockfile`
 - Build command: `pnpm build`
 
-Do not attach ApplyAI to SkillForge, ThreadTales, or another existing Vercel project.
+Do not attach ApplyAI to SkillForge, ThreadTales, Provenance Cleaner or another existing Vercel project.
 
 ## Required Vercel environment variables
 
-Set these for both Preview and Production unless a target-specific value is required:
+Set these for Preview and Production with environment-appropriate values:
 
 ```text
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
@@ -42,6 +45,8 @@ APP_ENV=production
 DEV_AUTH_ENABLED=false
 ```
 
+`APPLYAI_API_URL` must be the real Railway FastAPI HTTPS endpoint for the lean launch.
+
 Optional operator/admin functionality may also require:
 
 ```text
@@ -49,7 +54,7 @@ APPLYAI_OPERATOR_EMAILS
 INTERNAL_API_TOKEN
 ```
 
-Never expose `CLERK_SECRET_KEY`, `INTERNAL_API_TOKEN`, backend database credentials, AWS secrets, or Vercel tokens as `NEXT_PUBLIC_*` variables.
+Never expose `CLERK_SECRET_KEY`, `INTERNAL_API_TOKEN`, database credentials, R2 credentials or Vercel tokens as `NEXT_PUBLIC_*` variables.
 
 ## GitHub Actions secrets
 
@@ -69,23 +74,37 @@ APPLYAI_VERCEL_OPERATOR_EMAILS
 APPLYAI_VERCEL_INTERNAL_API_TOKEN
 ```
 
-The workflow creates the `applyai` Vercel project if it does not exist, links it to `rrahul0904/applyai`, applies the web root/build settings, synchronizes the target environment variables, builds with Vercel, then deploys the prebuilt artifact.
+The workflow can create the dedicated `applyai` project if it does not exist, link it to `rrahul0904/applyai`, enforce the web root/build settings, synchronize target environment variables, build with Vercel and deploy the prebuilt artifact.
+
+The branch push path intentionally skips deployment when required secrets are absent; `workflow_dispatch` fails closed instead of reporting a fake deployment.
 
 ## Promotion policy
 
-- Feature branches deploy as **Preview**.
+- `agent/lean-production-wave-1` is the final Preview release branch.
 - Production deployment is allowed only from `main`.
-- Validate the preview before promotion or a production deployment.
-- Production deployment does not migrate or replace the FastAPI backend.
+- Do not merge PR #27 until the real Railway/R2/Clerk/Open Jobs/Vercel Preview candidate acceptance gate passes.
+- After merge, run the exact-main release gate before Vercel Production promotion.
 
-## Health checks
+## Preview health checks
 
-After deployment verify:
+After a real Preview deployment verify:
 
-1. landing/sign-in page renders;
+1. `/`, `/sign-in` and `/sign-up` render;
 2. Clerk authentication completes;
-3. `/api/backend/me` reaches the configured ApplyAI API;
-4. jobs load;
-5. a job detail page renders Career Intelligence and Career System;
-6. application workspace can be created;
-7. no Vercel runtime 5xx errors are present.
+3. `/api/backend/me` reaches the Railway API;
+4. onboarding persists to Railway PostgreSQL;
+5. a synthetic résumé can be uploaded to private R2 and processed by the Railway Postgres worker;
+6. real jobs load from the production-shaped database;
+7. job detail renders Career Intelligence, Recruiter Lens and Career System;
+8. application workspace and interview preparation are usable;
+9. a Resume Share link works from a separate session and returns engagement to the owner;
+10. logout/login returns to the same candidate workspace;
+11. no unexplained Vercel runtime 5xx, hydration or browser-console errors exist.
+
+## Current provider boundary
+
+The connected Vercel team is available, but no dedicated `applyai` project currently exists. The latest deployment preflight confirmed the four required GitHub Actions values above are not configured, so all create/link/build/deploy steps were safely skipped.
+
+A meaningful Preview also depends on the real Railway API URL and Clerk instance. Do not create an empty Vercel project merely to claim that ApplyAI is deployed.
+
+See `DEPLOYMENT.md` and `docs/PRODUCTION_RELEASE_CHECKLIST.md` for the final launch order.

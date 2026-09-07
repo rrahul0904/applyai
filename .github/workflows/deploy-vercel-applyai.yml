@@ -41,7 +41,7 @@ jobs:
     name: Deploy ApplyAI web
     runs-on: ubuntu-24.04
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.target != 'production' || github.ref_name == 'main' }}
-    environment: ${{ (github.event_name == 'workflow_dispatch' && inputs.target == 'production') || (github.event_name == 'push' && github.ref_name == 'main') && 'production' || 'preview' }}
+    environment: ${{ ((github.event_name == 'workflow_dispatch' && inputs.target == 'production') || (github.event_name == 'push' && github.ref_name == 'main')) && 'production' || 'preview' }}
     steps:
       - name: Check out source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262

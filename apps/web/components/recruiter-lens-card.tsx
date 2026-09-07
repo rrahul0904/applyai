@@ -187,7 +187,9 @@ export function RecruiterLensCard({ jobId }: { jobId: string }) {
 
       <p className={styles.disclaimer}>
         <ShieldCheck size={16} aria-hidden="true" />
-        <span>{item.disclaimer}</span>
+        <span>
+          This is candidate decision support, not an employer decision or prediction. {item.disclaimer}
+        </span>
       </p>
     </section>
   );

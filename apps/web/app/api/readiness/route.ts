@@ -7,6 +7,19 @@ function keyMode(value: string | undefined, livePrefix: string, testPrefix: stri
   return "unknown" as const;
 }
 
+async function apiReachable(apiUrl: string | undefined) {
+  if (!apiUrl) return false;
+  try {
+    const response = await fetch(new URL("/ready", apiUrl), {
+      cache: "no-store",
+      signal: AbortSignal.timeout(3_000),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function GET() {
   const publishableMode = keyMode(
     process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
@@ -15,29 +28,34 @@ export async function GET() {
   );
   const secretMode = keyMode(process.env.CLERK_SECRET_KEY, "sk_live_", "sk_test_");
   const apiConfigured = Boolean(process.env.APPLYAI_API_URL);
+  const backendReachable = await apiReachable(process.env.APPLYAI_API_URL);
   const devAuthEnabled = process.env.DEV_AUTH_ENABLED === "true";
   const operatorConfigured = Boolean(
     process.env.APPLYAI_OPERATOR_EMAILS && process.env.INTERNAL_API_TOKEN,
   );
 
-  const productionReady =
+  const runtimeReady =
     apiConfigured &&
+    backendReachable &&
+    publishableMode !== "missing" &&
+    secretMode !== "missing" &&
+    !devAuthEnabled;
+
+  const productionReady =
+    runtimeReady &&
     publishableMode === "live" &&
     secretMode === "live" &&
-    !devAuthEnabled;
+    operatorConfigured;
 
   return NextResponse.json(
     {
       service: "applyai-web",
       environment: process.env.VERCEL_ENV ?? process.env.APP_ENV ?? "unknown",
-      runtime_ready:
-        apiConfigured &&
-        publishableMode !== "missing" &&
-        secretMode !== "missing" &&
-        !devAuthEnabled,
+      runtime_ready: runtimeReady,
       production_ready: productionReady,
       checks: {
         api_configured: apiConfigured,
+        api_reachable: backendReachable,
         clerk_publishable_key_mode: publishableMode,
         clerk_secret_key_mode: secretMode,
         dev_auth_enabled: devAuthEnabled,

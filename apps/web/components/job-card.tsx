@@ -54,7 +54,7 @@ export function JobCard({ job }: { job: Job }) {
           <Bookmark size={18} fill={job.saved ? "currentColor" : "none"} />
         </Button>
         <Link href={`/jobs/${job.id}`} className="ui-button ui-button-primary ui-button-small">
-          View job
+          Review role
         </Link>
       </div>
     </Card>

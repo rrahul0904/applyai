@@ -1,0 +1,42 @@
+name: Production Provider Readiness
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'apps/web/**'
+      - '.github/workflows/production-provider-readiness.yml'
+      - '.github/workflows/deploy-vercel-applyai.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: applyai-production-provider-readiness-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  production-readiness:
+    name: Production auth/API readiness
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Probe production readiness
+        env:
+          APPLYAI_PRODUCTION_URL: https://applyai-gold.vercel.app
+        run: |
+          set -euo pipefail
+          response="$(curl             --silent             --show-error             --location             --retry 5             --retry-delay 3             --max-time 20             "$APPLYAI_PRODUCTION_URL/api/readiness")"
+          printf '%s\n' "$response" | jq .
+          printf '%s\n' "$response" | jq -e '
+            .service == "applyai-web" and
+            .production_ready == true and
+            .checks.api_configured == true and
+            .checks.clerk_publishable_key_mode == "live" and
+            .checks.clerk_secret_key_mode == "live" and
+            .checks.dev_auth_enabled == false
+          ' >/dev/null || {
+            echo "::error::ApplyAI production provider configuration is not release-ready."
+            exit 1
+          }

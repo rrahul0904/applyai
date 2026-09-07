@@ -108,10 +108,10 @@ describe("JobDetailView", () => {
     expect(successMock).toHaveBeenCalledWith("Job saved");
   });
 
-  it("starts application preparation and routes to its workspace", async () => {
+  it("starts an active application and routes to its opportunity workspace", async () => {
     renderJobDetail();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Prepare application" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Start application" }));
 
     await waitFor(() => expect(api.applications.create).toHaveBeenCalledWith("job-1"));
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/applications/application-1"));

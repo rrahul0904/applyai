@@ -3,7 +3,8 @@ name: Deploy ApplyAI Web to Vercel
 on:
   push:
     branches:
-      - agent/lean-production-wave-1
+      - main
+      - agent/applyai-finalization-wave
     paths:
       - apps/web/**
       - package.json
@@ -33,14 +34,14 @@ env:
   VERCEL_TEAM_SLUG: rrahul0904-5013s-projects
   VERCEL_PROJECT_NAME: applyai
   VERCEL_PROJECT_ROOT: apps/web
-  DEPLOY_TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.target || 'preview' }}
+  DEPLOY_TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.target || github.ref_name == 'main' && 'production' || 'preview' }}
 
 jobs:
   deploy:
     name: Deploy ApplyAI web
     runs-on: ubuntu-24.04
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.target != 'production' || github.ref_name == 'main' }}
-    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.target == 'production' && 'production' || 'preview' }}
+    environment: ${{ (github.event_name == 'workflow_dispatch' && inputs.target == 'production') || (github.event_name == 'push' && github.ref_name == 'main') && 'production' || 'preview' }}
     steps:
       - name: Check out source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -66,6 +67,8 @@ jobs:
           CLERK_PUBLISHABLE_KEY: ${{ secrets.APPLYAI_VERCEL_CLERK_PUBLISHABLE_KEY }}
           CLERK_SECRET_KEY: ${{ secrets.APPLYAI_VERCEL_CLERK_SECRET_KEY }}
           EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          DEPLOY_TARGET: ${{ env.DEPLOY_TARGET }}
         run: |
           set -euo pipefail
           missing=()
@@ -78,12 +81,23 @@ jobs:
           if [ "${#missing[@]}" -gt 0 ]; then
             echo "ready=false" >> "$GITHUB_OUTPUT"
             echo "Missing Vercel deployment secrets: ${missing[*]}" >> "$GITHUB_STEP_SUMMARY"
-            if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ "$EVENT_NAME" = "workflow_dispatch" ] || [ "$REF_NAME" = "main" ] || [ "$DEPLOY_TARGET" = "production" ]; then
               echo "::error::Missing required Vercel deployment secrets: ${missing[*]}"
               exit 1
             fi
             echo "::warning::Skipping automatic preview because Vercel deployment secrets are not configured"
             exit 0
+          fi
+
+          if [ "$DEPLOY_TARGET" = "production" ]; then
+            case "$CLERK_PUBLISHABLE_KEY" in
+              pk_live_*) ;;
+              *) echo "::error::Production requires a Clerk pk_live_ publishable key"; exit 1 ;;
+            esac
+            case "$CLERK_SECRET_KEY" in
+              sk_live_*) ;;
+              *) echo "::error::Production requires a Clerk sk_live_ secret key"; exit 1 ;;
+            esac
           fi
 
           echo "ready=true" >> "$GITHUB_OUTPUT"

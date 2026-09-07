@@ -141,13 +141,22 @@ test("mobile job detail keeps decisions and Recruiter Lens readable and keyboard
 
   await capture(page, "responsive-mobile-390-job-detail-recruiter-lens");
 
-  // The button copy changes after expansion, so anchor to the stable disclosure relationship.
+  // Progressive disclosure only exists when the role surfaces more than three criteria.
+  // When there are three or fewer, the concise state is already complete and no disclosure
+  // control should be rendered.
   const criteriaDisclosure = page.locator('button[aria-controls="recruiter-lens-criteria"]');
-  await expect(criteriaDisclosure).toHaveAttribute("aria-expanded", "false");
-  await criteriaDisclosure.focus();
-  await expect(criteriaDisclosure).toBeFocused();
-  await page.keyboard.press("Enter");
-  await expect(criteriaDisclosure).toHaveAttribute("aria-expanded", "true");
+  const visibleCriteria = page.locator("#recruiter-lens-criteria > *");
+  if (await criteriaDisclosure.count()) {
+    await expect(criteriaDisclosure).toHaveAttribute("aria-expanded", "false");
+    await criteriaDisclosure.focus();
+    await expect(criteriaDisclosure).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(criteriaDisclosure).toHaveAttribute("aria-expanded", "true");
+  } else {
+    const count = await visibleCriteria.count();
+    expect(count).toBeGreaterThan(0);
+    expect(count).toBeLessThanOrEqual(3);
+  }
 
   const concernsDetails = page.locator("details").filter({ hasText: "Potential concerns" }).first();
   const concernsSummary = concernsDetails.locator("summary");

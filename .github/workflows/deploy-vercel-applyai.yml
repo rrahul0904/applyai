@@ -81,7 +81,7 @@ jobs:
           if [ "${#missing[@]}" -gt 0 ]; then
             echo "ready=false" >> "$GITHUB_OUTPUT"
             echo "Missing Vercel deployment secrets: ${missing[*]}" >> "$GITHUB_STEP_SUMMARY"
-            if [ "$EVENT_NAME" = "workflow_dispatch" ] || [ "$REF_NAME" = "main" ] || [ "$DEPLOY_TARGET" = "production" ]; then
+            if [ "$EVENT_NAME" = "workflow_dispatch" ] || [ "$REF_NAME" = "main" ] || [ "$REF_NAME" = "agent/applyai-finalization-wave" ] || [ "$DEPLOY_TARGET" = "production" ]; then
               echo "::error::Missing required Vercel deployment secrets: ${missing[*]}"
               exit 1
             fi

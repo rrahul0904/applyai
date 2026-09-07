@@ -4,6 +4,10 @@ const databaseUrl =
   process.env.E2E_DATABASE_URL
   ?? "postgresql+psycopg://applyai:applyai@127.0.0.1:55432/applyai_test";
 const devAuthSecret = process.env.E2E_DEV_AUTH_SECRET ?? "applyai-e2e-dev-secret";
+const internalApiToken =
+  process.env.E2E_INTERNAL_API_TOKEN ?? "applyai-e2e-internal-token-2026";
+const operatorEmails =
+  process.env.E2E_OPERATOR_EMAILS ?? "e2e.candidate@example.test";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -44,6 +48,7 @@ export default defineConfig({
         LOCAL_STORAGE_PATH: process.env.E2E_STORAGE_PATH ?? "/tmp/applyai-e2e-resumes",
         TASK_QUEUE_PROVIDER: "memory",
         WEB_ORIGIN: "http://127.0.0.1:3000",
+        INTERNAL_API_TOKEN: internalApiToken,
       },
     },
     {
@@ -56,6 +61,8 @@ export default defineConfig({
         DEV_AUTH_ENABLED: "true",
         DEV_AUTH_SECRET: devAuthSecret,
         APPLYAI_API_URL: "http://127.0.0.1:8000",
+        INTERNAL_API_TOKEN: internalApiToken,
+        APPLYAI_OPERATOR_EMAILS: operatorEmails,
       },
     },
   ],

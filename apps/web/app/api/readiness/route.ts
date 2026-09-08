@@ -7,16 +7,23 @@ function keyMode(value: string | undefined, livePrefix: string, testPrefix: stri
   return "unknown" as const;
 }
 
-async function apiReachable(apiUrl: string | undefined) {
-  if (!apiUrl) return false;
+async function backendReadiness(apiUrl: string | undefined) {
+  if (!apiUrl) return { reachable: false, operatorConfigured: false };
   try {
     const response = await fetch(new URL("/ready", apiUrl), {
       cache: "no-store",
       signal: AbortSignal.timeout(3_000),
     });
-    return response.ok;
+    if (!response.ok) return { reachable: false, operatorConfigured: false };
+    const payload = (await response.json().catch(() => null)) as
+      | { operator_auth_configured?: boolean }
+      | null;
+    return {
+      reachable: true,
+      operatorConfigured: payload?.operator_auth_configured === true,
+    };
   } catch {
-    return false;
+    return { reachable: false, operatorConfigured: false };
   }
 }
 
@@ -28,15 +35,12 @@ export async function GET() {
   );
   const secretMode = keyMode(process.env.CLERK_SECRET_KEY, "sk_live_", "sk_test_");
   const apiConfigured = Boolean(process.env.APPLYAI_API_URL);
-  const backendReachable = await apiReachable(process.env.APPLYAI_API_URL);
+  const backend = await backendReadiness(process.env.APPLYAI_API_URL);
   const devAuthEnabled = process.env.DEV_AUTH_ENABLED === "true";
-  const operatorConfigured = Boolean(
-    process.env.APPLYAI_OPERATOR_EMAILS && process.env.INTERNAL_API_TOKEN,
-  );
 
   const runtimeReady =
     apiConfigured &&
-    backendReachable &&
+    backend.reachable &&
     publishableMode !== "missing" &&
     secretMode !== "missing" &&
     !devAuthEnabled;
@@ -45,7 +49,7 @@ export async function GET() {
     runtimeReady &&
     publishableMode === "live" &&
     secretMode === "live" &&
-    operatorConfigured;
+    backend.operatorConfigured;
 
   return NextResponse.json(
     {
@@ -55,11 +59,12 @@ export async function GET() {
       production_ready: productionReady,
       checks: {
         api_configured: apiConfigured,
-        api_reachable: backendReachable,
+        api_reachable: backend.reachable,
         clerk_publishable_key_mode: publishableMode,
         clerk_secret_key_mode: secretMode,
         dev_auth_enabled: devAuthEnabled,
-        operator_configured: operatorConfigured,
+        operator_configured: backend.operatorConfigured,
+        operator_auth_location: "api",
       },
     },
     {

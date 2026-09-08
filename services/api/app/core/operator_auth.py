@@ -56,17 +56,26 @@ def require_operator_or_internal(
         return
 
     claims = provider.authenticate(request)
+
+    # Temporary migration bridge for existing Clerk/dev environments only. Supabase
+    # authorization deliberately never trusts an environment-variable email allowlist.
+    if claims.provider != "supabase":
+        if claims.email.strip().lower() in settings.allowed_operator_emails:
+            return
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "OPERATOR_FORBIDDEN",
+                "message": "Operator authorization is required",
+            },
+        )
+
     user = _user_for_claims(
         session,
         provider=claims.provider,
         subject=claims.subject,
     )
     if user is not None and _has_operator_role(session, user.id):
-        return
-
-    # Temporary migration bridge for existing Clerk production only. Supabase authorization
-    # deliberately never trusts an environment-variable email allowlist.
-    if claims.provider != "supabase" and claims.email.strip().lower() in settings.allowed_operator_emails:
         return
 
     raise HTTPException(

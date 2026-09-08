@@ -71,7 +71,9 @@ the authorized Clerk production instance is configured with matching live creden
 ## Production auth acceptance
 
 After the live Clerk pair is configured, run the GitHub Actions workflow
-**Production Clerk Auth Acceptance**.
+**Production Clerk Auth Acceptance**. Supply the optional `operator_email` workflow input
+with an existing Clerk production user that is present in the Railway API operator allowlist
+to include live Operations-control-plane authorization in the same run.
 
 The workflow:
 
@@ -83,7 +85,10 @@ The workflow:
 6. Redeems the token in Chromium against the real production deployment.
 7. Verifies the authenticated browser can load the candidate application and call
    `/api/backend/me`, proving browser → Next.js → FastAPI → Clerk verification.
-8. Deletes the temporary Clerk user in an `always()` cleanup step.
+8. When `operator_email` is supplied, resolves exactly one existing Clerk user, issues a
+   separate one-time ticket, and verifies `/admin/operations` through API-side operator authorization.
+9. Deletes only the temporary candidate Clerk user in an `always()` cleanup step; the existing
+   operator account is never modified or deleted.
 
 The one-time ticket is masked in GitHub Actions and is never committed or printed.
 

@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
+from app.core.config import Settings, get_settings
 from app.core.database import get_session
 from app.core.operator_auth import require_operator_or_internal
 from app.core.outbox import add_task_outbox_event
@@ -18,6 +19,8 @@ from app.core.queue import Task
 from app.durability_models import JobIngestionRun, TaskOutbox
 from app.job_source_models import JobSourceRegistry
 from app.models import Job
+from app.postgres_queue_models import PostgresTask
+from app.core.supabase_instance import supabase_instance_fingerprint
 from app.operations_models import OperationsCertification
 
 
@@ -98,7 +101,10 @@ def _certification_dict(row: OperationsCertification) -> dict[str, Any]:
 
 
 @router.get("/summary")
-def operations_summary(session: Session = Depends(get_session)) -> dict[str, Any]:
+def operations_summary(
+    session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
     now = utcnow()
     since = now - timedelta(hours=24)
     latest_certification = session.scalar(
@@ -114,8 +120,74 @@ def operations_summary(session: Session = Depends(get_session)) -> dict[str, Any
             func.coalesce(func.sum(JobIngestionRun.closed), 0),
         ).where(JobIngestionRun.started_at >= since)
     ).one()
+    pending_statuses = ["QUEUED", "RETRY_WAIT"]
+    oldest_pending_task = session.scalar(
+        select(func.min(PostgresTask.available_at)).where(
+            PostgresTask.status.in_(pending_statuses)
+        )
+    )
+    last_completed_task = session.scalar(
+        select(func.max(PostgresTask.completed_at)).where(
+            PostgresTask.status == "COMPLETED"
+        )
+    )
+    live_source_leases = _count(
+        session,
+        JobSourceRegistry,
+        JobSourceRegistry.locked_by.is_not(None),
+        JobSourceRegistry.lease_expires_at.is_not(None),
+        JobSourceRegistry.lease_expires_at > now,
+    )
+
     return {
         "generated_at": now,
+        "runtime": {
+            "auth_provider": settings.auth_provider,
+            "database_reachable": True,
+            "storage_provider": settings.object_storage_provider,
+            "storage_configured": settings.storage_runtime_configured,
+            "task_queue_provider": settings.task_queue_provider,
+            "background_worker_configured": settings.background_worker_configured,
+            "supabase_project_configured": bool(settings.resolved_supabase_project_ref),
+            "supabase_project_fingerprint": supabase_instance_fingerprint(
+                settings.supabase_url
+            ),
+        },
+        "queue": {
+            "pending": _count(
+                session,
+                PostgresTask,
+                PostgresTask.status.in_(pending_statuses),
+            ),
+            "queued": _count(
+                session,
+                PostgresTask,
+                PostgresTask.status == "QUEUED",
+            ),
+            "retrying": _count(
+                session,
+                PostgresTask,
+                PostgresTask.status == "RETRY_WAIT",
+            ),
+            "running": _count(
+                session,
+                PostgresTask,
+                PostgresTask.status == "RUNNING",
+            ),
+            "dead": _count(
+                session,
+                PostgresTask,
+                PostgresTask.status == "DEAD",
+            ),
+            "completed_24h": _count(
+                session,
+                PostgresTask,
+                PostgresTask.status == "COMPLETED",
+                PostgresTask.completed_at >= since,
+            ),
+            "oldest_pending_at": oldest_pending_task,
+            "last_completed_at": last_completed_task,
+        },
         "jobs": {
             "total": _count(session, Job),
             "active": _count(session, Job, Job.status == "ACTIVE"),
@@ -140,6 +212,7 @@ def operations_summary(session: Session = Depends(get_session)) -> dict[str, Any
                 JobSourceRegistry.crawl_allowed.is_(True),
                 JobSourceRegistry.next_run_at <= now,
             ),
+            "live_leases": live_source_leases,
         },
         "ingestion": {
             "runs_24h": _count(session, JobIngestionRun, JobIngestionRun.started_at >= since),

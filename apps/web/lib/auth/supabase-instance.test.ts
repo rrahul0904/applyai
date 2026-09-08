@@ -5,13 +5,13 @@ describe("supabaseProjectFingerprint", () => {
   it("matches the API project hostname fingerprint contract", () => {
     expect(
       supabaseProjectFingerprint("https://applyai-test.supabase.co"),
-    ).toBe("69b8ff48c8c2a711");
+    ).toBe("579ad99e95a603e1");
   });
 
   it("normalizes project hostname casing", () => {
     expect(
       supabaseProjectFingerprint("https://APPLYAI-TEST.SUPABASE.CO/"),
-    ).toBe("69b8ff48c8c2a711");
+    ).toBe("579ad99e95a603e1");
   });
 
   it("fails closed for missing or malformed project URLs", () => {

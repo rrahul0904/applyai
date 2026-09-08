@@ -77,21 +77,7 @@ def ready() -> dict[str, str | bool]:
     except SQLAlchemyError as exc:
         raise HTTPException(status_code=503, detail={"code":"NOT_READY","message":"A required service is unavailable"}) from exc
 
-    storage_configured = (
-        settings.object_storage_provider == "postgres"
-        or (
-            settings.object_storage_provider == "supabase"
-            and bool(settings.resolved_supabase_project_ref)
-            and bool(settings.supabase_storage_bucket)
-            and bool(settings.supabase_s3_access_key_id)
-            and bool(settings.supabase_s3_secret_access_key)
-        )
-        or (settings.object_storage_provider == "s3" and bool(settings.s3_bucket))
-        or (
-            settings.object_storage_provider == "local"
-            and settings.app_env.lower() not in {"staging", "production"}
-        )
-    )
+    storage_configured = settings.storage_runtime_configured
     return {
         "status": "ready",
         "database_reachable": database_reachable,
@@ -99,8 +85,7 @@ def ready() -> dict[str, str | bool]:
         "operator_auth_configured": operator_auth_configured,
         "operator_auth_location": "database" if settings.auth_provider == "supabase" else "api",
         "storage_configured": storage_configured,
-        "background_worker_configured": bool(settings.worker_drain_secret)
-        and settings.task_queue_provider == "postgres",
+        "background_worker_configured": settings.background_worker_configured,
         "internal_auth_configured": bool(settings.internal_api_token),
         "supabase_project_fingerprint": supabase_instance_fingerprint(settings.supabase_url),
         "clerk_instance_fingerprint": clerk_instance_fingerprint(settings.clerk_issuer),

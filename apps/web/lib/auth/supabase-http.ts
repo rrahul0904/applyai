@@ -5,6 +5,17 @@ export const SUPABASE_REFRESH_COOKIE = "applyai_sb_refresh";
 export const SUPABASE_PKCE_VERIFIER_COOKIE = "applyai_sb_pkce_verifier";
 export const SUPABASE_OAUTH_STATE_COOKIE = "applyai_sb_oauth_state";
 
+export const DEFAULT_SUPABASE_URL = "https://hgrmgbukjmpwnuwpyids.supabase.co";
+export const DEFAULT_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_BbBv4IIktQeCi8E_SD0iSA_DIAE4ymE";
+
+export function configuredSupabaseUrl() {
+  return (process.env.NEXT_PUBLIC_SUPABASE_URL || DEFAULT_SUPABASE_URL).replace(/\/$/, "");
+}
+
+export function configuredSupabasePublishableKey() {
+  return process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || DEFAULT_SUPABASE_PUBLISHABLE_KEY;
+}
+
 export type SupabaseAuthUser = {
   id: string;
   email?: string | null;
@@ -27,15 +38,12 @@ type SupabaseAuthError = {
 };
 
 export function supabaseConfigured() {
-  return Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL &&
-      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
-  );
+  return Boolean(configuredSupabaseUrl() && configuredSupabasePublishableKey());
 }
 
 function config() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, "");
-  const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  const url = configuredSupabaseUrl();
+  const publishableKey = configuredSupabasePublishableKey();
   if (!url || !publishableKey) {
     throw new Error("SUPABASE_AUTH_NOT_CONFIGURED");
   }

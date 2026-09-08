@@ -1,6 +1,9 @@
 import "server-only";
-import { auth, currentUser } from "@clerk/nextjs/server";
-import { getApplyAISession } from "@/lib/auth/session";
+import { currentUser } from "@clerk/nextjs/server";
+import {
+  getApplyAIAccessToken,
+  getApplyAISession,
+} from "@/lib/auth/session";
 
 export async function requireOperatorEmail(): Promise<string> {
   const session = await getApplyAISession();
@@ -10,8 +13,7 @@ export async function requireOperatorEmail(): Promise<string> {
   if (session.kind === "clerk") {
     const user = await currentUser();
     email = user?.primaryEmailAddress?.emailAddress ?? null;
-  } else {
-    // Local/E2E dev auth keeps the web-side allowlist because there is no Clerk JWT.
+  } else if (session.kind === "dev-test") {
     const allowed = new Set(
       (process.env.APPLYAI_OPERATOR_EMAILS ?? "")
         .split(",")
@@ -38,16 +40,14 @@ export async function operatorApi<T>(path: string, init: RequestInit = {}): Prom
   const headers = new Headers(init.headers);
   if (!(init.body instanceof FormData)) headers.set("content-type", "application/json");
 
-  if (session.kind === "clerk") {
-    const { userId, getToken } = await auth();
-    if (!userId) throw new Error("AUTH_REQUIRED");
-    const token = await getToken();
-    if (!token) throw new Error("SESSION_EXPIRED");
-    headers.set("authorization", `Bearer ${token}`);
-  } else {
+  if (session.kind === "dev-test") {
     const token = process.env.INTERNAL_API_TOKEN;
     if (!token) throw new Error("Operator API is not configured for development auth");
     headers.set("x-applyai-internal-token", token);
+  } else {
+    const token = await getApplyAIAccessToken();
+    if (!token) throw new Error("SESSION_EXPIRED");
+    headers.set("authorization", `Bearer ${token}`);
   }
 
   const response = await fetch(

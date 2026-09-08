@@ -61,8 +61,14 @@ def test_internal_operations_refresh_queues_source_ingest_and_reports_summary(
 
     summary = client.get("/api/v1/internal/operations/summary")
     assert summary.status_code == 200
-    assert summary.json()["sources"]["total"] == 1
-    assert summary.json()["ingestion"]["pending_source_tasks"] == 1
+    summary_payload = summary.json()
+    assert summary_payload["sources"]["total"] == 1
+    assert summary_payload["sources"]["live_leases"] == 0
+    assert summary_payload["ingestion"]["pending_source_tasks"] == 1
+    assert summary_payload["runtime"]["database_reachable"] is True
+    assert summary_payload["runtime"]["task_queue_provider"] == "memory"
+    assert summary_payload["runtime"]["storage_configured"] is True
+    assert summary_payload["queue"]["pending"] == 0
 
 
 def test_internal_operations_certification_is_persisted_and_cursor_paginated(

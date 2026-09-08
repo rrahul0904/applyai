@@ -8,8 +8,28 @@ import { recordOperationsCertification, refreshOperationSource } from "./actions
 
 type Summary = {
   generated_at: string;
+  runtime: {
+    auth_provider: string;
+    database_reachable: boolean;
+    storage_provider: string;
+    storage_configured: boolean;
+    task_queue_provider: string;
+    background_worker_configured: boolean;
+    supabase_project_configured: boolean;
+    supabase_project_fingerprint: string;
+  };
+  queue: {
+    pending: number;
+    queued: number;
+    retrying: number;
+    running: number;
+    dead: number;
+    completed_24h: number;
+    oldest_pending_at: string | null;
+    last_completed_at: string | null;
+  };
   jobs: { total: number; active: number };
-  sources: { total: number; enabled: number; healthy: number; failing: number; due: number };
+  sources: { total: number; enabled: number; healthy: number; failing: number; due: number; live_leases: number };
   ingestion: {
     runs_24h: number;
     failed_24h: number;
@@ -115,6 +135,61 @@ export default async function OperationsPage() {
       <Card className="detail-section">
         <div className="section-header">
           <div>
+            <h2>Platform runtime</h2>
+            <p>Non-secret provider and durable-worker state reported by the production API.</p>
+          </div>
+          <Badge
+            tone={
+              summary.runtime.database_reachable &&
+              summary.runtime.storage_configured &&
+              summary.runtime.background_worker_configured
+                ? "success"
+                : "warning"
+            }
+          >
+            {summary.runtime.auth_provider.toUpperCase()}
+          </Badge>
+        </div>
+        <div className="dashboard-grid">
+          <div>
+            <p className="eyebrow">Database</p>
+            <h2>{summary.runtime.database_reachable ? "Ready" : "Blocked"}</h2>
+          </div>
+          <div>
+            <p className="eyebrow">Storage</p>
+            <h2>{summary.runtime.storage_configured ? summary.runtime.storage_provider : "Blocked"}</h2>
+          </div>
+          <div>
+            <p className="eyebrow">Worker</p>
+            <h2>{summary.runtime.background_worker_configured ? "Ready" : "Blocked"}</h2>
+          </div>
+          <div>
+            <p className="eyebrow">Queue pending</p>
+            <h2>{summary.queue.pending.toLocaleString()}</h2>
+          </div>
+          <div>
+            <p className="eyebrow">Retrying</p>
+            <h2>{summary.queue.retrying.toLocaleString()}</h2>
+          </div>
+          <div>
+            <p className="eyebrow">Dead</p>
+            <h2>{summary.queue.dead.toLocaleString()}</h2>
+          </div>
+        </div>
+        <p>
+          Queue: {summary.runtime.task_queue_provider} · last completed {formatDate(summary.queue.last_completed_at)}
+          {summary.queue.oldest_pending_at ? ` · oldest pending ${formatDate(summary.queue.oldest_pending_at)}` : ""}
+        </p>
+        {summary.runtime.supabase_project_configured ? (
+          <p className="eyebrow">
+            Supabase project fingerprint {summary.runtime.supabase_project_fingerprint || "unavailable"}
+          </p>
+        ) : null}
+      </Card>
+
+      <Card className="detail-section">
+        <div className="section-header">
+          <div>
             <h2>Jobs</h2>
             <p>Canonical inventory only. Synthetic scale evidence is not counted as production job supply.</p>
           </div>
@@ -132,7 +207,7 @@ export default async function OperationsPage() {
             <h2>Sources</h2>
             <p>Policy-aware source health. “Refresh now” creates a durable SOURCE_INGEST outbox task instead of doing network work inside the browser request.</p>
           </div>
-          <Badge tone={summary.sources.failing ? "warning" : "success"}>
+          <Badge tone={summary.sources.failing || summary.sources.live_leases ? "warning" : "success"}>
             {summary.sources.healthy} healthy · {summary.sources.failing} failing
           </Badge>
         </div>
@@ -140,6 +215,7 @@ export default async function OperationsPage() {
           <div><p className="eyebrow">Registered</p><h2>{summary.sources.total}</h2></div>
           <div><p className="eyebrow">Enabled</p><h2>{summary.sources.enabled}</h2></div>
           <div><p className="eyebrow">Due</p><h2>{summary.sources.due}</h2></div>
+          <div><p className="eyebrow">Live leases</p><h2>{summary.sources.live_leases}</h2></div>
         </div>
         <div className="list-stack">
           {sources.items.map((source) => (

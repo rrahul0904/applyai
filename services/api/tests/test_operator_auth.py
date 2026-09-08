@@ -71,7 +71,7 @@ def test_operator_auth_fails_closed_when_not_configured() -> None:
             provider=StubProvider("operator@example.test"),
         )
     except HTTPException as exc:
-        assert exc.status_code == 503
-        assert exc.detail["code"] == "OPERATOR_AUTH_NOT_CONFIGURED"
+        assert exc.status_code == 403
+        assert exc.detail["code"] == "OPERATOR_FORBIDDEN"
     else:
         raise AssertionError("operator auth should fail closed when no allowlist is configured")

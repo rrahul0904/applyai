@@ -85,8 +85,14 @@ export async function signInWithPassword(email: string, password: string) {
   );
 }
 
-export async function signUpWithPassword(email: string, password: string) {
+export async function signUpWithPassword(
+  email: string,
+  password: string,
+  redirectTo?: string,
+) {
   const { url } = config();
+  const target = new URL(`${url}/auth/v1/signup`);
+  if (redirectTo) target.searchParams.set("redirect_to", redirectTo);
   return parse<
     | SupabaseTokenResponse
     | {
@@ -95,7 +101,7 @@ export async function signUpWithPassword(email: string, password: string) {
         user: SupabaseAuthUser;
       }
   >(
-    await fetch(`${url}/auth/v1/signup`, {
+    await fetch(target, {
       method: "POST",
       headers: authHeaders(),
       body: JSON.stringify({ email, password }),

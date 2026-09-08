@@ -275,6 +275,8 @@ class Settings(BaseSettings):
                 )
         if self.internal_api_token is not None and len(self.internal_api_token) < 24:
             raise ValueError("INTERNAL_API_TOKEN must contain at least 24 characters")
+        if self.worker_drain_secret is not None and len(self.worker_drain_secret) < 24:
+            raise ValueError("WORKER_DRAIN_SECRET must contain at least 24 characters")
         if not (
             self.clerk_mru_warning_threshold
             < self.clerk_mru_critical_threshold

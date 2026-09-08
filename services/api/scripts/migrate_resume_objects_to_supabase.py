@@ -10,7 +10,7 @@ from typing import Any
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
-from sqlalchemy import MetaData, create_engine, select
+from sqlalchemy import MetaData, create_engine, inspect, select
 
 from scripts.migrate_postgres_to_supabase import normalize_postgres_url, safe_git_sha
 
@@ -105,6 +105,10 @@ def migrate(args: argparse.Namespace) -> dict[str, Any]:
 
     engine = create_engine(normalize_postgres_url(database_url), pool_pre_ping=True)
     metadata = MetaData()
+    if not inspect(engine).has_table("database_objects", schema="public"):
+        report["status"] = "PASS"
+        report["note"] = "Source database has no database_objects table"
+        return report
     metadata.reflect(bind=engine, schema="public", only=["database_objects"])
     objects = metadata.tables.get("public.database_objects")
     if objects is None:

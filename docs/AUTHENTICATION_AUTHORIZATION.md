@@ -68,6 +68,32 @@ the authorized Clerk production instance is configured with matching live creden
 `/api/readiness` must report `production_ready=true`,
 `clerk_instance_match=true`, and `operator_auth_location="api"`.
 
+## Release sequence for live Clerk cutover
+
+The production site on `main` may not yet contain the readiness route while this PR is
+still under review. To avoid merging an unverified authentication change, use a gated
+production canary from the authoritative finalization branch:
+
+1. Configure the matching Clerk production instance on Railway
+   (`CLERK_ISSUER`, `CLERK_JWKS_URL`, optional audience).
+2. Configure the GitHub production-environment secrets used by the Vercel deployment
+   workflow: `VERCEL_TOKEN`, `APPLYAI_VERCEL_API_URL`,
+   `APPLYAI_VERCEL_CLERK_PUBLISHABLE_KEY`, and
+   `APPLYAI_VERCEL_CLERK_SECRET_KEY`.
+3. From `agent/applyai-finalization-wave`, dispatch **Deploy ApplyAI Web to Vercel**
+   with `target=production`. Production deployment is permitted only from `main` or
+   this authoritative finalization branch and remains protected by the GitHub
+   `production` environment.
+4. The deployment job must pass its built-in production readiness probe.
+5. Dispatch **Production Clerk Auth Acceptance** against the production URL, optionally
+   supplying the existing operator email to include live Operations authorization.
+6. Dispatch **Production Provider Readiness** and scan Vercel runtime errors.
+7. Only after every gate is green, merge PR #33. The normal `main` production deploy
+   then reproduces the already-certified release content.
+
+This sequence makes the provider cutover testable before merge without weakening the
+release branch or exposing provider credentials.
+
 ## Production auth acceptance
 
 After the live Clerk pair is configured, run the GitHub Actions workflow

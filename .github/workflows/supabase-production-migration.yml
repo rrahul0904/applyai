@@ -128,6 +128,14 @@ jobs:
         run: |
           uv run python -m scripts.migrate_postgres_to_supabase             --execute             --report ../../artifacts/supabase-data-migration-report.json
 
+      - name: Apply validated Supabase RLS and private Storage policies
+        if: ${{ inputs.execute }}
+        working-directory: services/api
+        env:
+          DATABASE_URL: ${{ env.TARGET_DATABASE_URL }}
+        run: |
+          uv run python -m scripts.apply_supabase_policies             --report ../../artifacts/supabase-policy-application.json
+
       - name: Execute resume-object migration
         if: ${{ inputs.execute }}
         working-directory: services/api

@@ -1,9 +1,11 @@
 import { SignIn } from "@clerk/nextjs";
-import { auth } from "@clerk/nextjs/server";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { CandidateAuthShell } from "@/components/candidate-auth-shell";
+import { SupabaseAuthForm } from "@/components/supabase-auth-form";
+import { getApplyAISession } from "@/lib/auth/session";
+import { supabaseConfigured } from "@/lib/auth/supabase-http";
 
 export const metadata: Metadata = {
   title: "Sign in | ApplyAI",
@@ -11,19 +13,33 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default async function SignInPage() {
-  const clerkConfigured = Boolean(
-    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY,
-  );
+export default async function SignInPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const session = await getApplyAISession();
+  if (session.authenticated) redirect("/dashboard");
 
-  if (clerkConfigured) {
-    const { userId } = await auth();
-    if (userId) redirect("/dashboard");
-  }
+  const params = await searchParams;
+  const error = typeof params.error === "string" ? params.error : undefined;
+  const checkEmail = params.check_email === "1";
+  const useSupabase = supabaseConfigured();
+  const clerkConfigured =
+    !useSupabase &&
+    Boolean(
+      process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY,
+    );
 
   return (
     <CandidateAuthShell mode="sign-in">
-      {clerkConfigured ? (
+      {useSupabase ? (
+        <SupabaseAuthForm
+          mode="sign-in"
+          error={error}
+          checkEmail={false}
+        />
+      ) : clerkConfigured ? (
         <SignIn
           path="/sign-in"
           routing="path"
@@ -42,8 +58,8 @@ export default async function SignInPage() {
         />
       ) : (
         <div className="empty-state">
-          <strong>Candidate sign-in is ready for Clerk configuration.</strong>
-          <p>Use the interactive product demo until the Clerk tenant keys are connected.</p>
+          <strong>Candidate sign-in is awaiting identity configuration.</strong>
+          <p>Use the interactive product demo until the production identity provider is connected.</p>
           <Link className="button" href="/demo">Open product demo</Link>
         </div>
       )}

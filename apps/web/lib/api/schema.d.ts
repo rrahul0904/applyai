@@ -5291,7 +5291,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: string | boolean;
+                        [key: string]: string;
                     };
                 };
             };
@@ -5313,7 +5313,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: string;
+                        [key: string]: string | boolean;
                     };
                 };
             };

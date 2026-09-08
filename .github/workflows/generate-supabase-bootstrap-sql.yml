@@ -1,0 +1,59 @@
+name: Generate Supabase Bootstrap SQL
+
+on:
+  push:
+    branches:
+      - agent/applyai-finalization-wave
+    paths:
+      - '.github/workflows/generate-supabase-bootstrap-sql.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    name: Generate Alembic offline SQL
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: agent/applyai-finalization-wave
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+        with:
+          version: "0.11.32"
+
+      - name: Install API dependencies
+        working-directory: services/api
+        run: uv sync --locked
+
+      - name: Generate exact zero-to-head PostgreSQL SQL
+        working-directory: services/api
+        env:
+          DATABASE_URL: postgresql+psycopg://applyai:offline@localhost:5432/applyai
+          APP_ENV: development
+        run: |
+          set -euo pipefail
+          mkdir -p ../../supabase/generated
+          uv run alembic upgrade head --sql > ../../supabase/generated/alembic-zero-to-head.sql
+          test -s ../../supabase/generated/alembic-zero-to-head.sql
+
+      - name: Commit generated bootstrap SQL
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- supabase/generated/alembic-zero-to-head.sql; then
+            echo "Bootstrap SQL already current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add supabase/generated/alembic-zero-to-head.sql
+          git commit -m "build: refresh Supabase bootstrap SQL"
+          git push origin HEAD:agent/applyai-finalization-wave

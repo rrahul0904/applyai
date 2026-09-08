@@ -1,7 +1,6 @@
-import { auth } from "@clerk/nextjs/server";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
-import { DEV_USER_COOKIE, devAuthEnabled } from "@/lib/auth/session";
+import { DEV_USER_COOKIE, devAuthEnabled, getApplyAIAccessToken } from "@/lib/auth/session";
 import { MAX_PROXY_BODY_BYTES, safeBackendPath } from "@/lib/api/backend-path";
 
 type RouteContext = { params: Promise<{ path: string[] }> };
@@ -58,20 +57,13 @@ async function forward(request: NextRequest, context: RouteContext) {
     headers.set("x-applyai-dev-user", email);
     headers.set("x-applyai-dev-secret", secret);
   } else {
-    const { userId, getToken } = await auth();
-    if (!userId) {
-      return NextResponse.json(
-        { error: { code: "AUTH_REQUIRED", message: "Sign in to continue." } },
-        { status: 401 },
-      );
-    }
-    const token = await getToken();
+    const token = await getApplyAIAccessToken();
     if (!token) {
       return NextResponse.json(
         {
           error: {
-            code: "SESSION_EXPIRED",
-            message: "Your session has expired. Please sign in again.",
+            code: "AUTH_REQUIRED",
+            message: "Sign in to continue.",
           },
         },
         { status: 401 },

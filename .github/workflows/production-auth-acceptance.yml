@@ -8,6 +8,11 @@ on:
         required: true
         default: https://applyai-gold.vercel.app
         type: string
+      operator_email:
+        description: Existing Clerk user email to verify API-enforced operator access (optional)
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -23,6 +28,7 @@ jobs:
     environment: production
     env:
       APPLYAI_PRODUCTION_URL: ${{ inputs.production_url }}
+      APPLYAI_PRODUCTION_OPERATOR_EMAIL: ${{ inputs.operator_email }}
       CLERK_PUBLISHABLE_KEY: ${{ secrets.APPLYAI_VERCEL_CLERK_PUBLISHABLE_KEY }}
       CLERK_SECRET_KEY: ${{ secrets.APPLYAI_VERCEL_CLERK_SECRET_KEY }}
     steps:
@@ -156,6 +162,34 @@ jobs:
           test -n "$ticket"
           echo "::add-mask::$ticket"
           echo "APPLYAI_CLERK_SIGN_IN_TOKEN=$ticket" >> "$GITHUB_ENV"
+
+      - name: Create one-time sign-in token for existing operator
+        if: ${{ inputs.operator_email != '' }}
+        run: |
+          set -euo pipefail
+          operator_email="$APPLYAI_PRODUCTION_OPERATOR_EMAIL"
+
+          curl --fail --silent --show-error --get             'https://api.clerk.com/v1/users'             --header "Authorization: Bearer $CLERK_SECRET_KEY"             --data-urlencode "email_address[]=$operator_email"             --data-urlencode "limit=2"             --output /tmp/clerk-operator-users.json
+
+          operator_count="$(jq '.data | length' /tmp/clerk-operator-users.json)"
+          if [ "$operator_count" -ne 1 ]; then
+            echo "::error::Operator acceptance requires exactly one existing Clerk user for the supplied operator email; found $operator_count"
+            exit 1
+          fi
+          operator_user_id="$(jq -r '.data[0].id // empty' /tmp/clerk-operator-users.json)"
+          test -n "$operator_user_id"
+
+          status="$(curl --silent --show-error             --output /tmp/clerk-operator-sign-in-token.json             --write-out '%{http_code}'             --request POST             'https://api.clerk.com/v1/sign_in_tokens'             --header "Authorization: Bearer $CLERK_SECRET_KEY"             --header 'Content-Type: application/json'             --data "$(jq -n --arg user_id "$operator_user_id" '{user_id: $user_id, expires_in_seconds: 300}')")"
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            jq '{errors, message}' /tmp/clerk-operator-sign-in-token.json || true
+            echo "::error::Unable to create operator Clerk sign-in token"
+            exit 1
+          fi
+
+          operator_ticket="$(jq -r '.token // empty' /tmp/clerk-operator-sign-in-token.json)"
+          test -n "$operator_ticket"
+          echo "::add-mask::$operator_ticket"
+          echo "APPLYAI_CLERK_OPERATOR_SIGN_IN_TOKEN=$operator_ticket" >> "$GITHUB_ENV"
 
       - name: Run real browser auth acceptance
         run: |

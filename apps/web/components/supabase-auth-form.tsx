@@ -27,6 +27,7 @@ export function SupabaseAuthForm({
 }) {
   const isSignUp = mode === "sign-up";
   const action = isSignUp ? signUpAction : signInAction;
+  const googleEnabled = process.env.NEXT_PUBLIC_SUPABASE_GOOGLE_ENABLED === "true";
 
   return (
     <div className={styles.form}>
@@ -69,13 +70,16 @@ export function SupabaseAuthForm({
         </button>
       </form>
 
-      <div className={styles.divider}>or</div>
-
-      <form action={googleSignInAction}>
-        <button className={styles.oauth} type="submit">
-          Continue with Google
-        </button>
-      </form>
+      {googleEnabled ? (
+        <>
+          <div className={styles.divider}>or</div>
+          <form action={googleSignInAction}>
+            <button className={styles.oauth} type="submit">
+              Continue with Google
+            </button>
+          </form>
+        </>
+      ) : null}
 
       <p className={styles.help}>
         Your authentication session is verified by Supabase before ApplyAI forwards

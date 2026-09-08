@@ -80,7 +80,9 @@ def delete_account_data(
     # Employer jobs and immutable audit records may still reference the user primary key.
     # Keep only an anonymous tombstone row so referential integrity remains valid.
     anonymous_id = uuid.uuid4()
-    user.clerk_user_id = f"deleted:{anonymous_id}"
+    user.clerk_user_id = None
+    user.auth_user_id = None
+    user.auth_provider = "deleted"
     user.email = f"deleted+{anonymous_id}@invalid.applyai.local"
     user.first_name = None
     user.last_name = None
@@ -90,5 +92,5 @@ def delete_account_data(
     return {
         "deleted": True,
         "application_data_deleted": True,
-        "identity_provider_action_required": "Delete the corresponding Clerk identity in the configured identity provider to revoke the external account itself.",
+        "identity_provider_action_required": "Delete the corresponding external identity in the configured authentication provider to revoke the external account itself.",
     }

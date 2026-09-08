@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     clerk_mru_critical_threshold: int = Field(default=45_000, ge=1)
     clerk_mru_review_threshold: int = Field(default=50_000, ge=1)
     internal_api_token: str | None = None
+    operator_emails: str = Field(
+        default="",
+        validation_alias=AliasChoices("APPLYAI_OPERATOR_EMAILS", "OPERATOR_EMAILS"),
+    )
 
     object_storage_provider: str = "local"
     local_storage_path: Path = Field(default=Path(".data/resumes"))
@@ -364,6 +368,14 @@ class Settings(BaseSettings):
                 )
 
         return self
+
+    @property
+    def allowed_operator_emails(self) -> set[str]:
+        return {
+            value.strip().lower()
+            for value in self.operator_emails.split(",")
+            if value.strip()
+        }
 
     @property
     def object_storage_hard_limit_bytes(self) -> int:

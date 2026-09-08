@@ -12,7 +12,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_session
-from app.core.internal_auth import require_internal_api
+from app.core.operator_auth import require_operator_or_internal
 from app.core.outbox import add_task_outbox_event
 from app.core.queue import Task
 from app.durability_models import JobIngestionRun, TaskOutbox
@@ -24,7 +24,7 @@ from app.operations_models import OperationsCertification
 router = APIRouter(
     prefix="/internal/operations",
     tags=["internal-operations"],
-    dependencies=[Depends(require_internal_api)],
+    dependencies=[Depends(require_operator_or_internal)],
 )
 
 

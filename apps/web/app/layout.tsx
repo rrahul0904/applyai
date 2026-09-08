@@ -3,6 +3,7 @@ import { ClerkProvider } from "@clerk/nextjs";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AppProviders } from "@/components/app-providers";
 import { PulseAtlasPageView } from "@/components/pulseatlas-page-view";
+import { supabaseConfigured } from "@/lib/auth/supabase-http";
 import "./globals.css";
 import "./platform-overrides.css";
 import "./candidate-cx.css";
@@ -22,6 +23,6 @@ export const metadata: Metadata = { title: "ApplyAI", description: "A structured
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const document = <html lang="en"><body className={`${geist.variable} ${geistMono.variable}`}><PulseAtlasPageView /><AppProviders>{children}</AppProviders></body></html>;
-  const useClerk = !process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+  const useClerk = !supabaseConfigured() && Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
   return useClerk ? <ClerkProvider>{document}</ClerkProvider> : document;
 }

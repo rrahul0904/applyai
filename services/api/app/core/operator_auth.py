@@ -1,24 +1,50 @@
 from __future__ import annotations
 
 import secrets
+import uuid
 
 from fastapi import Depends, HTTPException, Request, status
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.core.auth import AuthProvider, get_auth_provider
 from app.core.config import Settings, get_settings
+from app.core.database import get_session
+from app.models import Role, User, UserRole
+
+
+def _user_for_claims(session: Session, *, provider: str, subject: str) -> User | None:
+    if provider == "supabase":
+        try:
+            auth_user_id = uuid.UUID(subject)
+        except ValueError:
+            return None
+        return session.scalar(select(User).where(User.auth_user_id == auth_user_id))
+    return session.scalar(select(User).where(User.clerk_user_id == subject))
+
+
+def _has_operator_role(session: Session, user_id: uuid.UUID) -> bool:
+    return (
+        session.scalar(
+            select(UserRole.user_id)
+            .join(Role, Role.id == UserRole.role_id)
+            .where(
+                UserRole.user_id == user_id,
+                Role.name.in_(("operator", "admin")),
+            )
+            .limit(1)
+        )
+        is not None
+    )
 
 
 def require_operator_or_internal(
     request: Request,
     settings: Settings = Depends(get_settings),
     provider: AuthProvider = Depends(get_auth_provider),
+    session: Session = Depends(get_session),
 ) -> None:
-    """Authorize either a trusted service token or an authenticated operator.
-
-    The service token remains available for automation and internal workers. Browser/operator
-    traffic should use the candidate's Clerk bearer token and is checked against the API-side
-    allowlist, keeping INTERNAL_API_TOKEN out of the web deployment.
-    """
+    """Authorize a backend service token or an authenticated database-role operator."""
 
     supplied_internal = request.headers.get("x-applyai-internal-token", "")
     expected_internal = settings.internal_api_token
@@ -29,22 +55,24 @@ def require_operator_or_internal(
     ):
         return
 
-    allowed = settings.allowed_operator_emails
-    if not allowed:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={
-                "code": "OPERATOR_AUTH_NOT_CONFIGURED",
-                "message": "Operator authorization is not configured",
-            },
-        )
-
     claims = provider.authenticate(request)
-    if claims.email.strip().lower() not in allowed:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": "OPERATOR_FORBIDDEN",
-                "message": "Operator authorization is required",
-            },
-        )
+    user = _user_for_claims(
+        session,
+        provider=claims.provider,
+        subject=claims.subject,
+    )
+    if user is not None and _has_operator_role(session, user.id):
+        return
+
+    # Temporary migration bridge for existing Clerk production only. Supabase authorization
+    # deliberately never trusts an environment-variable email allowlist.
+    if claims.provider != "supabase" and claims.email.strip().lower() in settings.allowed_operator_emails:
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={
+            "code": "OPERATOR_FORBIDDEN",
+            "message": "Operator authorization is required",
+        },
+    )

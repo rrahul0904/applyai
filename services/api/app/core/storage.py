@@ -182,6 +182,69 @@ class S3ObjectStorageProvider(ObjectStorageProvider):
         )
 
 
+class SupabaseObjectStorageProvider(ObjectStorageProvider):
+    """Private Supabase Storage accessed through its S3-compatible server endpoint."""
+
+    def __init__(self, settings: Settings) -> None:
+        endpoint = settings.supabase_s3_endpoint_url
+        if not endpoint or not settings.resolved_supabase_project_ref:
+            raise RuntimeError("SUPABASE_URL or SUPABASE_PROJECT_REF is required")
+        if not settings.supabase_s3_access_key_id or not settings.supabase_s3_secret_access_key:
+            raise RuntimeError(
+                "SUPABASE_S3_ACCESS_KEY_ID and SUPABASE_S3_SECRET_ACCESS_KEY are required"
+            )
+        self.bucket = settings.supabase_storage_bucket
+        self.client = boto3.client(
+            "s3",
+            region_name=settings.supabase_storage_region,
+            endpoint_url=endpoint,
+            config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+            aws_access_key_id=settings.supabase_s3_access_key_id,
+            aws_secret_access_key=settings.supabase_s3_secret_access_key,
+        )
+
+    @property
+    def supports_direct_upload(self) -> bool:
+        return True
+
+    def create_presigned_put(
+        self,
+        *,
+        key: str,
+        content_type: str,
+        expires_in_seconds: int,
+    ) -> str:
+        return self.client.generate_presigned_url(
+            "put_object",
+            Params={"Bucket": self.bucket, "Key": key, "ContentType": content_type},
+            ExpiresIn=expires_in_seconds,
+            HttpMethod="PUT",
+        )
+
+    def put(self, *, key: str, content: BinaryIO, content_type: str) -> None:
+        self.client.upload_fileobj(
+            content,
+            self.bucket,
+            key,
+            ExtraArgs={"ContentType": content_type},
+        )
+
+    def delete(self, *, key: str) -> None:
+        self.client.delete_object(Bucket=self.bucket, Key=key)
+
+    def get(self, *, key: str) -> bytes:
+        response = self.client.get_object(Bucket=self.bucket, Key=key)
+        return response["Body"].read()
+
+    def head(self, *, key: str) -> StorageObjectMetadata:
+        response = self.client.head_object(Bucket=self.bucket, Key=key)
+        return StorageObjectMetadata(
+            size=int(response["ContentLength"]),
+            content_type=response.get("ContentType"),
+            etag=response.get("ETag"),
+        )
+
+
 class DatabaseObjectStorageProvider(ObjectStorageProvider):
     """Hard-capped object storage inside the pilot's Neon Free Postgres project."""
 
@@ -255,6 +318,8 @@ def get_object_storage(
 ) -> ObjectStorageProvider:
     if settings.object_storage_provider == "s3":
         return S3ObjectStorageProvider(settings)
+    if settings.object_storage_provider == "supabase":
+        return SupabaseObjectStorageProvider(settings)
     if settings.object_storage_provider == "postgres":
         return DatabaseObjectStorageProvider(settings)
     return LocalObjectStorageProvider(settings.local_storage_path)

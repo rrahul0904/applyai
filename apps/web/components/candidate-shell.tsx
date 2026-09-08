@@ -15,6 +15,7 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import { signOutAction } from "@/app/auth/actions";
 import { devSignOut } from "@/app/dev-login/actions";
 import type { ApplyAISession } from "@/lib/auth/session";
 import { cn } from "@/lib/utils";
@@ -112,8 +113,8 @@ export function CandidateShell({
               <strong>Your account</strong>
               <span>{email}</span>
             </div>
-            {session.kind === "dev-test" ? (
-              <form action={devSignOut}>
+            {session.kind === "dev-test" || session.kind === "supabase" ? (
+              <form action={session.kind === "supabase" ? signOutAction : devSignOut}>
                 <button className="logout-button" type="submit" aria-label="Sign out">
                   <LogOut size={18} />
                 </button>

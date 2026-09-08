@@ -1,4 +1,5 @@
 name: Generate Supabase Bootstrap SQL
+# bootstrap-generator-trigger
 
 on:
   push:

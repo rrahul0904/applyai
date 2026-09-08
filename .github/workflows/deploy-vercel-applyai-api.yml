@@ -1,0 +1,214 @@
+name: Deploy ApplyAI API to Vercel
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Vercel deployment target
+        required: true
+        default: preview
+        type: choice
+        options:
+          - preview
+          - production
+
+permissions:
+  contents: read
+
+concurrency:
+  group: applyai-vercel-api-${{ inputs.target }}
+  cancel-in-progress: false
+
+env:
+  VERCEL_TEAM_ID: team_zmEezpOKGZy2sH5nqTfO44LD
+  VERCEL_TEAM_SLUG: rrahul0904-5013s-projects
+  VERCEL_PROJECT_NAME: applyai-api
+  VERCEL_PROJECT_ROOT: services/api
+  WEB_ORIGIN: https://applyai-gold.vercel.app
+
+jobs:
+  deploy-api:
+    name: Deploy FastAPI to Vercel
+    runs-on: ubuntu-24.04
+    environment: ${{ inputs.target == 'production' && 'production' || 'preview' }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+        with:
+          version: "0.11.32"
+
+      - name: Validate deployment secrets
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          DATABASE_URL: ${{ secrets.APPLYAI_SUPABASE_DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.APPLYAI_SUPABASE_URL }}
+          SUPABASE_S3_ACCESS_KEY_ID: ${{ secrets.APPLYAI_SUPABASE_S3_ACCESS_KEY_ID }}
+          SUPABASE_S3_SECRET_ACCESS_KEY: ${{ secrets.APPLYAI_SUPABASE_S3_SECRET_ACCESS_KEY }}
+          WORKER_DRAIN_SECRET: ${{ secrets.APPLYAI_WORKER_DRAIN_SECRET }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in VERCEL_TOKEN DATABASE_URL SUPABASE_URL SUPABASE_S3_ACCESS_KEY_ID SUPABASE_S3_SECRET_ACCESS_KEY WORKER_DRAIN_SECRET; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("$name")
+            fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Missing required ApplyAI API deployment secrets: ${missing[*]}"
+            exit 1
+          fi
+          if [ "${#WORKER_DRAIN_SECRET}" -lt 24 ]; then
+            echo "::error::APPLYAI_WORKER_DRAIN_SECRET must be at least 24 characters"
+            exit 1
+          fi
+
+      - name: Validate Supabase database schema
+        working-directory: services/api
+        env:
+          DATABASE_URL: ${{ secrets.APPLYAI_SUPABASE_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          uv sync --locked
+          uv run alembic upgrade head
+          uv run alembic current
+          uv run alembic heads
+          uv run alembic check
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Ensure dedicated API project exists
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          project_url="https://api.vercel.com/v9/projects/${VERCEL_PROJECT_NAME}?teamId=${VERCEL_TEAM_ID}"
+          status="$(curl --silent --output /tmp/vercel-api-project.json --write-out '%{http_code}'             --header "Authorization: Bearer ${VERCEL_TOKEN}"             "$project_url")"
+
+          if [ "$status" = "404" ]; then
+            create_status="$(curl --silent --output /tmp/vercel-api-project-create.json --write-out '%{http_code}'               --request POST               --url "https://api.vercel.com/v11/projects?teamId=${VERCEL_TEAM_ID}"               --header "Authorization: Bearer ${VERCEL_TOKEN}"               --header "Content-Type: application/json"               --data "{\"name\":\"${VERCEL_PROJECT_NAME}\",\"rootDirectory\":\"${VERCEL_PROJECT_ROOT}\",\"gitRepository\":{\"type\":\"github\",\"repo\":\"rrahul0904/applyai\"}}")"
+            if [ "$create_status" -lt 200 ] || [ "$create_status" -ge 300 ]; then
+              cat /tmp/vercel-api-project-create.json
+              echo "::error::Unable to create the ApplyAI FastAPI Vercel project"
+              exit 1
+            fi
+          elif [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            cat /tmp/vercel-api-project.json
+            exit 1
+          fi
+
+      - name: Link FastAPI checkout
+        working-directory: services/api
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          vercel link             --yes             --project "$VERCEL_PROJECT_NAME"             --scope "$VERCEL_TEAM_SLUG"             --token "$VERCEL_TOKEN"
+
+      - name: Synchronize API environment
+        working-directory: services/api
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          DATABASE_URL: ${{ secrets.APPLYAI_SUPABASE_DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.APPLYAI_SUPABASE_URL }}
+          SUPABASE_S3_ACCESS_KEY_ID: ${{ secrets.APPLYAI_SUPABASE_S3_ACCESS_KEY_ID }}
+          SUPABASE_S3_SECRET_ACCESS_KEY: ${{ secrets.APPLYAI_SUPABASE_S3_SECRET_ACCESS_KEY }}
+          WORKER_DRAIN_SECRET: ${{ secrets.APPLYAI_WORKER_DRAIN_SECRET }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          set -euo pipefail
+
+          set_env() {
+            key="$1"
+            value="$2"
+            printf '%s' "$value" | vercel env add "$key" "$TARGET"               --force --yes --scope "$VERCEL_TEAM_SLUG" --token "$VERCEL_TOKEN"
+          }
+
+          set_sensitive_env() {
+            key="$1"
+            value="$2"
+            printf '%s' "$value" | vercel env add "$key" "$TARGET"               --force --yes --sensitive --scope "$VERCEL_TEAM_SLUG" --token "$VERCEL_TOKEN"
+          }
+
+          set_sensitive_env DATABASE_URL "$DATABASE_URL"
+          set_env APP_ENV "$([ "$TARGET" = production ] && echo production || echo staging)"
+          set_env DEPLOYMENT_PROFILE lean
+          set_env AUTH_PROVIDER supabase
+          set_env SUPABASE_URL "$SUPABASE_URL"
+          set_env SUPABASE_STORAGE_BUCKET resumes
+          set_env SUPABASE_STORAGE_REGION us-east-2
+          set_sensitive_env SUPABASE_S3_ACCESS_KEY_ID "$SUPABASE_S3_ACCESS_KEY_ID"
+          set_sensitive_env SUPABASE_S3_SECRET_ACCESS_KEY "$SUPABASE_S3_SECRET_ACCESS_KEY"
+          set_env OBJECT_STORAGE_PROVIDER supabase
+          set_env TASK_QUEUE_PROVIDER postgres
+          set_sensitive_env WORKER_DRAIN_SECRET "$WORKER_DRAIN_SECRET"
+          set_env WORKER_DRAIN_BATCH_SIZE 5
+          set_env REQUEST_TRIGGERED_TASKS_ENABLED true
+          set_env REQUEST_TRIGGERED_TASK_LIMIT 1
+          set_env WEB_ORIGIN "$WEB_ORIGIN"
+          set_env WEB_ORIGINS '[]'
+          set_env SEED_DEVELOPMENT_JOBS false
+          set_env AI_PROVIDER deterministic
+
+      - name: Pull Vercel project settings
+        working-directory: services/api
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          vercel pull             --yes             --environment "$TARGET"             --scope "$VERCEL_TEAM_SLUG"             --token "$VERCEL_TOKEN"
+
+      - name: Build FastAPI artifact
+        working-directory: services/api
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          if [ "$TARGET" = production ]; then
+            vercel build --prod --scope "$VERCEL_TEAM_SLUG" --token "$VERCEL_TOKEN"
+          else
+            vercel build --scope "$VERCEL_TEAM_SLUG" --token "$VERCEL_TOKEN"
+          fi
+
+      - name: Deploy FastAPI artifact
+        id: deploy
+        working-directory: services/api
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          set -euo pipefail
+          if [ "$TARGET" = production ]; then
+            url="$(vercel deploy --prebuilt --prod --scope "$VERCEL_TEAM_SLUG" --token "$VERCEL_TOKEN")"
+          else
+            url="$(vercel deploy --prebuilt --scope "$VERCEL_TEAM_SLUG" --token "$VERCEL_TOKEN")"
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          {
+            echo "### ApplyAI FastAPI deployment"
+            echo "- Target: $TARGET"
+            echo "- SHA: $GITHUB_SHA"
+            echo "- URL: $url"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify API health and Supabase readiness
+        env:
+          API_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 5 --retry-delay 3             "$API_URL/health" | jq -e '.status == "ok"' >/dev/null
+          curl --fail --silent --show-error --retry 5 --retry-delay 3             "$API_URL/ready" | jq -e '
+              .status == "ready" and
+              .database_reachable == true and
+              .auth_provider == "supabase" and
+              .storage_configured == true and
+              .background_worker_configured == true and
+              (.supabase_project_fingerprint | length) > 0
+            ' >/dev/null

@@ -37,7 +37,13 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = uuid_pk()
-    clerk_user_id: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    clerk_user_id: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
+    auth_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), unique=True, nullable=True, index=True
+    )
+    auth_provider: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="clerk", server_default="clerk"
+    )
     email: Mapped[str] = mapped_column(String(320), nullable=False)
     first_name: Mapped[str | None] = mapped_column(String(120))
     last_name: Mapped[str | None] = mapped_column(String(120))
@@ -53,6 +59,27 @@ class User(Base):
     )
 
     profile: Mapped[CandidateProfile | None] = relationship(back_populates="user")
+
+
+class Role(Base):
+    __tablename__ = "roles"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    name: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
+    description: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    created_at: Mapped[datetime] = created_at()
+
+
+class UserRole(Base):
+    __tablename__ = "user_roles"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    role_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True
+    )
+    created_at: Mapped[datetime] = created_at()
 
 
 class CandidateProfile(Base):

@@ -72,7 +72,12 @@ export async function signUpAction(formData: FormData) {
   if (!supabaseConfigured()) redirect("/sign-up?error=auth_not_configured");
   const { email, password } = normalizedCredentials(formData);
   try {
-    const result = await signUpWithPassword(email, password);
+    const origin = originFromHeaders(await headers());
+    const result = await signUpWithPassword(
+      email,
+      password,
+      `${origin}/auth/callback`,
+    );
     if ("access_token" in result && result.access_token && result.refresh_token) {
       await persistSupabaseSession(result as Parameters<typeof persistSupabaseSession>[0]);
       redirect("/onboarding");

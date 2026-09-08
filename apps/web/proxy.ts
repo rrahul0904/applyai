@@ -1,11 +1,25 @@
 import { clerkMiddleware } from "@clerk/nextjs/server";
+import type { NextFetchEvent, NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import { refreshSupabaseSessionProxy } from "@/lib/auth/supabase-proxy";
+import { supabaseConfigured } from "@/lib/auth/supabase-http";
 
-const authenticationProxy = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+const clerkAuthenticationProxy = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
   ? clerkMiddleware()
-  : () => NextResponse.next();
+  : null;
 
-export default authenticationProxy;
+export default async function authenticationProxy(
+  request: NextRequest,
+  event: NextFetchEvent,
+) {
+  if (supabaseConfigured()) {
+    return refreshSupabaseSessionProxy(request);
+  }
+  if (clerkAuthenticationProxy) {
+    return clerkAuthenticationProxy(request, event);
+  }
+  return NextResponse.next();
+}
 
 export const config = {
   matcher: [

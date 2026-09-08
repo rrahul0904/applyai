@@ -53,12 +53,16 @@ async def unexpected_error(_request: Request, _exc: Exception) -> JSONResponse:
 def health() -> dict[str, str]: return {"status":"ok"}
 
 @app.get("/ready")
-def ready() -> dict[str, str]:
+def ready() -> dict[str, str | bool]:
     try:
         with engine.connect() as connection: connection.execute(text("SELECT 1"))
     except SQLAlchemyError as exc:
         raise HTTPException(status_code=503, detail={"code":"NOT_READY","message":"A required service is unavailable"}) from exc
-    return {"status":"ready"}
+    return {
+        "status": "ready",
+        "operator_auth_configured": bool(settings.allowed_operator_emails),
+        "internal_auth_configured": bool(settings.internal_api_token),
+    }
 
 for router in (me.router,onboarding.router,profiles.router,resumes.router,jobs.router,applications.router,career_memory.router,career_intelligence_v2.router,candidate_platform.router,semantic_matching.router,company_intelligence.router,employer_platform.router,billing_platform.router,privacy.router): app.include_router(router,prefix="/api/v1")
 for product_router in (candidate_workspace.router,career_product_contract.router,career_product_polish.router,career_product.router,career_system.router,recruiter_lens.router,resume_shares.router,agents.router,application_agent.router,application_agent_documents.router): app.include_router(product_router,prefix="/api/v1",include_in_schema=False)

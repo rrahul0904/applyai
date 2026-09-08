@@ -1,26 +1,11 @@
-import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
+import { clerkPublishableKeyInstanceFingerprint } from "@/lib/auth/clerk-instance";
 
 function keyMode(value: string | undefined, livePrefix: string, testPrefix: string) {
   if (!value) return "missing" as const;
   if (value.startsWith(livePrefix)) return "live" as const;
   if (value.startsWith(testPrefix)) return "test" as const;
   return "unknown" as const;
-}
-
-function publishableKeyInstanceFingerprint(value: string | undefined) {
-  if (!value || !/^pk_(test|live)_/.test(value)) return "";
-  try {
-    const encoded = value.replace(/^pk_(test|live)_/, "");
-    const decoded = Buffer.from(encoded, "base64").toString("utf8").replace(/\$$/, "");
-    const normalized = decoded.includes("://") ? decoded : `https://${decoded}`;
-    const hostname = new URL(normalized).hostname.trim().toLowerCase();
-    return hostname
-      ? createHash("sha256").update(hostname).digest("hex").slice(0, 16)
-      : "";
-  } catch {
-    return "";
-  }
 }
 
 async function backendReadiness(apiUrl: string | undefined) {
@@ -64,7 +49,7 @@ export async function GET() {
   const apiConfigured = Boolean(process.env.APPLYAI_API_URL);
   const backend = await backendReadiness(process.env.APPLYAI_API_URL);
   const devAuthEnabled = process.env.DEV_AUTH_ENABLED === "true";
-  const webClerkFingerprint = publishableKeyInstanceFingerprint(
+  const webClerkFingerprint = clerkPublishableKeyInstanceFingerprint(
     process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
   );
   const clerkInstanceMatch = Boolean(

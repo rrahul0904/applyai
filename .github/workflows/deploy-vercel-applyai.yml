@@ -40,7 +40,7 @@ jobs:
   deploy:
     name: Deploy ApplyAI web
     runs-on: ubuntu-24.04
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.target != 'production' || github.ref_name == 'main' }}
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.target != 'production' || github.ref_name == 'main' || github.ref_name == 'agent/applyai-finalization-wave' }}
     environment: ${{ ((github.event_name == 'workflow_dispatch' && inputs.target == 'production') || (github.event_name == 'push' && github.ref_name == 'main')) && 'production' || 'preview' }}
     steps:
       - name: Check out source
@@ -247,6 +247,8 @@ jobs:
             echo ""
             echo "- Target: $DEPLOY_TARGET"
             echo "- Project: $VERCEL_PROJECT_NAME"
+            echo "- Git ref: $GITHUB_REF_NAME"
+            echo "- Git SHA: $GITHUB_SHA"
             echo "- URL: $deployment_url"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -261,3 +263,30 @@ jobs:
             --output /tmp/applyai-vercel-home.html \
             "$DEPLOYMENT_URL/"
           test -s /tmp/applyai-vercel-home.html
+
+      - name: Require production readiness for production canary
+        if: ${{ steps.preflight.outputs.ready == 'true' && env.DEPLOY_TARGET == 'production' }}
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 24); do
+            if response="$(curl --fail --silent --show-error --location --max-time 20 "$DEPLOYMENT_URL/api/readiness" 2>/dev/null)" && \
+               printf '%s\n' "$response" | jq -e '
+                 .production_ready == true and
+                 .checks.api_configured == true and
+                 .checks.api_reachable == true and
+                 .checks.operator_configured == true and
+                 .checks.operator_auth_location == "api" and
+                 .checks.clerk_publishable_key_mode == "live" and
+                 .checks.clerk_secret_key_mode == "live" and
+                 .checks.clerk_instance_match == true and
+                 .checks.dev_auth_enabled == false
+               ' >/dev/null; then
+              echo "Production canary readiness passed on attempt $attempt" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::Production canary never reached the required cross-provider readiness state"
+          exit 1

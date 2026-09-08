@@ -38,6 +38,7 @@ jobs:
               .checks.operator_auth_location == "api" and
               .checks.clerk_publishable_key_mode == "live" and
               .checks.clerk_secret_key_mode == "live" and
+              .checks.clerk_instance_match == true and
               .checks.dev_auth_enabled == false
             ' >/dev/null 2>&1; then
               printf '%s\n' "$response" | jq .

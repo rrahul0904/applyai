@@ -1,3 +1,6 @@
+import hashlib
+from urllib.parse import urlparse
+
 import anyio
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -52,6 +55,13 @@ async def unexpected_error(_request: Request, _exc: Exception) -> JSONResponse:
 @app.get("/health")
 def health() -> dict[str, str]: return {"status":"ok"}
 
+def _clerk_instance_fingerprint() -> str:
+    issuer_host = (urlparse(settings.clerk_issuer or "").hostname or "").strip().lower()
+    if not issuer_host:
+        return ""
+    return hashlib.sha256(issuer_host.encode("utf-8")).hexdigest()[:16]
+
+
 @app.get("/ready")
 def ready() -> dict[str, str | bool]:
     try:
@@ -62,6 +72,7 @@ def ready() -> dict[str, str | bool]:
         "status": "ready",
         "operator_auth_configured": bool(settings.allowed_operator_emails),
         "internal_auth_configured": bool(settings.internal_api_token),
+        "clerk_instance_fingerprint": _clerk_instance_fingerprint(),
     }
 
 for router in (me.router,onboarding.router,profiles.router,resumes.router,jobs.router,applications.router,career_memory.router,career_intelligence_v2.router,candidate_platform.router,semantic_matching.router,company_intelligence.router,employer_platform.router,billing_platform.router,privacy.router): app.include_router(router,prefix="/api/v1")

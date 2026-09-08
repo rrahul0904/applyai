@@ -1,0 +1,179 @@
+name: Production Clerk Auth Acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      production_url:
+        description: ApplyAI production URL
+        required: true
+        default: https://applyai-gold.vercel.app
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: applyai-production-clerk-acceptance
+  cancel-in-progress: false
+
+jobs:
+  clerk-auth-acceptance:
+    name: Real Clerk browser to FastAPI acceptance
+    runs-on: ubuntu-24.04
+    environment: production
+    env:
+      APPLYAI_PRODUCTION_URL: ${{ inputs.production_url }}
+      CLERK_PUBLISHABLE_KEY: ${{ secrets.APPLYAI_VERCEL_CLERK_PUBLISHABLE_KEY }}
+      CLERK_SECRET_KEY: ${{ secrets.APPLYAI_VERCEL_CLERK_SECRET_KEY }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        with:
+          version: 10.13.1
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.13.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Validate live Clerk secrets
+        run: |
+          set -euo pipefail
+          case "${CLERK_PUBLISHABLE_KEY:-}" in
+            pk_live_*) ;;
+            *) echo "::error::Production acceptance requires APPLYAI_VERCEL_CLERK_PUBLISHABLE_KEY=pk_live_..."; exit 1 ;;
+          esac
+          case "${CLERK_SECRET_KEY:-}" in
+            sk_live_*) ;;
+            *) echo "::error::Production acceptance requires APPLYAI_VERCEL_CLERK_SECRET_KEY=sk_live_..."; exit 1 ;;
+          esac
+
+      - name: Require production readiness before browser acceptance
+        run: |
+          set -euo pipefail
+          response="$(curl --fail --silent --show-error --location --max-time 20 "$APPLYAI_PRODUCTION_URL/api/readiness")"
+          printf '%s\n' "$response" | jq -e '
+            .production_ready == true and
+            .checks.api_reachable == true and
+            .checks.operator_configured == true and
+            .checks.operator_auth_location == "api" and
+            .checks.clerk_publishable_key_mode == "live" and
+            .checks.clerk_secret_key_mode == "live" and
+            .checks.clerk_instance_match == true and
+            .checks.dev_auth_enabled == false
+          ' >/dev/null
+
+      - name: Install web dependencies and Chromium
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm --dir apps/web exec playwright install --with-deps chromium
+
+      - name: Create temporary Clerk user and one-time sign-in token
+        id: clerk-test-user
+        run: |
+          set -euo pipefail
+
+          frontend_host="$(node - <<'NODE'
+          const key = process.env.CLERK_PUBLISHABLE_KEY || "";
+          const encoded = key.replace(/^pk_(test|live)_/, "");
+          const decoded = Buffer.from(encoded, "base64").toString("utf8").replace(/\$$/, "");
+          const url = new URL(decoded.includes("://") ? decoded : `https://${decoded}`);
+          process.stdout.write(url.hostname);
+          NODE
+          )"
+          test -n "$frontend_host"
+
+          curl --fail --silent --show-error             "https://$frontend_host/v1/environment"             --output /tmp/clerk-environment.json
+
+          unsupported_required="$(jq -r '
+            .user_settings.attributes
+            | to_entries[]
+            | select(.value.required == true)
+            | .key
+            | select(. != "email_address" and . != "phone_number" and . != "username" and . != "first_name" and . != "last_name" and . != "password")
+          ' /tmp/clerk-environment.json)"
+          if [ -n "$unsupported_required" ]; then
+            echo "::error::Production Clerk user model has unsupported required attributes: $unsupported_required"
+            exit 1
+          fi
+
+          if ! jq -e '.user_settings.attributes.email_address.enabled == true' /tmp/clerk-environment.json >/dev/null; then
+            echo "::error::ApplyAI production acceptance requires Clerk email addresses to be enabled"
+            exit 1
+          fi
+
+          test_email="applyai-release-${GITHUB_RUN_ID}@example.com"
+          test_username="applyai_release_${GITHUB_RUN_ID}"
+          phone_suffix="$(printf '%04d' "$((GITHUB_RUN_ID % 10000))")"
+          test_phone="+1555000${phone_suffix}"
+          test_password="Aa9!$(openssl rand -hex 14)"
+
+          payload="$(jq -n             --arg email "$test_email"             '{email_address: [$email], skip_legal_checks: true}')"
+
+          if jq -e '.user_settings.attributes.first_name.enabled == true' /tmp/clerk-environment.json >/dev/null; then
+            payload="$(jq --arg value "ApplyAI" '. + {first_name: $value}' <<<"$payload")"
+          fi
+          if jq -e '.user_settings.attributes.last_name.enabled == true' /tmp/clerk-environment.json >/dev/null; then
+            payload="$(jq --arg value "Release" '. + {last_name: $value}' <<<"$payload")"
+          fi
+          if jq -e '.user_settings.attributes.username.required == true' /tmp/clerk-environment.json >/dev/null; then
+            payload="$(jq --arg value "$test_username" '. + {username: $value}' <<<"$payload")"
+          fi
+          if jq -e '.user_settings.attributes.phone_number.required == true' /tmp/clerk-environment.json >/dev/null; then
+            payload="$(jq --arg value "$test_phone" '. + {phone_number: [$value]}' <<<"$payload")"
+          fi
+          if jq -e '.user_settings.attributes.password.enabled == true' /tmp/clerk-environment.json >/dev/null; then
+            payload="$(jq --arg value "$test_password" '. + {password: $value}' <<<"$payload")"
+          fi
+
+          create_status="$(curl --silent --show-error             --output /tmp/clerk-user.json             --write-out '%{http_code}'             --request POST             'https://api.clerk.com/v1/users'             --header "Authorization: Bearer $CLERK_SECRET_KEY"             --header 'Content-Type: application/json'             --data "$payload")"
+          if [ "$create_status" -lt 200 ] || [ "$create_status" -ge 300 ]; then
+            jq '{errors, message}' /tmp/clerk-user.json || true
+            echo "::error::Unable to create temporary Clerk production acceptance user"
+            exit 1
+          fi
+
+          user_id="$(jq -r '.id // empty' /tmp/clerk-user.json)"
+          test -n "$user_id"
+          echo "APPLYAI_CLERK_TEST_USER_ID=$user_id" >> "$GITHUB_ENV"
+          echo "APPLYAI_PRODUCTION_TEST_EMAIL=$test_email" >> "$GITHUB_ENV"
+
+          token_status="$(curl --silent --show-error             --output /tmp/clerk-sign-in-token.json             --write-out '%{http_code}'             --request POST             'https://api.clerk.com/v1/sign_in_tokens'             --header "Authorization: Bearer $CLERK_SECRET_KEY"             --header 'Content-Type: application/json'             --data "$(jq -n --arg user_id "$user_id" '{user_id: $user_id, expires_in_seconds: 300}')")"
+          if [ "$token_status" -lt 200 ] || [ "$token_status" -ge 300 ]; then
+            jq '{errors, message}' /tmp/clerk-sign-in-token.json || true
+            echo "::error::Unable to create temporary Clerk sign-in token"
+            exit 1
+          fi
+
+          ticket="$(jq -r '.token // empty' /tmp/clerk-sign-in-token.json)"
+          test -n "$ticket"
+          echo "::add-mask::$ticket"
+          echo "APPLYAI_CLERK_SIGN_IN_TOKEN=$ticket" >> "$GITHUB_ENV"
+
+      - name: Run real browser auth acceptance
+        run: |
+          pnpm --dir apps/web exec playwright test             --config=playwright.production-auth.config.ts             e2e/production-auth.spec.ts
+
+      - name: Delete temporary Clerk user
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APPLYAI_CLERK_TEST_USER_ID:-}" ] || [ -z "${CLERK_SECRET_KEY:-}" ]; then
+            exit 0
+          fi
+          status="$(curl --silent --show-error             --output /tmp/clerk-delete-user.json             --write-out '%{http_code}'             --request DELETE             "https://api.clerk.com/v1/users/$APPLYAI_CLERK_TEST_USER_ID"             --header "Authorization: Bearer $CLERK_SECRET_KEY")"
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            echo "::warning::Temporary Clerk test user cleanup returned HTTP $status"
+          fi
+
+      - name: Scan production runtime errors after auth acceptance
+        if: ${{ success() }}
+        run: |
+          echo "Real browser authentication succeeded. Complete release certification with the Vercel runtime error scan and production provider readiness workflow." >> "$GITHUB_STEP_SUMMARY"

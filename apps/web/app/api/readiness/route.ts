@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 
 function keyMode(value: string | undefined, livePrefix: string, testPrefix: string) {
@@ -7,23 +8,49 @@ function keyMode(value: string | undefined, livePrefix: string, testPrefix: stri
   return "unknown" as const;
 }
 
+function publishableKeyInstanceFingerprint(value: string | undefined) {
+  if (!value || !/^pk_(test|live)_/.test(value)) return "";
+  try {
+    const encoded = value.replace(/^pk_(test|live)_/, "");
+    const decoded = Buffer.from(encoded, "base64").toString("utf8").replace(/\$$/, "");
+    const normalized = decoded.includes("://") ? decoded : `https://${decoded}`;
+    const hostname = new URL(normalized).hostname.trim().toLowerCase();
+    return hostname
+      ? createHash("sha256").update(hostname).digest("hex").slice(0, 16)
+      : "";
+  } catch {
+    return "";
+  }
+}
+
 async function backendReadiness(apiUrl: string | undefined) {
-  if (!apiUrl) return { reachable: false, operatorConfigured: false };
+  if (!apiUrl) {
+    return { reachable: false, operatorConfigured: false, clerkFingerprint: "" };
+  }
   try {
     const response = await fetch(new URL("/ready", apiUrl), {
       cache: "no-store",
       signal: AbortSignal.timeout(3_000),
     });
-    if (!response.ok) return { reachable: false, operatorConfigured: false };
+    if (!response.ok) {
+      return { reachable: false, operatorConfigured: false, clerkFingerprint: "" };
+    }
     const payload = (await response.json().catch(() => null)) as
-      | { operator_auth_configured?: boolean }
+      | {
+          operator_auth_configured?: boolean;
+          clerk_instance_fingerprint?: string;
+        }
       | null;
     return {
       reachable: true,
       operatorConfigured: payload?.operator_auth_configured === true,
+      clerkFingerprint:
+        typeof payload?.clerk_instance_fingerprint === "string"
+          ? payload.clerk_instance_fingerprint
+          : "",
     };
   } catch {
-    return { reachable: false, operatorConfigured: false };
+    return { reachable: false, operatorConfigured: false, clerkFingerprint: "" };
   }
 }
 
@@ -37,12 +64,21 @@ export async function GET() {
   const apiConfigured = Boolean(process.env.APPLYAI_API_URL);
   const backend = await backendReadiness(process.env.APPLYAI_API_URL);
   const devAuthEnabled = process.env.DEV_AUTH_ENABLED === "true";
+  const webClerkFingerprint = publishableKeyInstanceFingerprint(
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
+  );
+  const clerkInstanceMatch = Boolean(
+    webClerkFingerprint &&
+      backend.clerkFingerprint &&
+      webClerkFingerprint === backend.clerkFingerprint,
+  );
 
   const runtimeReady =
     apiConfigured &&
     backend.reachable &&
     publishableMode !== "missing" &&
     secretMode !== "missing" &&
+    clerkInstanceMatch &&
     !devAuthEnabled;
 
   const productionReady =
@@ -62,6 +98,7 @@ export async function GET() {
         api_reachable: backend.reachable,
         clerk_publishable_key_mode: publishableMode,
         clerk_secret_key_mode: secretMode,
+        clerk_instance_match: clerkInstanceMatch,
         dev_auth_enabled: devAuthEnabled,
         operator_configured: backend.operatorConfigured,
         operator_auth_location: "api",

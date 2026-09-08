@@ -16,6 +16,7 @@ from app.api import (
 )
 from app.core.clerk_instance import clerk_instance_fingerprint
 from app.core.config import get_settings
+from app.core.supabase_instance import supabase_instance_fingerprint
 from app.core.database import engine
 from app.core.pulseatlas import dispatch_request_event
 from app.workers.postgres import drain_bounded
@@ -56,13 +57,50 @@ def health() -> dict[str, str]: return {"status":"ok"}
 @app.get("/ready")
 def ready() -> dict[str, str | bool]:
     try:
-        with engine.connect() as connection: connection.execute(text("SELECT 1"))
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+            database_reachable = True
+            if settings.auth_provider == "supabase":
+                operator_auth_configured = bool(
+                    connection.scalar(
+                        text(
+                            "SELECT EXISTS ("
+                            "SELECT 1 FROM user_roles ur "
+                            "JOIN roles r ON r.id = ur.role_id "
+                            "WHERE r.name IN ('operator', 'admin')"
+                            ")"
+                        )
+                    )
+                )
+            else:
+                operator_auth_configured = bool(settings.allowed_operator_emails)
     except SQLAlchemyError as exc:
         raise HTTPException(status_code=503, detail={"code":"NOT_READY","message":"A required service is unavailable"}) from exc
+
+    storage_configured = (
+        settings.object_storage_provider == "postgres"
+        or (
+            settings.object_storage_provider == "supabase"
+            and bool(settings.resolved_supabase_project_ref)
+            and bool(settings.supabase_storage_bucket)
+            and bool(settings.supabase_s3_access_key_id)
+            and bool(settings.supabase_s3_secret_access_key)
+        )
+        or (settings.object_storage_provider == "s3" and bool(settings.s3_bucket))
+        or (
+            settings.object_storage_provider == "local"
+            and settings.app_env.lower() not in {"staging", "production"}
+        )
+    )
     return {
         "status": "ready",
-        "operator_auth_configured": bool(settings.allowed_operator_emails),
+        "database_reachable": database_reachable,
+        "auth_provider": settings.auth_provider,
+        "operator_auth_configured": operator_auth_configured,
+        "operator_auth_location": "database" if settings.auth_provider == "supabase" else "api",
+        "storage_configured": storage_configured,
         "internal_auth_configured": bool(settings.internal_api_token),
+        "supabase_project_fingerprint": supabase_instance_fingerprint(settings.supabase_url),
         "clerk_instance_fingerprint": clerk_instance_fingerprint(settings.clerk_issuer),
     }
 

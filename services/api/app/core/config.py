@@ -92,6 +92,8 @@ class Settings(BaseSettings):
     postgres_worker_poll_seconds: float = Field(default=1.0, ge=0.1, le=30.0)
     request_triggered_tasks_enabled: bool = False
     request_triggered_task_limit: int = Field(default=1, ge=1, le=5)
+    worker_drain_secret: str | None = None
+    worker_drain_batch_size: int = Field(default=5, ge=1, le=25)
     resume_processing_timeout_seconds: int = Field(default=900, ge=60, le=86_400)
     outbox_batch_size: int = Field(default=25, ge=1, le=100)
     outbox_retry_base_seconds: int = Field(default=5, ge=1, le=300)

@@ -35,6 +35,7 @@ jobs:
               .checks.api_configured == true and
               .checks.api_reachable == true and
               .checks.operator_configured == true and
+              .checks.operator_auth_location == "api" and
               .checks.clerk_publishable_key_mode == "live" and
               .checks.clerk_secret_key_mode == "live" and
               .checks.dev_auth_enabled == false

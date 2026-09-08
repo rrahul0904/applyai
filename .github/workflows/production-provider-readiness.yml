@@ -6,8 +6,11 @@ on:
       - main
     paths:
       - 'apps/web/**'
+      - 'services/api/**'
+      - 'supabase/**'
       - '.github/workflows/production-provider-readiness.yml'
       - '.github/workflows/deploy-vercel-applyai.yml'
+      - '.github/workflows/deploy-vercel-applyai-api.yml'
   workflow_dispatch:
 
 permissions:
@@ -19,7 +22,7 @@ concurrency:
 
 jobs:
   production-readiness:
-    name: Production auth/API readiness
+    name: Production Vercel + Supabase readiness
     runs-on: ubuntu-24.04
     steps:
       - name: Probe production readiness
@@ -27,6 +30,7 @@ jobs:
           APPLYAI_PRODUCTION_URL: https://applyai-gold.vercel.app
         run: |
           set -euo pipefail
+          response='{}'
           for attempt in $(seq 1 24); do
             response="$(curl               --silent               --show-error               --location               --max-time 20               "$APPLYAI_PRODUCTION_URL/api/readiness" || true)"
             if printf '%s\n' "$response" | jq -e '
@@ -34,11 +38,14 @@ jobs:
               .production_ready == true and
               .checks.api_configured == true and
               .checks.api_reachable == true and
+              .checks.database_reachable == true and
+              .checks.storage_configured == true and
+              .checks.background_worker_configured == true and
+              .checks.auth_provider == "supabase" and
+              .checks.supabase_auth_configured == true and
+              .checks.supabase_instance_match == true and
               .checks.operator_configured == true and
-              .checks.operator_auth_location == "api" and
-              .checks.clerk_publishable_key_mode == "live" and
-              .checks.clerk_secret_key_mode == "live" and
-              .checks.clerk_instance_match == true and
+              .checks.operator_auth_location == "database" and
               .checks.dev_auth_enabled == false
             ' >/dev/null 2>&1; then
               printf '%s\n' "$response" | jq .
@@ -47,5 +54,5 @@ jobs:
             if [ "$attempt" -lt 24 ]; then sleep 5; fi
           done
           printf '%s\n' "$response" | jq . || true
-          echo "::error::ApplyAI production provider configuration is not release-ready."
+          echo "::error::ApplyAI Vercel + Supabase production provider configuration is not release-ready."
           exit 1

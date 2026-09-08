@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from app.core.internal_auth import require_internal_api
+from app.core.operator_auth import require_operator_or_internal
 from app.durability_models import TaskOutbox
 from app.job_source_models import JobSourceRegistry
 from app.main import app
@@ -38,7 +38,7 @@ def _seed_source(database_url: str) -> str:
 def test_internal_operations_refresh_queues_source_ingest_and_reports_summary(
     client, database_url: str
 ) -> None:
-    app.dependency_overrides[require_internal_api] = lambda: None
+    app.dependency_overrides[require_operator_or_internal] = lambda: None
     source_id = _seed_source(database_url)
 
     response = client.post(f"/api/v1/internal/operations/sources/{source_id}/refresh")
@@ -68,7 +68,7 @@ def test_internal_operations_refresh_queues_source_ingest_and_reports_summary(
 def test_internal_operations_certification_is_persisted_and_cursor_paginated(
     client, database_url: str
 ) -> None:
-    app.dependency_overrides[require_internal_api] = lambda: None
+    app.dependency_overrides[require_operator_or_internal] = lambda: None
 
     for status in ("BLOCKED", "PASS"):
         response = client.post(

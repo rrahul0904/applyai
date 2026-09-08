@@ -11,16 +11,18 @@ from app.api import (
     candidate_platform, candidate_workspace, career_intelligence_v2, career_memory, career_product,
     career_product_contract, career_product_polish, career_system, company_intelligence, employer_platform,
     internal_agents, internal_ai_evaluation, internal_ai_quality, internal_job_discoveries, internal_job_quality,
-    internal_job_sources, internal_job_supply, internal_platform_admin, job_imports, jobs, me, onboarding, privacy,
+    internal_job_sources, internal_job_supply, internal_operations, internal_platform_admin, internal_worker, job_imports, jobs, me, onboarding, privacy,
     profiles, recruiter_lens, resume_shares, resumes, semantic_matching,
 )
+from app.core.clerk_instance import clerk_instance_fingerprint
 from app.core.config import get_settings
+from app.core.supabase_instance import supabase_instance_fingerprint
 from app.core.database import engine
 from app.core.pulseatlas import dispatch_request_event
 from app.workers.postgres import drain_bounded
 
 settings = get_settings()
-app = FastAPI(title="ApplyAI API", version="0.4.0", openapi_url="/api/v1/openapi.json", docs_url="/api/docs")
+app = FastAPI(title="ApplyAI API", version="0.4.1", openapi_url="/api/v1/openapi.json", docs_url="/api/docs")
 app.add_middleware(CORSMiddleware, allow_origins=settings.allowed_web_origins, allow_credentials=True, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"], allow_headers=["Authorization", "Content-Type", "X-ApplyAI-Internal-Token", "Stripe-Signature"])
 
 @app.middleware("http")
@@ -53,14 +55,43 @@ async def unexpected_error(_request: Request, _exc: Exception) -> JSONResponse:
 def health() -> dict[str, str]: return {"status":"ok"}
 
 @app.get("/ready")
-def ready() -> dict[str, str]:
+def ready() -> dict[str, str | bool]:
     try:
-        with engine.connect() as connection: connection.execute(text("SELECT 1"))
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+            database_reachable = True
+            if settings.auth_provider == "supabase":
+                operator_auth_configured = bool(
+                    connection.scalar(
+                        text(
+                            "SELECT EXISTS ("
+                            "SELECT 1 FROM user_roles ur "
+                            "JOIN roles r ON r.id = ur.role_id "
+                            "WHERE r.name IN ('operator', 'admin')"
+                            ")"
+                        )
+                    )
+                )
+            else:
+                operator_auth_configured = bool(settings.allowed_operator_emails)
     except SQLAlchemyError as exc:
         raise HTTPException(status_code=503, detail={"code":"NOT_READY","message":"A required service is unavailable"}) from exc
-    return {"status":"ready"}
+
+    storage_configured = settings.storage_runtime_configured
+    return {
+        "status": "ready",
+        "database_reachable": database_reachable,
+        "auth_provider": settings.auth_provider,
+        "operator_auth_configured": operator_auth_configured,
+        "operator_auth_location": "database" if settings.auth_provider == "supabase" else "api",
+        "storage_configured": storage_configured,
+        "background_worker_configured": settings.background_worker_configured,
+        "internal_auth_configured": bool(settings.internal_api_token),
+        "supabase_project_fingerprint": supabase_instance_fingerprint(settings.supabase_url),
+        "clerk_instance_fingerprint": clerk_instance_fingerprint(settings.clerk_issuer),
+    }
 
 for router in (me.router,onboarding.router,profiles.router,resumes.router,jobs.router,applications.router,career_memory.router,career_intelligence_v2.router,candidate_platform.router,semantic_matching.router,company_intelligence.router,employer_platform.router,billing_platform.router,privacy.router): app.include_router(router,prefix="/api/v1")
 for product_router in (candidate_workspace.router,career_product_contract.router,career_product_polish.router,career_product.router,career_system.router,recruiter_lens.router,resume_shares.router,agents.router,application_agent.router,application_agent_documents.router): app.include_router(product_router,prefix="/api/v1",include_in_schema=False)
 app.include_router(job_imports.router,prefix="/api/v1",include_in_schema=False)
-for internal_router in (internal_agents.router,application_agent.internal_router,application_agent_documents.internal_router,internal_job_sources.router,internal_job_discoveries.router,internal_job_quality.router,internal_job_supply.router,internal_ai_quality.router,internal_ai_evaluation.router,internal_platform_admin.router): app.include_router(internal_router,prefix="/api/v1",include_in_schema=False)
+for internal_router in (internal_agents.router,application_agent.internal_router,application_agent_documents.internal_router,internal_job_sources.router,internal_job_discoveries.router,internal_job_quality.router,internal_job_supply.router,internal_ai_quality.router,internal_ai_evaluation.router,internal_operations.router,internal_platform_admin.router,internal_worker.router): app.include_router(internal_router,prefix="/api/v1",include_in_schema=False)

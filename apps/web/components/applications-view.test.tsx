@@ -56,7 +56,7 @@ describe("ApplicationsView", () => {
     expect(api.jobs.detail).not.toHaveBeenCalled();
   });
 
-  it("renders the persisted empty state when no applications exist", async () => {
+  it("renders the persisted opportunity empty state when no active pursuits exist", async () => {
     vi.mocked(api.applications.list).mockResolvedValue({
       items: [],
       next_cursor: null,
@@ -64,7 +64,7 @@ describe("ApplicationsView", () => {
     });
     renderApplications();
 
-    expect(await screen.findByText("No applications yet")).toBeDefined();
+    expect(await screen.findByText("No active opportunities yet")).toBeDefined();
     expect(screen.getByRole("link", { name: "Explore jobs" }).getAttribute("href")).toBe("/jobs");
   });
 

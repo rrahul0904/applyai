@@ -16,6 +16,7 @@ from app import (  # noqa: F401
     job_quality_models,
     job_source_models,
     models,
+    operations_models,
     platform_models,
     postgres_queue_models,
     privacy_models,

@@ -1,0 +1,149 @@
+name: Production Supabase Auth Acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      production_url:
+        description: ApplyAI production URL
+        required: true
+        default: https://applyai-gold.vercel.app
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: applyai-production-supabase-auth-acceptance
+  cancel-in-progress: false
+
+jobs:
+  supabase-auth-acceptance:
+    name: Real Supabase browser to FastAPI acceptance
+    runs-on: ubuntu-24.04
+    environment: production
+    env:
+      APPLYAI_PRODUCTION_URL: ${{ inputs.production_url }}
+      SUPABASE_URL: ${{ secrets.APPLYAI_SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ secrets.APPLYAI_SUPABASE_PUBLISHABLE_KEY }}
+      SUPABASE_SECRET_KEY: ${{ secrets.APPLYAI_SUPABASE_SECRET_KEY }}
+      APPLYAI_PRODUCTION_OPERATOR_EMAIL: ${{ secrets.APPLYAI_PRODUCTION_OPERATOR_EMAIL }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        with:
+          version: 10.13.1
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.13.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Validate Supabase production secrets
+        run: |
+          set -euo pipefail
+          for name in SUPABASE_URL SUPABASE_PUBLISHABLE_KEY SUPABASE_SECRET_KEY APPLYAI_PRODUCTION_OPERATOR_EMAIL; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing required production secret: $name"
+              exit 1
+            fi
+          done
+          case "$SUPABASE_URL" in
+            https://*.supabase.co) ;;
+            *) echo "::error::SUPABASE_URL must be the hosted HTTPS project URL"; exit 1 ;;
+          esac
+
+      - name: Require Supabase production readiness
+        run: |
+          set -euo pipefail
+          response="$(curl --fail --silent --show-error --location --max-time 20 "$APPLYAI_PRODUCTION_URL/api/readiness")"
+          printf '%s\n' "$response" | jq -e '
+            .production_ready == true and
+            .checks.api_reachable == true and
+            .checks.database_reachable == true and
+            .checks.storage_configured == true and
+            .checks.background_worker_configured == true and
+            .checks.auth_provider == "supabase" and
+            .checks.supabase_auth_configured == true and
+            .checks.supabase_instance_match == true and
+            .checks.operator_configured == true and
+            .checks.operator_auth_location == "database" and
+            .checks.dev_auth_enabled == false
+          ' >/dev/null
+
+      - name: Install web dependencies and Chromium
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm --dir apps/web exec playwright install --with-deps chromium
+
+      - name: Create temporary confirmed Supabase candidate
+        run: |
+          set -euo pipefail
+          test_email="applyai-release-${GITHUB_RUN_ID}@example.com"
+          test_password="Aa9!$(openssl rand -hex 16)"
+
+          status="$(curl --silent --show-error             --output /tmp/supabase-user.json             --write-out '%{http_code}'             --request POST             "$SUPABASE_URL/auth/v1/admin/users"             --header "apikey: $SUPABASE_SECRET_KEY"             --header "Authorization: Bearer $SUPABASE_SECRET_KEY"             --header 'Content-Type: application/json'             --data "$(jq -n --arg email "$test_email" --arg password "$test_password"               '{email:$email,password:$password,email_confirm:true,user_metadata:{first_name:"ApplyAI",last_name:"Release"}}')")"
+
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            jq '{code,error_code,msg,message}' /tmp/supabase-user.json || true
+            echo "::error::Unable to create temporary Supabase candidate"
+            exit 1
+          fi
+
+          user_id="$(jq -r '.id // empty' /tmp/supabase-user.json)"
+          test -n "$user_id"
+          echo "APPLYAI_SUPABASE_TEST_USER_ID=$user_id" >> "$GITHUB_ENV"
+          echo "APPLYAI_PRODUCTION_TEST_EMAIL=$test_email" >> "$GITHUB_ENV"
+          echo "::add-mask::$test_password"
+          echo "APPLYAI_PRODUCTION_TEST_PASSWORD=$test_password" >> "$GITHUB_ENV"
+
+      - name: Create one-time session for existing operator
+        run: |
+          set -euo pipefail
+          status="$(curl --silent --show-error             --output /tmp/operator-link.json             --write-out '%{http_code}'             --request POST             "$SUPABASE_URL/auth/v1/admin/generate_link"             --header "apikey: $SUPABASE_SECRET_KEY"             --header "Authorization: Bearer $SUPABASE_SECRET_KEY"             --header 'Content-Type: application/json'             --data "$(jq -n --arg email "$APPLYAI_PRODUCTION_OPERATOR_EMAIL"               '{type:"magiclink",email:$email}')")"
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            jq '{code,error_code,msg,message}' /tmp/operator-link.json || true
+            echo "::error::Unable to generate operator one-time link"
+            exit 1
+          fi
+
+          token_hash="$(jq -r '.hashed_token // empty' /tmp/operator-link.json)"
+          test -n "$token_hash"
+
+          verify_status="$(curl --silent --show-error             --output /tmp/operator-session.json             --write-out '%{http_code}'             --request POST             "$SUPABASE_URL/auth/v1/verify"             --header "apikey: $SUPABASE_PUBLISHABLE_KEY"             --header 'Content-Type: application/json'             --data "$(jq -n --arg token_hash "$token_hash"               '{type:"magiclink",token_hash:$token_hash}')")"
+          if [ "$verify_status" -lt 200 ] || [ "$verify_status" -ge 300 ]; then
+            jq '{code,error_code,msg,message}' /tmp/operator-session.json || true
+            echo "::error::Unable to exchange operator one-time token"
+            exit 1
+          fi
+
+          access_token="$(jq -r '.access_token // empty' /tmp/operator-session.json)"
+          refresh_token="$(jq -r '.refresh_token // empty' /tmp/operator-session.json)"
+          test -n "$access_token"
+          test -n "$refresh_token"
+          echo "::add-mask::$access_token"
+          echo "::add-mask::$refresh_token"
+          echo "APPLYAI_OPERATOR_ACCESS_TOKEN=$access_token" >> "$GITHUB_ENV"
+          echo "APPLYAI_OPERATOR_REFRESH_TOKEN=$refresh_token" >> "$GITHUB_ENV"
+
+      - name: Run real browser candidate and operator acceptance
+        run: |
+          pnpm --dir apps/web exec playwright test             --config=playwright.production-supabase-auth.config.ts             e2e/production-supabase-auth.spec.ts
+
+      - name: Delete temporary Supabase Auth candidate
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APPLYAI_SUPABASE_TEST_USER_ID:-}" ] || [ -z "${SUPABASE_SECRET_KEY:-}" ]; then
+            exit 0
+          fi
+          status="$(curl --silent --show-error             --output /tmp/supabase-delete-user.json             --write-out '%{http_code}'             --request DELETE             "$SUPABASE_URL/auth/v1/admin/users/$APPLYAI_SUPABASE_TEST_USER_ID"             --header "apikey: $SUPABASE_SECRET_KEY"             --header "Authorization: Bearer $SUPABASE_SECRET_KEY")"
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            echo "::warning::Temporary Supabase Auth user cleanup returned HTTP $status"
+          fi

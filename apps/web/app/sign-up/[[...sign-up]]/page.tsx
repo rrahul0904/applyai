@@ -1,9 +1,11 @@
 import { SignUp } from "@clerk/nextjs";
-import { auth } from "@clerk/nextjs/server";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { CandidateAuthShell } from "@/components/candidate-auth-shell";
+import { SupabaseAuthForm } from "@/components/supabase-auth-form";
+import { getApplyAISession } from "@/lib/auth/session";
+import { supabaseConfigured } from "@/lib/auth/supabase-http";
 
 export const metadata: Metadata = {
   title: "Create account | ApplyAI",
@@ -11,19 +13,33 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default async function SignUpPage() {
-  const clerkConfigured = Boolean(
-    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY,
-  );
+export default async function SignUpPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const session = await getApplyAISession();
+  if (session.authenticated) redirect("/onboarding");
 
-  if (clerkConfigured) {
-    const { userId } = await auth();
-    if (userId) redirect("/dashboard");
-  }
+  const params = await searchParams;
+  const error = typeof params.error === "string" ? params.error : undefined;
+  const checkEmail = params.check_email === "1";
+  const useSupabase = supabaseConfigured();
+  const clerkConfigured =
+    !useSupabase &&
+    Boolean(
+      process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY,
+    );
 
   return (
     <CandidateAuthShell mode="sign-up">
-      {clerkConfigured ? (
+      {useSupabase ? (
+        <SupabaseAuthForm
+          mode="sign-up"
+          error={error}
+          checkEmail={checkEmail}
+        />
+      ) : clerkConfigured ? (
         <SignUp
           path="/sign-up"
           routing="path"
@@ -42,8 +58,8 @@ export default async function SignUpPage() {
         />
       ) : (
         <div className="empty-state">
-          <strong>Account creation is ready for Clerk configuration.</strong>
-          <p>Use the interactive product demo until the Clerk tenant keys are connected.</p>
+          <strong>Candidate account creation is awaiting identity configuration.</strong>
+          <p>Use the interactive product demo until the production identity provider is connected.</p>
           <Link className="button" href="/demo">Open product demo</Link>
         </div>
       )}

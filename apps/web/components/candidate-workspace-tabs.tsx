@@ -52,3 +52,18 @@ export function CareerWorkspaceTabs({ activeHref }: { activeHref: string }) {
     />
   );
 }
+
+
+export function ApplicationWorkspaceTabs({ activeHref }: { activeHref: string }) {
+  return (
+    <WorkspaceTabs
+      label="Applications workspace"
+      activeHref={activeHref}
+      tabs={[
+        { href: "/applications", label: "Active" },
+        { href: "/alerts", label: "Follow-ups" },
+        { href: "/resume/signals", label: "Resume Shares" },
+      ]}
+    />
+  );
+}

@@ -89,7 +89,7 @@ test("candidate MVP persists resume, profile, saved job, application, status, an
     .first();
   await expect(dataAnalystCard).toBeVisible({ timeout: 15_000 });
   await captureDemo(page, "09-job-search");
-  const detailLink = dataAnalystCard.getByRole("link", { name: "View job" });
+  const detailLink = dataAnalystCard.getByRole("link", { name: "Review role" });
   const jobPath = await detailLink.getAttribute("href");
   expect(jobPath).toMatch(/^\/jobs\/[0-9a-f-]+$/i);
   await detailLink.click();
@@ -98,8 +98,8 @@ test("candidate MVP persists resume, profile, saved job, application, status, an
   await captureDemo(page, "10-job-detail");
 
   await page.getByRole("button", { name: "Save for later" }).click();
-  await expect(page.getByRole("button", { name: "Saved" })).toBeVisible();
-  await page.getByRole("button", { name: "Prepare application", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Saved for later" })).toBeVisible();
+  await page.getByRole("button", { name: "Start application", exact: true }).click();
   await page.waitForURL(/\/applications\/[0-9a-f-]+$/i);
   const applicationPath = new URL(page.url()).pathname;
 

@@ -2,7 +2,7 @@ import pytest
 from fastapi import HTTPException
 from starlette.requests import Request
 
-from app.core.auth import DevTestAuthProvider, get_auth_provider
+from app.core.auth import DevTestAuthProvider, SupabaseAuthProvider, get_auth_provider
 from app.core.config import Settings
 
 
@@ -27,7 +27,7 @@ def test_dev_auth_is_impossible_in_production():
 
 
 def test_dev_auth_is_impossible_in_staging():
-    with pytest.raises(ValueError, match="Staging requires AUTH_PROVIDER=clerk"):
+    with pytest.raises(ValueError, match="Staging requires AUTH_PROVIDER=clerk or AUTH_PROVIDER=supabase"):
         Settings(
             app_env="staging",
             auth_provider="dev-test",
@@ -54,6 +54,7 @@ def test_dev_auth_creates_stable_claims():
     )
     assert claims.subject == "dev:alex.candidate@example.test"
     assert claims.email == "alex.candidate@example.test"
+    assert claims.provider == "dev-test"
 
 
 def test_dev_auth_rejects_wrong_secret():
@@ -111,3 +112,38 @@ def test_clerk_provider_cache_isolated_by_configuration():
         )
     )
     assert first is not second
+
+
+def test_supabase_provider_uses_project_jwks_and_is_cached():
+    settings = Settings(
+        auth_provider="supabase",
+        supabase_url="https://applyai-test.supabase.co",
+    )
+    first = get_auth_provider(settings)
+    second = get_auth_provider(
+        Settings(
+            auth_provider="supabase",
+            supabase_url="https://applyai-test.supabase.co",
+        )
+    )
+    assert isinstance(first, SupabaseAuthProvider)
+    assert first is second
+    assert settings.resolved_supabase_issuer == "https://applyai-test.supabase.co/auth/v1"
+    assert settings.resolved_supabase_jwks_url == (
+        "https://applyai-test.supabase.co/auth/v1/.well-known/jwks.json"
+    )
+    assert settings.resolved_supabase_project_ref == "applyai-test"
+
+
+def test_production_supabase_lean_profile_is_accepted():
+    settings = Settings(
+        app_env="production",
+        deployment_profile="lean",
+        auth_provider="supabase",
+        supabase_url="https://applyai-test.supabase.co",
+        object_storage_provider="postgres",
+        task_queue_provider="postgres",
+        web_origin="https://applyai.example",
+    )
+    assert settings.auth_provider == "supabase"
+    assert settings.task_queue_provider == "postgres"

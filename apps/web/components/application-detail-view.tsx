@@ -1,11 +1,12 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarDays, Trash2 } from "lucide-react";
+import { CalendarDays, Share2, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api/client";
+import { ApplicationWorkspaceTabs } from "@/components/candidate-workspace-tabs";
 import { ApplicationAgentPanel } from "@/components/application-agent-panel";
 import { ApplicationSubmissionPanel } from "@/components/application-submission-panel";
 import { Badge, Button, Card, ErrorState, Field, NativeSelect, PageHeader, Skeleton, Textarea } from "@/components/ui";
@@ -55,13 +56,15 @@ export function ApplicationDetailView({ applicationId }: { applicationId: string
 
   const app = application.data;
   const posting = job.data;
+  const shareHref = `/resume/signals?jobId=${encodeURIComponent(posting.id)}&applicationId=${encodeURIComponent(applicationId)}&label=${encodeURIComponent(`${posting.company_name} — ${posting.title}`)}&channel=application`;
   return (
     <>
+      <ApplicationWorkspaceTabs activeHref="/applications" />
       <PageHeader
-        eyebrow="Your application"
+        eyebrow="Opportunity workspace"
         title={posting.title}
-        description={`${posting.company_name} · ${posting.location ?? "Location flexible"}`}
-        action={<Link className="ui-button ui-button-secondary ui-button-small" href={`/jobs/${posting.id}`}>View job</Link>}
+        description={`${posting.company_name} · ${posting.location ?? "Location flexible"} · keep preparation, follow-up, and evidence connected here.`}
+        action={<Link className="ui-button ui-button-secondary ui-button-small" href={`/jobs/${posting.id}`}>View job intelligence</Link>}
       />
       <div className="cx-application-status-strip">
         <span>Current stage</span>
@@ -100,6 +103,8 @@ export function ApplicationDetailView({ applicationId }: { applicationId: string
               <div className="fact-row"><CalendarDays size={17} /><div><strong>Last updated</strong><span>{formatDate(app.updated_at)}</span></div></div>
             </div>
             <div className="button-row"><Link className="ui-button ui-button-secondary ui-button-small" href={`/interview/${posting.id}`}>Interview prep</Link><Link className="ui-button ui-button-secondary ui-button-small" href="/network">Recruiter contacts</Link></div>
+            <Link className="ui-button ui-button-secondary ui-button-small" href={shareHref}><Share2 size={15} />Create private Resume Share</Link>
+            <p className="muted" style={{ fontSize: 12, lineHeight: 1.5 }}>Resume Share reports anonymous engagement signals only. It does not identify viewers or infer their company.</p>
           </Card>
         </aside>
       </div>

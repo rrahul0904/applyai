@@ -39,7 +39,19 @@ class Settings(BaseSettings):
     clerk_mru_warning_threshold: int = Field(default=40_000, ge=1)
     clerk_mru_critical_threshold: int = Field(default=45_000, ge=1)
     clerk_mru_review_threshold: int = Field(default=50_000, ge=1)
+    supabase_url: str | None = None
+    supabase_project_ref: str | None = None
+    supabase_jwks_url: str | None = None
+    supabase_audience: str = "authenticated"
+    supabase_storage_bucket: str = "resumes"
+    supabase_s3_access_key_id: str | None = None
+    supabase_s3_secret_access_key: str | None = None
+    supabase_storage_region: str = "us-east-2"
     internal_api_token: str | None = None
+    operator_emails: str = Field(
+        default="",
+        validation_alias=AliasChoices("APPLYAI_OPERATOR_EMAILS", "OPERATOR_EMAILS"),
+    )
 
     object_storage_provider: str = "local"
     local_storage_path: Path = Field(default=Path(".data/resumes"))
@@ -80,6 +92,8 @@ class Settings(BaseSettings):
     postgres_worker_poll_seconds: float = Field(default=1.0, ge=0.1, le=30.0)
     request_triggered_tasks_enabled: bool = False
     request_triggered_task_limit: int = Field(default=1, ge=1, le=5)
+    worker_drain_secret: str | None = None
+    worker_drain_batch_size: int = Field(default=5, ge=1, le=25)
     resume_processing_timeout_seconds: int = Field(default=900, ge=60, le=86_400)
     outbox_batch_size: int = Field(default=25, ge=1, le=100)
     outbox_retry_base_seconds: int = Field(default=5, ge=1, le=300)
@@ -250,8 +264,10 @@ class Settings(BaseSettings):
             self.dev_auth_enabled or self.auth_provider == "dev-test"
         ):
             raise ValueError("Development authentication cannot run in production")
-        if durable_environment and self.auth_provider != "clerk":
-            raise ValueError(f"{environment.title()} requires AUTH_PROVIDER=clerk")
+        if durable_environment and self.auth_provider not in {"clerk", "supabase"}:
+            raise ValueError(
+                f"{environment.title()} requires AUTH_PROVIDER=clerk or AUTH_PROVIDER=supabase"
+            )
         if self.auth_provider == "dev-test":
             if not self.dev_auth_enabled:
                 raise ValueError("AUTH_PROVIDER=dev-test requires DEV_AUTH_ENABLED=true")
@@ -261,6 +277,8 @@ class Settings(BaseSettings):
                 )
         if self.internal_api_token is not None and len(self.internal_api_token) < 24:
             raise ValueError("INTERNAL_API_TOKEN must contain at least 24 characters")
+        if self.worker_drain_secret is not None and len(self.worker_drain_secret) < 24:
+            raise ValueError("WORKER_DRAIN_SECRET must contain at least 24 characters")
         if not (
             self.clerk_mru_warning_threshold
             < self.clerk_mru_critical_threshold
@@ -268,10 +286,27 @@ class Settings(BaseSettings):
         ):
             raise ValueError("Clerk MRU thresholds must increase from warning to review")
 
-        if self.object_storage_provider not in {"local", "postgres", "s3"}:
-            raise ValueError("OBJECT_STORAGE_PROVIDER must be local, postgres or s3")
+        if self.object_storage_provider not in {"local", "postgres", "s3", "supabase"}:
+            raise ValueError(
+                "OBJECT_STORAGE_PROVIDER must be local, postgres, s3 or supabase"
+            )
         if self.object_storage_provider == "s3" and not self.s3_bucket:
             raise ValueError("S3_BUCKET is required when OBJECT_STORAGE_PROVIDER=s3")
+        if self.object_storage_provider == "supabase":
+            if not self.resolved_supabase_project_ref:
+                raise ValueError(
+                    "SUPABASE_URL or SUPABASE_PROJECT_REF is required when "
+                    "OBJECT_STORAGE_PROVIDER=supabase"
+                )
+            if not self.supabase_storage_bucket:
+                raise ValueError(
+                    "SUPABASE_STORAGE_BUCKET is required when OBJECT_STORAGE_PROVIDER=supabase"
+                )
+            if not self.supabase_s3_access_key_id or not self.supabase_s3_secret_access_key:
+                raise ValueError(
+                    "Supabase Storage requires SUPABASE_S3_ACCESS_KEY_ID and "
+                    "SUPABASE_S3_SECRET_ACCESS_KEY"
+                )
         if bool(self.s3_access_key_id) != bool(self.s3_secret_access_key):
             raise ValueError("S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY must be supplied together")
         normalized_encryption = self.s3_server_side_encryption.strip().lower()
@@ -286,7 +321,7 @@ class Settings(BaseSettings):
         if (
             durable_environment
             and self.deployment_profile == "lean"
-            and self.object_storage_provider not in {"postgres", "s3"}
+            and self.object_storage_provider not in {"postgres", "s3", "supabase"}
         ):
             raise ValueError(f"{environment.title()} lean profile requires durable object storage")
 
@@ -356,14 +391,86 @@ class Settings(BaseSettings):
             raise ValueError("CAREER_DISCOVERY_MAX_PAGES must allow robots and one target page")
 
         if durable_environment:
-            if not self.clerk_issuer or not self.clerk_jwks_url:
-                raise ValueError(f"{environment.title()} requires CLERK_ISSUER and CLERK_JWKS_URL")
+            if self.auth_provider == "clerk" and (
+                not self.clerk_issuer or not self.clerk_jwks_url
+            ):
+                raise ValueError(
+                    f"{environment.title()} Clerk auth requires CLERK_ISSUER and CLERK_JWKS_URL"
+                )
+            if self.auth_provider == "supabase" and not self.supabase_url:
+                raise ValueError(
+                    f"{environment.title()} Supabase auth requires SUPABASE_URL"
+                )
+            if self.auth_provider == "supabase" and not self.resolved_supabase_jwks_url:
+                raise ValueError(
+                    f"{environment.title()} Supabase auth requires a resolvable JWKS URL"
+                )
             if any(not origin.startswith("https://") for origin in self.allowed_web_origins):
                 raise ValueError(
                     f"{environment.title()} requires HTTPS WEB_ORIGIN and WEB_ORIGINS values"
                 )
 
         return self
+
+    @property
+    def resolved_supabase_issuer(self) -> str | None:
+        if not self.supabase_url:
+            return None
+        return self.supabase_url.rstrip("/") + "/auth/v1"
+
+    @property
+    def resolved_supabase_jwks_url(self) -> str | None:
+        if self.supabase_jwks_url:
+            return self.supabase_jwks_url
+        issuer = self.resolved_supabase_issuer
+        return issuer + "/.well-known/jwks.json" if issuer else None
+
+    @property
+    def resolved_supabase_project_ref(self) -> str | None:
+        if self.supabase_project_ref:
+            return self.supabase_project_ref
+        if not self.supabase_url:
+            return None
+        host = self.supabase_url.removeprefix("https://").split("/", 1)[0]
+        suffix = ".supabase.co"
+        return host[: -len(suffix)] if host.endswith(suffix) else None
+
+    @property
+    def supabase_s3_endpoint_url(self) -> str | None:
+        ref = self.resolved_supabase_project_ref
+        if not ref:
+            return None
+        return f"https://{ref}.storage.supabase.co/storage/v1/s3"
+
+    @property
+    def storage_runtime_configured(self) -> bool:
+        return (
+            self.object_storage_provider == "postgres"
+            or (
+                self.object_storage_provider == "supabase"
+                and bool(self.resolved_supabase_project_ref)
+                and bool(self.supabase_storage_bucket)
+                and bool(self.supabase_s3_access_key_id)
+                and bool(self.supabase_s3_secret_access_key)
+            )
+            or (self.object_storage_provider == "s3" and bool(self.s3_bucket))
+            or (
+                self.object_storage_provider == "local"
+                and self.app_env.lower() not in {"staging", "production"}
+            )
+        )
+
+    @property
+    def background_worker_configured(self) -> bool:
+        return bool(self.worker_drain_secret) and self.task_queue_provider == "postgres"
+
+    @property
+    def allowed_operator_emails(self) -> set[str]:
+        return {
+            value.strip().lower()
+            for value in self.operator_emails.split(",")
+            if value.strip()
+        }
 
     @property
     def object_storage_hard_limit_bytes(self) -> int:

@@ -3,7 +3,8 @@ name: Deploy ApplyAI Web to Vercel
 on:
   push:
     branches:
-      - agent/lean-production-wave-1
+      - main
+      - agent/applyai-finalization-wave
     paths:
       - apps/web/**
       - package.json
@@ -33,14 +34,14 @@ env:
   VERCEL_TEAM_SLUG: rrahul0904-5013s-projects
   VERCEL_PROJECT_NAME: applyai
   VERCEL_PROJECT_ROOT: apps/web
-  DEPLOY_TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.target || 'preview' }}
+  DEPLOY_TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.target || github.ref_name == 'main' && 'production' || 'preview' }}
 
 jobs:
   deploy:
     name: Deploy ApplyAI web
     runs-on: ubuntu-24.04
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.target != 'production' || github.ref_name == 'main' }}
-    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.target == 'production' && 'production' || 'preview' }}
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.target != 'production' || github.ref_name == 'main' || github.ref_name == 'agent/applyai-finalization-wave' }}
+    environment: ${{ ((github.event_name == 'workflow_dispatch' && inputs.target == 'production') || (github.event_name == 'push' && github.ref_name == 'main')) && 'production' || 'preview' }}
     steps:
       - name: Check out source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -55,38 +56,59 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.13.0
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
 
       - name: Validate deployment secrets
         id: preflight
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           APPLYAI_API_URL: ${{ secrets.APPLYAI_VERCEL_API_URL }}
+          SUPABASE_URL: ${{ secrets.APPLYAI_SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.APPLYAI_SUPABASE_PUBLISHABLE_KEY }}
           CLERK_PUBLISHABLE_KEY: ${{ secrets.APPLYAI_VERCEL_CLERK_PUBLISHABLE_KEY }}
           CLERK_SECRET_KEY: ${{ secrets.APPLYAI_VERCEL_CLERK_SECRET_KEY }}
           EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          DEPLOY_TARGET: ${{ env.DEPLOY_TARGET }}
         run: |
           set -euo pipefail
-          missing=()
-          for name in VERCEL_TOKEN APPLYAI_API_URL CLERK_PUBLISHABLE_KEY CLERK_SECRET_KEY; do
-            if [ -z "${!name:-}" ]; then
-              missing+=("$name")
-            fi
-          done
 
-          if [ "${#missing[@]}" -gt 0 ]; then
+          if [ -z "${VERCEL_TOKEN:-}" ] || [ -z "${APPLYAI_API_URL:-}" ]; then
             echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "Missing Vercel deployment secrets: ${missing[*]}" >> "$GITHUB_STEP_SUMMARY"
-            if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-              echo "::error::Missing required Vercel deployment secrets: ${missing[*]}"
+            echo "provider=none" >> "$GITHUB_OUTPUT"
+            if [ "$EVENT_NAME" = "workflow_dispatch" ] || [ "$REF_NAME" = "main" ] || [ "$DEPLOY_TARGET" = "production" ]; then
+              echo "::error::VERCEL_TOKEN and APPLYAI_VERCEL_API_URL are required"
               exit 1
             fi
-            echo "::warning::Skipping automatic preview because Vercel deployment secrets are not configured"
+            echo "::warning::Skipping automatic preview because Vercel/API credentials are unavailable"
             exit 0
           fi
 
-          echo "ready=true" >> "$GITHUB_OUTPUT"
+          if [ -n "${SUPABASE_URL:-}" ] && [ -n "${SUPABASE_PUBLISHABLE_KEY:-}" ]; then
+            case "$SUPABASE_URL" in
+              https://*.supabase.co) ;;
+              *) echo "::error::APPLYAI_SUPABASE_URL must be the hosted HTTPS Supabase project URL"; exit 1 ;;
+            esac
+            echo "provider=supabase" >> "$GITHUB_OUTPUT"
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$DEPLOY_TARGET" = "production" ]; then
+            echo "::error::Production deployment requires APPLYAI_SUPABASE_URL and APPLYAI_SUPABASE_PUBLISHABLE_KEY"
+            exit 1
+          fi
+
+          # Transitional preview fallback only. Production can no longer certify with Clerk.
+          if [ -n "${CLERK_PUBLISHABLE_KEY:-}" ] && [ -n "${CLERK_SECRET_KEY:-}" ]; then
+            echo "provider=clerk" >> "$GITHUB_OUTPUT"
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Using temporary Clerk compatibility for preview; production requires Supabase"
+            exit 0
+          fi
+
+          echo "ready=false" >> "$GITHUB_OUTPUT"
+          echo "provider=none" >> "$GITHUB_OUTPUT"
+          echo "::warning::Skipping preview because no identity-provider credentials are configured"
 
       - name: Install workspace dependencies
         if: ${{ steps.preflight.outputs.ready == 'true' }}
@@ -103,17 +125,10 @@ jobs:
         run: |
           set -euo pipefail
           project_url="https://api.vercel.com/v9/projects/${VERCEL_PROJECT_NAME}?teamId=${VERCEL_TEAM_ID}"
-          status="$(curl --silent --output /tmp/vercel-project.json --write-out '%{http_code}' \
-            --header "Authorization: Bearer ${VERCEL_TOKEN}" \
-            "$project_url")"
+          status="$(curl --silent --output /tmp/vercel-project.json --write-out '%{http_code}'             --header "Authorization: Bearer ${VERCEL_TOKEN}"             "$project_url")"
 
           if [ "$status" = "404" ]; then
-            create_status="$(curl --silent --output /tmp/vercel-project-create.json --write-out '%{http_code}' \
-              --request POST \
-              --url "https://api.vercel.com/v11/projects?teamId=${VERCEL_TEAM_ID}" \
-              --header "Authorization: Bearer ${VERCEL_TOKEN}" \
-              --header "Content-Type: application/json" \
-              --data "{\"name\":\"${VERCEL_PROJECT_NAME}\",\"framework\":\"nextjs\",\"rootDirectory\":\"${VERCEL_PROJECT_ROOT}\",\"installCommand\":\"cd ../.. && pnpm install --frozen-lockfile\",\"buildCommand\":\"pnpm build\",\"gitRepository\":{\"type\":\"github\",\"repo\":\"rrahul0904/applyai\"}}")"
+            create_status="$(curl --silent --output /tmp/vercel-project-create.json --write-out '%{http_code}'               --request POST               --url "https://api.vercel.com/v11/projects?teamId=${VERCEL_TEAM_ID}"               --header "Authorization: Bearer ${VERCEL_TOKEN}"               --header "Content-Type: application/json"               --data "{\"name\":\"${VERCEL_PROJECT_NAME}\",\"framework\":\"nextjs\",\"rootDirectory\":\"${VERCEL_PROJECT_ROOT}\",\"installCommand\":\"cd ../.. && pnpm install --frozen-lockfile\",\"buildCommand\":\"pnpm build\",\"gitRepository\":{\"type\":\"github\",\"repo\":\"rrahul0904/applyai\"}}")"
             if [ "$create_status" -lt 200 ] || [ "$create_status" -ge 300 ]; then
               cat /tmp/vercel-project-create.json
               echo "::error::Unable to create the dedicated ApplyAI Vercel project"
@@ -125,12 +140,7 @@ jobs:
             exit 1
           fi
 
-          patch_status="$(curl --silent --output /tmp/vercel-project-update.json --write-out '%{http_code}' \
-            --request PATCH \
-            --url "$project_url" \
-            --header "Authorization: Bearer ${VERCEL_TOKEN}" \
-            --header "Content-Type: application/json" \
-            --data "{\"framework\":\"nextjs\",\"rootDirectory\":\"${VERCEL_PROJECT_ROOT}\",\"installCommand\":\"cd ../.. && pnpm install --frozen-lockfile\",\"buildCommand\":\"pnpm build\"}")"
+          patch_status="$(curl --silent --output /tmp/vercel-project-update.json --write-out '%{http_code}'             --request PATCH             --url "$project_url"             --header "Authorization: Bearer ${VERCEL_TOKEN}"             --header "Content-Type: application/json"             --data "{\"framework\":\"nextjs\",\"rootDirectory\":\"${VERCEL_PROJECT_ROOT}\",\"installCommand\":\"cd ../.. && pnpm install --frozen-lockfile\",\"buildCommand\":\"pnpm build\"}")"
           if [ "$patch_status" -lt 200 ] || [ "$patch_status" -ge 300 ]; then
             cat /tmp/vercel-project-update.json
             echo "::error::Unable to enforce ApplyAI Vercel project settings"
@@ -142,77 +152,59 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          set -euo pipefail
-          vercel link \
-            --yes \
-            --project "$VERCEL_PROJECT_NAME" \
-            --scope "$VERCEL_TEAM_SLUG" \
-            --token "$VERCEL_TOKEN"
+          vercel link             --yes             --project "$VERCEL_PROJECT_NAME"             --scope "$VERCEL_TEAM_SLUG"             --token "$VERCEL_TOKEN"
 
       - name: Synchronize Vercel environment
         if: ${{ steps.preflight.outputs.ready == 'true' }}
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           APPLYAI_API_URL: ${{ secrets.APPLYAI_VERCEL_API_URL }}
+          SUPABASE_URL: ${{ secrets.APPLYAI_SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.APPLYAI_SUPABASE_PUBLISHABLE_KEY }}
           CLERK_PUBLISHABLE_KEY: ${{ secrets.APPLYAI_VERCEL_CLERK_PUBLISHABLE_KEY }}
           CLERK_SECRET_KEY: ${{ secrets.APPLYAI_VERCEL_CLERK_SECRET_KEY }}
-          OPERATOR_EMAILS: ${{ secrets.APPLYAI_VERCEL_OPERATOR_EMAILS }}
-          INTERNAL_API_TOKEN: ${{ secrets.APPLYAI_VERCEL_INTERNAL_API_TOKEN }}
+          AUTH_PROVIDER: ${{ steps.preflight.outputs.provider }}
         run: |
           set -euo pipefail
 
           set_env() {
             key="$1"
             value="$2"
-            if [ -z "$value" ]; then
-              return 0
-            fi
-            printf '%s' "$value" | vercel env add "$key" "$DEPLOY_TARGET" \
-              --force \
-              --yes \
-              --scope "$VERCEL_TEAM_SLUG" \
-              --token "$VERCEL_TOKEN"
+            [ -z "$value" ] && return 0
+            printf '%s' "$value" | vercel env add "$key" "$DEPLOY_TARGET"               --force --yes --scope "$VERCEL_TEAM_SLUG" --token "$VERCEL_TOKEN"
           }
 
           set_sensitive_env() {
             key="$1"
             value="$2"
-            if [ -z "$value" ]; then
-              return 0
-            fi
-            printf '%s' "$value" | vercel env add "$key" "$DEPLOY_TARGET" \
-              --force \
-              --yes \
-              --sensitive \
-              --scope "$VERCEL_TEAM_SLUG" \
-              --token "$VERCEL_TOKEN"
+            [ -z "$value" ] && return 0
+            printf '%s' "$value" | vercel env add "$key" "$DEPLOY_TARGET"               --force --yes --sensitive --scope "$VERCEL_TEAM_SLUG" --token "$VERCEL_TOKEN"
           }
 
-          set_env NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY "$CLERK_PUBLISHABLE_KEY"
-          set_sensitive_env CLERK_SECRET_KEY "$CLERK_SECRET_KEY"
           set_sensitive_env APPLYAI_API_URL "$APPLYAI_API_URL"
-          set_env APP_ENV production
+          set_env APP_ENV "$([ "$DEPLOY_TARGET" = production ] && echo production || echo staging)"
           set_env DEV_AUTH_ENABLED false
-          set_env APPLYAI_OPERATOR_EMAILS "$OPERATOR_EMAILS"
-          set_sensitive_env INTERNAL_API_TOKEN "$INTERNAL_API_TOKEN"
+
+          if [ "$AUTH_PROVIDER" = "supabase" ]; then
+            set_env NEXT_PUBLIC_SUPABASE_URL "$SUPABASE_URL"
+            set_env NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY "$SUPABASE_PUBLISHABLE_KEY"
+          else
+            set_env NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY "$CLERK_PUBLISHABLE_KEY"
+            set_sensitive_env CLERK_SECRET_KEY "$CLERK_SECRET_KEY"
+          fi
 
       - name: Pull Vercel project settings
         if: ${{ steps.preflight.outputs.ready == 'true' }}
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          vercel pull \
-            --yes \
-            --environment "$DEPLOY_TARGET" \
-            --scope "$VERCEL_TEAM_SLUG" \
-            --token "$VERCEL_TOKEN"
+          vercel pull             --yes             --environment "$DEPLOY_TARGET"             --scope "$VERCEL_TEAM_SLUG"             --token "$VERCEL_TOKEN"
 
       - name: Build Vercel artifact
         if: ${{ steps.preflight.outputs.ready == 'true' }}
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          set -euo pipefail
           if [ "$DEPLOY_TARGET" = "production" ]; then
             vercel build --prod --scope "$VERCEL_TEAM_SLUG" --token "$VERCEL_TOKEN"
           else
@@ -234,9 +226,11 @@ jobs:
           echo "url=$deployment_url" >> "$GITHUB_OUTPUT"
           {
             echo "### ApplyAI Vercel deployment"
-            echo ""
             echo "- Target: $DEPLOY_TARGET"
+            echo "- Identity provider: ${{ steps.preflight.outputs.provider }}"
             echo "- Project: $VERCEL_PROJECT_NAME"
+            echo "- Git ref: $GITHUB_REF_NAME"
+            echo "- Git SHA: $GITHUB_SHA"
             echo "- URL: $deployment_url"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -246,8 +240,35 @@ jobs:
           DEPLOYMENT_URL: ${{ steps.deploy.outputs.url }}
         run: |
           set -euo pipefail
-          curl --fail --show-error --silent --location \
-            --retry 5 --retry-delay 3 \
-            --output /tmp/applyai-vercel-home.html \
-            "$DEPLOYMENT_URL/"
+          curl --fail --show-error --silent --location             --retry 5 --retry-delay 3             --output /tmp/applyai-vercel-home.html             "$DEPLOYMENT_URL/"
           test -s /tmp/applyai-vercel-home.html
+
+      - name: Require Supabase production readiness
+        if: ${{ steps.preflight.outputs.ready == 'true' && env.DEPLOY_TARGET == 'production' }}
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 24); do
+            if response="$(curl --fail --silent --show-error --location --max-time 20 "$DEPLOYMENT_URL/api/readiness" 2>/dev/null)" &&                printf '%s\n' "$response" | jq -e '
+                 .production_ready == true and
+                 .checks.api_configured == true and
+                 .checks.api_reachable == true and
+                 .checks.database_reachable == true and
+                 .checks.storage_configured == true and
+                 .checks.background_worker_configured == true and
+                 .checks.auth_provider == "supabase" and
+                 .checks.supabase_auth_configured == true and
+                 .checks.supabase_instance_match == true and
+                 .checks.operator_configured == true and
+                 .checks.operator_auth_location == "database" and
+                 .checks.dev_auth_enabled == false
+               ' >/dev/null; then
+              echo "Supabase production readiness passed on attempt $attempt" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 5
+          done
+          printf '%s\n' "$response" | jq . || true
+          echo "::error::Production canary never reached the required Vercel + Supabase readiness state"
+          exit 1

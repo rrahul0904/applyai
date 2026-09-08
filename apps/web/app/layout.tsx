@@ -11,6 +11,9 @@ import "./candidate-cx-application.css";
 import "./candidate-cx-resume.css";
 import "./candidate-cx-plan.css";
 import "./candidate-first-value.css";
+import "./career-command-os.css";
+import "./career-command-os-details.css";
+import "./career-command-os-polish.css";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono" });
@@ -19,5 +22,6 @@ export const metadata: Metadata = { title: "ApplyAI", description: "A structured
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const document = <html lang="en"><body className={`${geist.variable} ${geistMono.variable}`}><PulseAtlasPageView /><AppProviders>{children}</AppProviders></body></html>;
-  return process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ? <ClerkProvider>{document}</ClerkProvider> : document;
+  const useClerk = !process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+  return useClerk ? <ClerkProvider>{document}</ClerkProvider> : document;
 }

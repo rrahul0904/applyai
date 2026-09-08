@@ -1,0 +1,186 @@
+name: Supabase Production Migration
+
+on:
+  workflow_dispatch:
+    inputs:
+      execute:
+        description: Execute writes to Supabase (false performs audit only)
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: applyai-supabase-production-migration
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Audit and migrate ApplyAI production data
+    runs-on: ubuntu-24.04
+    environment: production
+    env:
+      SOURCE_DATABASE_URL: ${{ secrets.APPLYAI_RAILWAY_SOURCE_DATABASE_URL }}
+      TARGET_DATABASE_URL: ${{ secrets.APPLYAI_SUPABASE_DATABASE_URL }}
+      SUPABASE_URL: ${{ secrets.APPLYAI_SUPABASE_URL }}
+      SUPABASE_S3_ACCESS_KEY_ID: ${{ secrets.APPLYAI_SUPABASE_S3_ACCESS_KEY_ID }}
+      SUPABASE_S3_SECRET_ACCESS_KEY: ${{ secrets.APPLYAI_SUPABASE_S3_SECRET_ACCESS_KEY }}
+      SUPABASE_STORAGE_BUCKET: resumes
+      EXECUTE: ${{ inputs.execute }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+        with:
+          version: "0.11.32"
+
+      - name: Validate migration secrets
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in SOURCE_DATABASE_URL TARGET_DATABASE_URL SUPABASE_URL SUPABASE_S3_ACCESS_KEY_ID SUPABASE_S3_SECRET_ACCESS_KEY; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("$name")
+            fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Missing required production migration secrets: ${missing[*]}"
+            exit 1
+          fi
+          if [ "$SOURCE_DATABASE_URL" = "$TARGET_DATABASE_URL" ]; then
+            echo "::error::Source and target database URLs must differ"
+            exit 1
+          fi
+
+      - name: Install API dependencies
+        working-directory: services/api
+        run: uv sync --locked
+
+      - name: Apply canonical schema to Supabase
+        working-directory: services/api
+        env:
+          DATABASE_URL: ${{ env.TARGET_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          uv run alembic upgrade head
+          uv run alembic current
+          uv run alembic heads
+          uv run alembic check
+
+      - name: Validate Supabase RLS policy schema
+        working-directory: services/api
+        run: |
+          uv run python -m scripts.validate_supabase_policies             --report ../../artifacts/supabase-policy-validation.json
+
+      - name: Audit source quiescence and relational parity preconditions
+        working-directory: services/api
+        env:
+          APPLYAI_MIGRATION_SOURCE_DATABASE_URL: ${{ env.SOURCE_DATABASE_URL }}
+          APPLYAI_MIGRATION_TARGET_DATABASE_URL: ${{ env.TARGET_DATABASE_URL }}
+        run: |
+          set +e
+          uv run python -m scripts.migrate_postgres_to_supabase             --report ../../artifacts/supabase-data-migration-preflight.json
+          code=$?
+          set -e
+          # A dry-run may be BLOCKED solely because the source is intentionally still live
+          # before an authorized execute window. Preserve the evidence and make execute fail.
+          if [ "$EXECUTE" = "true" ] && [ "$code" -ne 0 ]; then
+            echo "::error::Migration execute was requested but relational preflight is blocked"
+            exit "$code"
+          fi
+
+      - name: Audit resume-object parity before migration
+        working-directory: services/api
+        env:
+          APPLYAI_MIGRATION_SOURCE_DATABASE_URL: ${{ env.SOURCE_DATABASE_URL }}
+          APPLYAI_SUPABASE_URL: ${{ env.SUPABASE_URL }}
+          APPLYAI_SUPABASE_S3_ACCESS_KEY_ID: ${{ env.SUPABASE_S3_ACCESS_KEY_ID }}
+          APPLYAI_SUPABASE_S3_SECRET_ACCESS_KEY: ${{ env.SUPABASE_S3_SECRET_ACCESS_KEY }}
+          APPLYAI_SUPABASE_STORAGE_BUCKET: ${{ env.SUPABASE_STORAGE_BUCKET }}
+        run: |
+          set +e
+          uv run python -m scripts.migrate_resume_objects_to_supabase             --report ../../artifacts/supabase-resume-object-preflight.json
+          code=$?
+          set -e
+          if [ "$EXECUTE" != "true" ]; then
+            exit 0
+          fi
+          # Missing objects are expected before the first copy; other script errors are not.
+          if [ "$code" -gt 2 ]; then
+            exit "$code"
+          fi
+
+      - name: Execute relational migration
+        if: ${{ inputs.execute }}
+        working-directory: services/api
+        env:
+          APPLYAI_MIGRATION_SOURCE_DATABASE_URL: ${{ env.SOURCE_DATABASE_URL }}
+          APPLYAI_MIGRATION_TARGET_DATABASE_URL: ${{ env.TARGET_DATABASE_URL }}
+        run: |
+          uv run python -m scripts.migrate_postgres_to_supabase             --execute             --report ../../artifacts/supabase-data-migration-report.json
+
+      - name: Apply validated Supabase RLS and private Storage policies
+        if: ${{ inputs.execute }}
+        working-directory: services/api
+        env:
+          DATABASE_URL: ${{ env.TARGET_DATABASE_URL }}
+        run: |
+          uv run python -m scripts.apply_supabase_policies             --report ../../artifacts/supabase-policy-application.json
+
+      - name: Execute resume-object migration
+        if: ${{ inputs.execute }}
+        working-directory: services/api
+        env:
+          APPLYAI_MIGRATION_SOURCE_DATABASE_URL: ${{ env.SOURCE_DATABASE_URL }}
+          APPLYAI_SUPABASE_URL: ${{ env.SUPABASE_URL }}
+          APPLYAI_SUPABASE_S3_ACCESS_KEY_ID: ${{ env.SUPABASE_S3_ACCESS_KEY_ID }}
+          APPLYAI_SUPABASE_S3_SECRET_ACCESS_KEY: ${{ env.SUPABASE_S3_SECRET_ACCESS_KEY }}
+          APPLYAI_SUPABASE_STORAGE_BUCKET: ${{ env.SUPABASE_STORAGE_BUCKET }}
+        run: |
+          uv run python -m scripts.migrate_resume_objects_to_supabase             --execute             --report ../../artifacts/supabase-resume-object-migration-report.json
+
+      - name: Verify relational parity after execution
+        if: ${{ inputs.execute }}
+        working-directory: services/api
+        env:
+          APPLYAI_MIGRATION_SOURCE_DATABASE_URL: ${{ env.SOURCE_DATABASE_URL }}
+          APPLYAI_MIGRATION_TARGET_DATABASE_URL: ${{ env.TARGET_DATABASE_URL }}
+        run: |
+          # The execute report is authoritative because a second dry-run correctly sees a
+          # non-empty target and refuses another migration. Verify every copied table instead.
+          jq -e '
+            .status == "PASS" and
+            ([.tables[] | select(.source_rows != .target_rows_after)] | length) == 0 and
+            ([.orphan_counts[] | select(. != 0)] | length) == 0
+          ' ../../artifacts/supabase-data-migration-report.json >/dev/null
+
+      - name: Verify object parity after execution
+        if: ${{ inputs.execute }}
+        run: |
+          jq -e '
+            .status == "PASS" and
+            .source_objects == .target_objects_verified and
+            (.missing_objects | length) == 0 and
+            (.size_mismatches | length) == 0 and
+            (.content_type_mismatches | length) == 0 and
+            (.failures | length) == 0 and
+            .source_deleted == false
+          ' artifacts/supabase-resume-object-migration-report.json >/dev/null
+
+      - name: Upload migration evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: applyai-supabase-production-migration-${{ github.run_id }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,52 @@
+name: Generate Browser Runtime Dependencies
+
+on:
+  push:
+    branches:
+      - agent/applyai-finalization-wave
+    paths:
+      - '.github/workflows/generate-browser-runtime-deps.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    name: Generate browser runtime lockfile
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: agent/applyai-finalization-wave
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        with:
+          version: 10.13.1
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.13.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Add pinned serverless browser runtime dependencies
+        run: |
+          set -euo pipefail
+          pnpm --filter @applyai/web add             playwright-core@1.54.2             @sparticuz/chromium-min@140.0.0             --save-prod             --lockfile-only
+
+      - name: Commit generated package and lockfile
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- apps/web/package.json pnpm-lock.yaml; then
+            echo "Browser runtime dependencies already match the requested versions."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/web/package.json pnpm-lock.yaml
+          git commit -m "build: pin Vercel browser runtime"
+          git push origin HEAD:agent/applyai-finalization-wave

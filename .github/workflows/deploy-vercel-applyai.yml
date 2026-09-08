@@ -170,8 +170,6 @@ jobs:
           APPLYAI_API_URL: ${{ secrets.APPLYAI_VERCEL_API_URL }}
           CLERK_PUBLISHABLE_KEY: ${{ secrets.APPLYAI_VERCEL_CLERK_PUBLISHABLE_KEY }}
           CLERK_SECRET_KEY: ${{ secrets.APPLYAI_VERCEL_CLERK_SECRET_KEY }}
-          OPERATOR_EMAILS: ${{ secrets.APPLYAI_VERCEL_OPERATOR_EMAILS }}
-          INTERNAL_API_TOKEN: ${{ secrets.APPLYAI_VERCEL_INTERNAL_API_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -207,8 +205,6 @@ jobs:
           set_sensitive_env APPLYAI_API_URL "$APPLYAI_API_URL"
           set_env APP_ENV production
           set_env DEV_AUTH_ENABLED false
-          set_env APPLYAI_OPERATOR_EMAILS "$OPERATOR_EMAILS"
-          set_sensitive_env INTERNAL_API_TOKEN "$INTERNAL_API_TOKEN"
 
       - name: Pull Vercel project settings
         if: ${{ steps.preflight.outputs.ready == 'true' }}

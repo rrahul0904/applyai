@@ -282,10 +282,27 @@ class Settings(BaseSettings):
         ):
             raise ValueError("Clerk MRU thresholds must increase from warning to review")
 
-        if self.object_storage_provider not in {"local", "postgres", "s3"}:
-            raise ValueError("OBJECT_STORAGE_PROVIDER must be local, postgres or s3")
+        if self.object_storage_provider not in {"local", "postgres", "s3", "supabase"}:
+            raise ValueError(
+                "OBJECT_STORAGE_PROVIDER must be local, postgres, s3 or supabase"
+            )
         if self.object_storage_provider == "s3" and not self.s3_bucket:
             raise ValueError("S3_BUCKET is required when OBJECT_STORAGE_PROVIDER=s3")
+        if self.object_storage_provider == "supabase":
+            if not self.resolved_supabase_project_ref:
+                raise ValueError(
+                    "SUPABASE_URL or SUPABASE_PROJECT_REF is required when "
+                    "OBJECT_STORAGE_PROVIDER=supabase"
+                )
+            if not self.supabase_storage_bucket:
+                raise ValueError(
+                    "SUPABASE_STORAGE_BUCKET is required when OBJECT_STORAGE_PROVIDER=supabase"
+                )
+            if not self.supabase_s3_access_key_id or not self.supabase_s3_secret_access_key:
+                raise ValueError(
+                    "Supabase Storage requires SUPABASE_S3_ACCESS_KEY_ID and "
+                    "SUPABASE_S3_SECRET_ACCESS_KEY"
+                )
         if bool(self.s3_access_key_id) != bool(self.s3_secret_access_key):
             raise ValueError("S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY must be supplied together")
         normalized_encryption = self.s3_server_side_encryption.strip().lower()
@@ -300,7 +317,7 @@ class Settings(BaseSettings):
         if (
             durable_environment
             and self.deployment_profile == "lean"
-            and self.object_storage_provider not in {"postgres", "s3"}
+            and self.object_storage_provider not in {"postgres", "s3", "supabase"}
         ):
             raise ValueError(f"{environment.title()} lean profile requires durable object storage")
 

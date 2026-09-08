@@ -431,6 +431,14 @@ def migrate(args: argparse.Namespace) -> dict[str, Any]:
                     "heads": report["target_alembic_heads"],
                 }
             )
+        if report["source_alembic_heads"] != report["target_alembic_heads"]:
+            report["failures"].append(
+                {
+                    "code": "SOURCE_TARGET_ALEMBIC_MISMATCH",
+                    "source_heads": report["source_alembic_heads"],
+                    "target_heads": report["target_alembic_heads"],
+                }
+            )
 
         report["active_work"] = active_work_counts(
             source_connection, source_metadata, now=now

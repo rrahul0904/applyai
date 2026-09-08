@@ -63,7 +63,8 @@ def reflected_public_metadata(engine: Engine) -> MetaData:
 
 
 def table_by_name(metadata: MetaData, name: str) -> Table | None:
-    return metadata.tables.get(f"public.{name}") or metadata.tables.get(name)
+    table = metadata.tables.get(f"public.{name}")
+    return table if table is not None else metadata.tables.get(name)
 
 
 def public_table_names(metadata: MetaData) -> set[str]:

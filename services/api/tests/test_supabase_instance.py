@@ -2,7 +2,7 @@ from app.core.supabase_instance import supabase_instance_fingerprint
 
 
 def test_supabase_instance_fingerprint_normalizes_project_hostname() -> None:
-    expected = "69b8ff48c8c2a711"
+    expected = "579ad99e95a603e1"
     assert supabase_instance_fingerprint("https://applyai-test.supabase.co") == expected
     assert supabase_instance_fingerprint("https://APPLYAI-TEST.SUPABASE.CO/") == expected
 

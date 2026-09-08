@@ -443,6 +443,28 @@ class Settings(BaseSettings):
         return f"https://{ref}.storage.supabase.co/storage/v1/s3"
 
     @property
+    def storage_runtime_configured(self) -> bool:
+        return (
+            self.object_storage_provider == "postgres"
+            or (
+                self.object_storage_provider == "supabase"
+                and bool(self.resolved_supabase_project_ref)
+                and bool(self.supabase_storage_bucket)
+                and bool(self.supabase_s3_access_key_id)
+                and bool(self.supabase_s3_secret_access_key)
+            )
+            or (self.object_storage_provider == "s3" and bool(self.s3_bucket))
+            or (
+                self.object_storage_provider == "local"
+                and self.app_env.lower() not in {"staging", "production"}
+            )
+        )
+
+    @property
+    def background_worker_configured(self) -> bool:
+        return bool(self.worker_drain_secret) and self.task_queue_provider == "postgres"
+
+    @property
     def allowed_operator_emails(self) -> set[str]:
         return {
             value.strip().lower()

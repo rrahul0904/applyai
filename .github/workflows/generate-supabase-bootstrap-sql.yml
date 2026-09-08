@@ -49,12 +49,12 @@ jobs:
       - name: Commit generated bootstrap SQL
         run: |
           set -euo pipefail
-          if git diff --quiet -- supabase/generated/alembic-zero-to-head.sql; then
+          git add supabase/generated/alembic-zero-to-head.sql
+          if git diff --cached --quiet; then
             echo "Bootstrap SQL already current."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add supabase/generated/alembic-zero-to-head.sql
           git commit -m "build: refresh Supabase bootstrap SQL"
           git push origin HEAD:agent/applyai-finalization-wave

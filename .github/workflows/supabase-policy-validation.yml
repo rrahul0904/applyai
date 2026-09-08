@@ -1,0 +1,62 @@
+name: Supabase Policy Validation
+
+on:
+  push:
+    branches:
+      - main
+      - agent/applyai-finalization-wave
+    paths:
+      - 'supabase/**'
+      - 'services/api/app/**'
+      - 'services/api/scripts/validate_supabase_policies.py'
+      - 'services/api/tests/test_supabase_policy_validation.py'
+      - '.github/workflows/supabase-policy-validation.yml'
+  pull_request:
+    paths:
+      - 'supabase/**'
+      - 'services/api/app/**'
+      - 'services/api/scripts/validate_supabase_policies.py'
+      - 'services/api/tests/test_supabase_policy_validation.py'
+      - '.github/workflows/supabase-policy-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Supabase RLS/schema contract
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+        with:
+          version: "0.11.32"
+
+      - name: Install API dependencies
+        working-directory: services/api
+        run: uv sync --locked
+
+      - name: Validate Supabase policy schema coverage
+        working-directory: services/api
+        run: |
+          uv run python -m scripts.validate_supabase_policies             --report ../../artifacts/supabase-policy-validation.json
+
+      - name: Run Supabase policy tests
+        working-directory: services/api
+        run: uv run pytest -q tests/test_supabase_policy_validation.py
+
+      - name: Upload policy evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: supabase-policy-validation
+          path: artifacts/supabase-policy-validation.json
+          if-no-files-found: error

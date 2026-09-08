@@ -16,6 +16,7 @@ async function backendReadiness(apiUrl: string | undefined) {
     operatorConfigured: false,
     operatorAuthLocation: "",
     storageConfigured: false,
+    backgroundWorkerConfigured: false,
     authProvider: "",
     clerkFingerprint: "",
     supabaseFingerprint: "",
@@ -33,6 +34,7 @@ async function backendReadiness(apiUrl: string | undefined) {
           operator_auth_configured?: boolean;
           operator_auth_location?: string;
           storage_configured?: boolean;
+          background_worker_configured?: boolean;
           auth_provider?: string;
           clerk_instance_fingerprint?: string;
           supabase_project_fingerprint?: string;
@@ -47,6 +49,8 @@ async function backendReadiness(apiUrl: string | undefined) {
           ? payload.operator_auth_location
           : "",
       storageConfigured: payload?.storage_configured === true,
+      backgroundWorkerConfigured:
+        payload?.background_worker_configured === true,
       authProvider:
         typeof payload?.auth_provider === "string" ? payload.auth_provider : "",
       clerkFingerprint:
@@ -103,6 +107,7 @@ export async function GET() {
         supabaseUrl &&
           supabasePublishableKey &&
           backend.authProvider === "supabase" &&
+          backend.backgroundWorkerConfigured &&
           supabaseInstanceMatch,
       )
     : Boolean(
@@ -138,6 +143,7 @@ export async function GET() {
         api_reachable: backend.reachable,
         database_reachable: backend.databaseReachable,
         storage_configured: backend.storageConfigured,
+        background_worker_configured: backend.backgroundWorkerConfigured,
         auth_provider: backend.authProvider,
         supabase_auth_configured: Boolean(
           supabaseUrl && supabasePublishableKey,

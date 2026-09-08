@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { clerkPublishableKeyInstanceFingerprint } from "@/lib/auth/clerk-instance";
 import { supabaseProjectFingerprint } from "@/lib/auth/supabase-instance";
+import {
+  configuredSupabasePublishableKey,
+  configuredSupabaseUrl,
+} from "@/lib/auth/supabase-http";
 
 function keyMode(value: string | undefined, livePrefix: string, testPrefix: string) {
   if (!value) return "missing" as const;
@@ -72,9 +76,8 @@ export async function GET() {
   const backend = await backendReadiness(process.env.APPLYAI_API_URL);
   const devAuthEnabled = process.env.DEV_AUTH_ENABLED === "true";
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabasePublishableKey =
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  const supabaseUrl = configuredSupabaseUrl();
+  const supabasePublishableKey = configuredSupabasePublishableKey();
   const useSupabase = Boolean(supabaseUrl || supabasePublishableKey);
   const webSupabaseFingerprint = supabaseProjectFingerprint(supabaseUrl);
   const supabaseInstanceMatch = Boolean(

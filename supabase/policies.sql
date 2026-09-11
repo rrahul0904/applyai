@@ -1,10 +1,15 @@
 -- ApplyAI Supabase defense-in-depth policies.
--- Canonical application authorization remains in FastAPI. These policies prevent the
--- Supabase Data API / Storage API from becoming a parallel authorization bypass.
+-- Canonical application authorization remains in FastAPI. The public application schema
+-- is API-only: Supabase Auth is used for identity and Supabase Storage may use explicit
+-- user-scoped policies, but PostgREST must not become a parallel application data API.
 
 begin;
 
-create or replace function public.applyai_current_user_id()
+create schema if not exists private;
+revoke all on schema private from public;
+grant usage on schema private to authenticated;
+
+create or replace function private.applyai_current_user_id()
 returns uuid
 language sql
 stable
@@ -18,12 +23,45 @@ as $$
   limit 1
 $$;
 
-revoke all on function public.applyai_current_user_id() from public;
-grant execute on function public.applyai_current_user_id() to authenticated;
+revoke all on function private.applyai_current_user_id() from public;
+grant execute on function private.applyai_current_user_id() to authenticated;
 
--- Candidate-owned application tables remain API-only. RLS is enabled and direct
--- anon/authenticated table privileges are revoked. This is deliberate: browser traffic
--- reaches these records through FastAPI, where business authorization and audit behavior live.
+-- Fail closed for every current application table in public. PostgreSQL owners and
+-- service_role bypass RLS, so FastAPI/server-side database access remains unaffected.
+-- anon/authenticated receive no direct application table privileges.
+do $$
+declare
+  target record;
+begin
+  for target in
+    select schemaname, tablename
+    from pg_tables
+    where schemaname = 'public'
+  loop
+    execute format(
+      'alter table %I.%I enable row level security',
+      target.schemaname,
+      target.tablename
+    );
+  end loop;
+end
+$$;
+
+revoke all privileges on all tables in schema public from anon, authenticated;
+revoke all privileges on all sequences in schema public from anon, authenticated;
+revoke execute on all functions in schema public from public, anon, authenticated;
+
+-- Supabase grants broad Data API access to new public objects by default. Remove those
+-- defaults for objects created by ApplyAI's canonical postgres migration role.
+alter default privileges for role postgres in schema public
+  revoke all on tables from anon, authenticated;
+alter default privileges for role postgres in schema public
+  revoke all on sequences from anon, authenticated;
+alter default privileges for role postgres in schema public
+  revoke execute on functions from public, anon, authenticated;
+
+-- Explicit high-sensitivity table declarations remain here as readable invariants and
+-- as protection if this file is selectively audited or ported.
 alter table public.users enable row level security;
 alter table public.candidate_profiles enable row level security;
 alter table public.candidate_preferences enable row level security;
@@ -42,40 +80,20 @@ alter table public.resume_share_links enable row level security;
 alter table public.user_roles enable row level security;
 alter table public.roles enable row level security;
 
-revoke all on table
-  public.users,
-  public.candidate_profiles,
-  public.candidate_preferences,
-  public.candidate_target_roles,
-  public.candidate_experiences,
-  public.candidate_education,
-  public.candidate_skills,
-  public.resumes,
-  public.resume_versions,
-  public.saved_jobs,
-  public.applications,
-  public.application_documents,
-  public.application_answers,
-  public.application_notes,
-  public.resume_share_links,
-  public.user_roles,
-  public.roles
-from anon, authenticated;
-
--- Self-readable identity/role metadata can be exposed safely if a future UI needs it.
-grant select on public.users, public.user_roles, public.roles to authenticated;
-
+-- These self-read policies are deliberately privilege-inert today because the table
+-- grants above are revoked. They can support a future explicitly reviewed read-only UI
+-- without weakening the default API-only posture.
 drop policy if exists "applyai users read self" on public.users;
 create policy "applyai users read self"
 on public.users for select
 to authenticated
-using (id = (select public.applyai_current_user_id()));
+using (id = (select private.applyai_current_user_id()));
 
 drop policy if exists "applyai users read own roles" on public.user_roles;
 create policy "applyai users read own roles"
 on public.user_roles for select
 to authenticated
-using (user_id = (select public.applyai_current_user_id()));
+using (user_id = (select private.applyai_current_user_id()));
 
 drop policy if exists "applyai authenticated read role names" on public.roles;
 create policy "applyai authenticated read role names"
@@ -96,7 +114,7 @@ to authenticated
 using (
   bucket_id = 'resumes'
   and (storage.foldername(name))[1] = 'candidate'
-  and (storage.foldername(name))[2] = (select public.applyai_current_user_id())::text
+  and (storage.foldername(name))[2] = (select private.applyai_current_user_id())::text
 );
 
 drop policy if exists "applyai resume objects insert own" on storage.objects;
@@ -106,7 +124,7 @@ to authenticated
 with check (
   bucket_id = 'resumes'
   and (storage.foldername(name))[1] = 'candidate'
-  and (storage.foldername(name))[2] = (select public.applyai_current_user_id())::text
+  and (storage.foldername(name))[2] = (select private.applyai_current_user_id())::text
 );
 
 drop policy if exists "applyai resume objects update own" on storage.objects;
@@ -116,12 +134,12 @@ to authenticated
 using (
   bucket_id = 'resumes'
   and (storage.foldername(name))[1] = 'candidate'
-  and (storage.foldername(name))[2] = (select public.applyai_current_user_id())::text
+  and (storage.foldername(name))[2] = (select private.applyai_current_user_id())::text
 )
 with check (
   bucket_id = 'resumes'
   and (storage.foldername(name))[1] = 'candidate'
-  and (storage.foldername(name))[2] = (select public.applyai_current_user_id())::text
+  and (storage.foldername(name))[2] = (select private.applyai_current_user_id())::text
 );
 
 drop policy if exists "applyai resume objects delete own" on storage.objects;
@@ -131,7 +149,7 @@ to authenticated
 using (
   bucket_id = 'resumes'
   and (storage.foldername(name))[1] = 'candidate'
-  and (storage.foldername(name))[2] = (select public.applyai_current_user_id())::text
+  and (storage.foldername(name))[2] = (select private.applyai_current_user_id())::text
 );
 
 commit;

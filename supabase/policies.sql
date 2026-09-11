@@ -49,7 +49,7 @@ $$;
 
 revoke all privileges on all tables in schema public from anon, authenticated;
 revoke all privileges on all sequences in schema public from anon, authenticated;
-revoke execute on all functions in schema public from anon, authenticated;
+revoke execute on all functions in schema public from public, anon, authenticated;
 
 -- Supabase grants broad Data API access to new public objects by default. Remove those
 -- defaults for objects created by ApplyAI's canonical postgres migration role.
@@ -58,7 +58,7 @@ alter default privileges for role postgres in schema public
 alter default privileges for role postgres in schema public
   revoke all on sequences from anon, authenticated;
 alter default privileges for role postgres in schema public
-  revoke execute on functions from anon, authenticated;
+  revoke execute on functions from public, anon, authenticated;
 
 -- Explicit high-sensitivity table declarations remain here as readable invariants and
 -- as protection if this file is selectively audited or ported.

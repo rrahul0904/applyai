@@ -58,12 +58,22 @@ jobs:
             *) echo "::error::SUPABASE_URL must be the hosted HTTPS project URL"; exit 1 ;;
           esac
 
-      - name: Require Supabase production readiness
+      - name: Require Supabase production runtime readiness
         run: |
           set -euo pipefail
-          response="$(curl --fail --silent --show-error --location --max-time 20 "$APPLYAI_PRODUCTION_URL/api/readiness")"
-          printf '%s\n' "$response" | jq -e '
-            .production_ready == true and
+          status="$(curl --silent --show-error --location --max-time 20 \
+            --output /tmp/readiness.json \
+            --write-out '%{http_code}' \
+            "$APPLYAI_PRODUCTION_URL/api/readiness")"
+
+          if [ "$status" != "200" ] && [ "$status" != "503" ]; then
+            cat /tmp/readiness.json || true
+            echo "::error::Unexpected readiness status: HTTP $status"
+            exit 1
+          fi
+
+          jq -e '
+            .runtime_ready == true and
             .checks.api_reachable == true and
             .checks.database_reachable == true and
             .checks.storage_configured == true and
@@ -71,10 +81,9 @@ jobs:
             .checks.auth_provider == "supabase" and
             .checks.supabase_auth_configured == true and
             .checks.supabase_instance_match == true and
-            .checks.operator_configured == true and
             .checks.operator_auth_location == "database" and
             .checks.dev_auth_enabled == false
-          ' >/dev/null
+          ' /tmp/readiness.json >/dev/null
 
       - name: Install web dependencies and Chromium
         run: |
@@ -88,7 +97,16 @@ jobs:
           test_email="applyai-release-${GITHUB_RUN_ID}@example.com"
           test_password="Aa9!$(openssl rand -hex 16)"
 
-          status="$(curl --silent --show-error             --output /tmp/supabase-user.json             --write-out '%{http_code}'             --request POST             "$SUPABASE_URL/auth/v1/admin/users"             --header "apikey: $SUPABASE_SECRET_KEY"             --header "Authorization: Bearer $SUPABASE_SECRET_KEY"             --header 'Content-Type: application/json'             --data "$(jq -n --arg email "$test_email" --arg password "$test_password"               '{email:$email,password:$password,email_confirm:true,user_metadata:{first_name:"ApplyAI",last_name:"Release"}}')")"
+          status="$(curl --silent --show-error \
+            --output /tmp/supabase-user.json \
+            --write-out '%{http_code}' \
+            --request POST \
+            "$SUPABASE_URL/auth/v1/admin/users" \
+            --header "apikey: $SUPABASE_SECRET_KEY" \
+            --header "Authorization: Bearer $SUPABASE_SECRET_KEY" \
+            --header 'Content-Type: application/json' \
+            --data "$(jq -n --arg email "$test_email" --arg password "$test_password" \
+              '{email:$email,password:$password,email_confirm:true,user_metadata:{first_name:"ApplyAI",last_name:"Release"}}')")"
 
           if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
             jq '{code,error_code,msg,message}' /tmp/supabase-user.json || true
@@ -106,7 +124,16 @@ jobs:
       - name: Create one-time session for existing operator
         run: |
           set -euo pipefail
-          status="$(curl --silent --show-error             --output /tmp/operator-link.json             --write-out '%{http_code}'             --request POST             "$SUPABASE_URL/auth/v1/admin/generate_link"             --header "apikey: $SUPABASE_SECRET_KEY"             --header "Authorization: Bearer $SUPABASE_SECRET_KEY"             --header 'Content-Type: application/json'             --data "$(jq -n --arg email "$APPLYAI_PRODUCTION_OPERATOR_EMAIL"               '{type:"magiclink",email:$email}')")"
+          status="$(curl --silent --show-error \
+            --output /tmp/operator-link.json \
+            --write-out '%{http_code}' \
+            --request POST \
+            "$SUPABASE_URL/auth/v1/admin/generate_link" \
+            --header "apikey: $SUPABASE_SECRET_KEY" \
+            --header "Authorization: Bearer $SUPABASE_SECRET_KEY" \
+            --header 'Content-Type: application/json' \
+            --data "$(jq -n --arg email "$APPLYAI_PRODUCTION_OPERATOR_EMAIL" \
+              '{type:"magiclink",email:$email}')")"
           if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
             jq '{code,error_code,msg,message}' /tmp/operator-link.json || true
             echo "::error::Unable to generate operator one-time link"
@@ -116,7 +143,15 @@ jobs:
           token_hash="$(jq -r '.hashed_token // empty' /tmp/operator-link.json)"
           test -n "$token_hash"
 
-          verify_status="$(curl --silent --show-error             --output /tmp/operator-session.json             --write-out '%{http_code}'             --request POST             "$SUPABASE_URL/auth/v1/verify"             --header "apikey: $SUPABASE_PUBLISHABLE_KEY"             --header 'Content-Type: application/json'             --data "$(jq -n --arg token_hash "$token_hash"               '{type:"magiclink",token_hash:$token_hash}')")"
+          verify_status="$(curl --silent --show-error \
+            --output /tmp/operator-session.json \
+            --write-out '%{http_code}' \
+            --request POST \
+            "$SUPABASE_URL/auth/v1/verify" \
+            --header "apikey: $SUPABASE_PUBLISHABLE_KEY" \
+            --header 'Content-Type: application/json' \
+            --data "$(jq -n --arg token_hash "$token_hash" \
+              '{type:"magiclink",token_hash:$token_hash}')")"
           if [ "$verify_status" -lt 200 ] || [ "$verify_status" -ge 300 ]; then
             jq '{code,error_code,msg,message}' /tmp/operator-session.json || true
             echo "::error::Unable to exchange operator one-time token"
@@ -134,7 +169,20 @@ jobs:
 
       - name: Run real browser candidate and operator acceptance
         run: |
-          pnpm --dir apps/web exec playwright test             --config=playwright.production-supabase-auth.config.ts             e2e/production-supabase-auth.spec.ts
+          pnpm --dir apps/web exec playwright test \
+            --config=playwright.production-supabase-auth.config.ts \
+            e2e/production-supabase-auth.spec.ts
+
+      - name: Require full production readiness after acceptance
+        run: |
+          set -euo pipefail
+          response="$(curl --fail --silent --show-error --location --max-time 20 \
+            "$APPLYAI_PRODUCTION_URL/api/readiness")"
+          printf '%s\n' "$response" | jq -e '
+            .production_ready == true and
+            .checks.operator_configured == true and
+            .checks.operator_auth_location == "database"
+          ' >/dev/null
 
       - name: Delete temporary Supabase Auth candidate
         if: ${{ always() }}
@@ -143,7 +191,13 @@ jobs:
           if [ -z "${APPLYAI_SUPABASE_TEST_USER_ID:-}" ] || [ -z "${SUPABASE_SECRET_KEY:-}" ]; then
             exit 0
           fi
-          status="$(curl --silent --show-error             --output /tmp/supabase-delete-user.json             --write-out '%{http_code}'             --request DELETE             "$SUPABASE_URL/auth/v1/admin/users/$APPLYAI_SUPABASE_TEST_USER_ID"             --header "apikey: $SUPABASE_SECRET_KEY"             --header "Authorization: Bearer $SUPABASE_SECRET_KEY")"
+          status="$(curl --silent --show-error \
+            --output /tmp/supabase-delete-user.json \
+            --write-out '%{http_code}' \
+            --request DELETE \
+            "$SUPABASE_URL/auth/v1/admin/users/$APPLYAI_SUPABASE_TEST_USER_ID" \
+            --header "apikey: $SUPABASE_SECRET_KEY" \
+            --header "Authorization: Bearer $SUPABASE_SECRET_KEY")"
           if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
             echo "::warning::Temporary Supabase Auth user cleanup returned HTTP $status"
           fi

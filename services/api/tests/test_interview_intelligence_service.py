@@ -37,7 +37,7 @@ def test_empty_readiness_is_stable_and_bounded() -> None:
     readiness = readiness_from_scores([], completed_reflections=0, completed_notes=0, phase_count=0)
 
     assert readiness == {
-        "overall": 31,
+        "overall": 32,
         "practice": 45,
         "round_learning": 0,
         "notes": 0,

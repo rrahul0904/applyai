@@ -10,7 +10,7 @@ from app.api import (
     agents, application_agent, application_agent_documents, applications, billing_platform,
     candidate_platform, candidate_workspace, career_intelligence_v2, career_memory, career_product,
     career_product_contract, career_product_polish, career_system, company_intelligence, employer_platform,
-    internal_agents, internal_ai_evaluation, internal_job_discoveries, internal_job_quality,
+    internal_agents, internal_ai_evaluation, internal_ai_quality, internal_job_discoveries, internal_job_quality,
     internal_job_sources, internal_job_supply, internal_operations, internal_platform_admin, internal_worker,
     interview_intelligence, job_imports, jobs, me, onboarding, privacy,
     profiles, recruiter_lens, resume_shares, resumes, semantic_matching,

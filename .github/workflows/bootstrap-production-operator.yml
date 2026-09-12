@@ -1,0 +1,187 @@
+name: Bootstrap production Supabase operator
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/bootstrap-production-operator.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    name: Bootstrap database-backed operator
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 10
+    env:
+      SUPABASE_URL: ${{ secrets.APPLYAI_SUPABASE_URL }}
+      SUPABASE_SECRET_KEY: ${{ secrets.APPLYAI_SUPABASE_SECRET_KEY }}
+      OPERATOR_EMAIL: ${{ secrets.APPLYAI_PRODUCTION_OPERATOR_EMAIL }}
+      PRODUCTION_URL: https://applyai-gold.vercel.app
+    steps:
+      - name: Validate protected production inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in SUPABASE_URL SUPABASE_SECRET_KEY OPERATOR_EMAIL; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing required production secret: $name"
+              exit 1
+            fi
+          done
+          echo "::add-mask::$OPERATOR_EMAIL"
+          case "$SUPABASE_URL" in
+            https://*.supabase.co) ;;
+            *) echo "::error::SUPABASE_URL must be the hosted HTTPS project URL"; exit 1 ;;
+          esac
+
+      - name: Ensure confirmed Supabase operator identity exists
+        id: auth
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth_headers=(
+            --header "apikey: $SUPABASE_SECRET_KEY"
+            --header "Authorization: Bearer $SUPABASE_SECRET_KEY"
+          )
+
+          curl --fail-with-body --silent --show-error \
+            "${auth_headers[@]}" \
+            "$SUPABASE_URL/auth/v1/admin/users?page=1&per_page=1000" \
+            --output /tmp/auth-users.json
+
+          auth_user_id="$(jq -r --arg email "$OPERATOR_EMAIL" '
+            .users[]? | select((.email // "" | ascii_downcase) == ($email | ascii_downcase)) | .id
+          ' /tmp/auth-users.json | head -n1)"
+
+          if [[ -z "$auth_user_id" ]]; then
+            bootstrap_password="Aa9!$(openssl rand -hex 24)"
+            echo "::add-mask::$bootstrap_password"
+            status="$(curl --silent --show-error \
+              --output /tmp/operator-create.json \
+              --write-out '%{http_code}' \
+              --request POST \
+              "$SUPABASE_URL/auth/v1/admin/users" \
+              "${auth_headers[@]}" \
+              --header 'Content-Type: application/json' \
+              --data "$(jq -n --arg email "$OPERATOR_EMAIL" --arg password "$bootstrap_password" \
+                '{email:$email,password:$password,email_confirm:true,user_metadata:{first_name:"ApplyAI",last_name:"Operator"}}')")"
+            if [[ "$status" -lt 200 || "$status" -ge 300 ]]; then
+              jq '{code,error_code,msg,message}' /tmp/operator-create.json || true
+              echo "::error::Unable to create the protected production operator identity"
+              exit 1
+            fi
+            auth_user_id="$(jq -r '.id // empty' /tmp/operator-create.json)"
+          fi
+
+          test -n "$auth_user_id"
+          echo "auth_user_id=$auth_user_id" >> "$GITHUB_OUTPUT"
+
+      - name: Upsert ApplyAI user and operator role
+        id: role
+        shell: bash
+        env:
+          AUTH_USER_ID: ${{ steps.auth.outputs.auth_user_id }}
+        run: |
+          set -euo pipefail
+          rest_headers=(
+            --header "apikey: $SUPABASE_SECRET_KEY"
+            --header "Authorization: Bearer $SUPABASE_SECRET_KEY"
+            --header 'Content-Type: application/json'
+          )
+
+          curl --fail-with-body --silent --show-error \
+            --get "$SUPABASE_URL/rest/v1/users" \
+            "${rest_headers[@]}" \
+            --data-urlencode 'select=id,auth_user_id,email' \
+            --data-urlencode "email=ilike.$OPERATOR_EMAIL" \
+            --output /tmp/app-users.json
+
+          app_user_id="$(jq -r '.[0].id // empty' /tmp/app-users.json)"
+          if [[ -z "$app_user_id" ]]; then
+            app_user_id="$AUTH_USER_ID"
+            status="$(curl --silent --show-error \
+              --output /tmp/app-user-upsert.json \
+              --write-out '%{http_code}' \
+              --request POST \
+              "$SUPABASE_URL/rest/v1/users?on_conflict=auth_user_id" \
+              "${rest_headers[@]}" \
+              --header 'Prefer: resolution=merge-duplicates,return=representation' \
+              --data "$(jq -n \
+                --arg id "$app_user_id" \
+                --arg auth_user_id "$AUTH_USER_ID" \
+                --arg email "$OPERATOR_EMAIL" \
+                '{id:$id,auth_user_id:$auth_user_id,auth_provider:"supabase",email:$email,account_status:"ACTIVE",onboarding_completed:false,onboarding_stage:"ACCOUNT_CREATED"}')")"
+          else
+            status="$(curl --silent --show-error \
+              --output /tmp/app-user-upsert.json \
+              --write-out '%{http_code}' \
+              --request PATCH \
+              "$SUPABASE_URL/rest/v1/users?id=eq.$app_user_id" \
+              "${rest_headers[@]}" \
+              --header 'Prefer: return=representation' \
+              --data "$(jq -n --arg auth_user_id "$AUTH_USER_ID" \
+                '{auth_user_id:$auth_user_id,auth_provider:"supabase",account_status:"ACTIVE"}')")"
+          fi
+          if [[ "$status" -lt 200 || "$status" -ge 300 ]]; then
+            jq '.' /tmp/app-user-upsert.json || true
+            echo "::error::Unable to upsert ApplyAI operator user"
+            exit 1
+          fi
+
+          curl --fail-with-body --silent --show-error \
+            --get "$SUPABASE_URL/rest/v1/roles" \
+            "${rest_headers[@]}" \
+            --data-urlencode 'select=id,name' \
+            --data-urlencode 'name=eq.operator' \
+            --output /tmp/operator-role.json
+          operator_role_id="$(jq -r '.[0].id // empty' /tmp/operator-role.json)"
+          if [[ -z "$operator_role_id" ]]; then
+            echo "::error::The required operator role is missing from production"
+            exit 1
+          fi
+
+          status="$(curl --silent --show-error \
+            --output /tmp/operator-role-upsert.json \
+            --write-out '%{http_code}' \
+            --request POST \
+            "$SUPABASE_URL/rest/v1/user_roles?on_conflict=user_id,role_id" \
+            "${rest_headers[@]}" \
+            --header 'Prefer: resolution=ignore-duplicates,return=representation' \
+            --data "$(jq -n --arg user_id "$app_user_id" --arg role_id "$operator_role_id" \
+              '[{user_id:$user_id,role_id:$role_id}]')")"
+          if [[ "$status" -lt 200 || "$status" -ge 300 ]]; then
+            jq '.' /tmp/operator-role-upsert.json || true
+            echo "::error::Unable to assign production operator role"
+            exit 1
+          fi
+          echo "app_user_id=$app_user_id" >> "$GITHUB_OUTPUT"
+
+      - name: Verify database-backed operator contract
+        shell: bash
+        env:
+          APP_USER_ID: ${{ steps.role.outputs.app_user_id }}
+        run: |
+          set -euo pipefail
+          rest_headers=(
+            --header "apikey: $SUPABASE_SECRET_KEY"
+            --header "Authorization: Bearer $SUPABASE_SECRET_KEY"
+          )
+          curl --fail-with-body --silent --show-error \
+            --get "$SUPABASE_URL/rest/v1/user_roles" \
+            "${rest_headers[@]}" \
+            --data-urlencode 'select=user_id,roles!inner(name)' \
+            --data-urlencode "user_id=eq.$APP_USER_ID" \
+            --data-urlencode 'roles.name=eq.operator' \
+            --output /tmp/operator-verification.json
+          jq -e 'length >= 1 and .[0].roles.name == "operator"' /tmp/operator-verification.json >/dev/null
+
+          readiness="$(curl --fail --silent --show-error --location --max-time 20 "$PRODUCTION_URL/api/readiness")"
+          printf '%s\n' "$readiness" | jq -e '
+            .checks.operator_configured == true and
+            .checks.operator_auth_location == "database"
+          ' >/dev/null
+          echo "Production operator bootstrap verified without exposing operator credentials."

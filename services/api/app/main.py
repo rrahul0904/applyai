@@ -7,7 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.api import (
-    agents, application_agent, application_agent_documents, applications, billing_platform,
+    agents, application_agent, application_agent_documents, application_materials, applications, billing_platform,
     candidate_platform, candidate_workspace, career_intelligence_v2, career_memory, career_prepare, career_product,
     career_product_contract, career_product_polish, career_system, company_intelligence, employer_platform,
     internal_agents, internal_ai_evaluation, internal_ai_quality, internal_job_discoveries, internal_job_quality,
@@ -97,6 +97,7 @@ def ready() -> dict[str, str | bool]:
 # route so Starlette resolves the specific product routes first without changing
 # or breaking the existing AI task-path contract.
 app.include_router(career_prepare.router,prefix="/api/v1",include_in_schema=False)
+app.include_router(application_materials.router,prefix="/api/v1",include_in_schema=False)
 app.include_router(interview_media.router,prefix="/api/v1",include_in_schema=False)
 
 for router in (me.router,onboarding.router,profiles.router,resumes.router,jobs.router,applications.router,career_memory.router,career_intelligence_v2.router,candidate_platform.router,semantic_matching.router,company_intelligence.router,employer_platform.router,billing_platform.router,privacy.router): app.include_router(router,prefix="/api/v1")

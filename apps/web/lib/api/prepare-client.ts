@@ -93,6 +93,36 @@ export type MockInterview = {
   }>;
 };
 
+export type ApplicationKit = {
+  id: string;
+  job_id: string;
+  title: string;
+  status: string;
+  version: number;
+  content: {
+    kind: "JOB_APPLICATION_KIT";
+    job: { id: string; title: string; company: string };
+    candidate: { name: string; email: string; current_title: string };
+    resume: {
+      headline: string;
+      summary: string;
+      skills: string[];
+      experience: Array<{ company: string; title: string; start: string; end: string; description: string; provenance: string }>;
+      education: Array<{ institution: string; degree: string; field: string; start: string; end: string; provenance: string }>;
+    };
+    cover_letter: string;
+    ats: {
+      score: number;
+      matched_skills: string[];
+      missing_required_skills: string[];
+      preferred_skills: string[];
+      policy: string;
+    };
+    evidence_refs: string[];
+  };
+  downloads: { resume_pdf: string; cover_letter_pdf: string };
+};
+
 type ErrorEnvelope = { error?: { code?: string; message?: string } };
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -125,4 +155,6 @@ export const prepareApi = {
   report: (sessionId: string, signal?: AbortSignal) => request<MockInterview>(`/career-v2/interviews/${sessionId}/report`, { signal }),
   saveRecording: (sessionId: string, payload: { media_type: "AUDIO" | "VIDEO"; storage_key: string; transcript_text?: string | null; duration_seconds?: number | null; provider?: string }) => request<{ recording_id: string; media_type: string; duration_seconds: number | null; transcript_available: boolean }>(`/career-v2/interviews/${sessionId}/recordings`, { method: "POST", body: JSON.stringify(payload) }),
   progress: (jobId: string, signal?: AbortSignal) => request<{ job_id: string; snapshots: Array<Record<string, unknown>> }>(`/career-v2/jobs/${jobId}/progress`, { signal }),
+  applicationKit: (jobId: string, signal?: AbortSignal) => request<ApplicationKit>(`/career-v2/jobs/${jobId}/application-kit`, { signal }),
+  createApplicationKit: (jobId: string) => request<ApplicationKit>(`/career-v2/jobs/${jobId}/application-kit`, { method: "POST" }),
 };

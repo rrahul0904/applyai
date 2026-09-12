@@ -32,13 +32,21 @@ def _seed_candidate_and_job(database_url: str, client):
             )
         )
         job = create_job(session)
-        session.add(
-            JobSkill(
-                job_id=job.id,
-                name="Kubernetes",
-                normalized_name="kubernetes",
-                required=True,
-            )
+        session.add_all(
+            [
+                JobSkill(
+                    job_id=job.id,
+                    name="Operations",
+                    normalized_name="operations",
+                    required=True,
+                ),
+                JobSkill(
+                    job_id=job.id,
+                    name="Kubernetes",
+                    normalized_name="kubernetes",
+                    required=True,
+                ),
+            ]
         )
         session.commit()
         job_id = str(job.id)

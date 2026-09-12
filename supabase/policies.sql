@@ -41,6 +41,13 @@ alter table public.application_notes enable row level security;
 alter table public.resume_share_links enable row level security;
 alter table public.user_roles enable row level security;
 alter table public.roles enable row level security;
+alter table public.interview_preparations enable row level security;
+alter table public.interview_phases enable row level security;
+alter table public.interview_podcast_episodes enable row level security;
+alter table public.interview_practice_questions enable row level security;
+alter table public.interview_practice_attempts enable row level security;
+alter table public.interview_research_sources enable row level security;
+alter table public.interview_stories enable row level security;
 
 revoke all on table
   public.users,
@@ -59,7 +66,14 @@ revoke all on table
   public.application_notes,
   public.resume_share_links,
   public.user_roles,
-  public.roles
+  public.roles,
+  public.interview_preparations,
+  public.interview_phases,
+  public.interview_podcast_episodes,
+  public.interview_practice_questions,
+  public.interview_practice_attempts,
+  public.interview_research_sources,
+  public.interview_stories
 from anon, authenticated;
 
 -- Self-readable identity/role metadata can be exposed safely if a future UI needs it.

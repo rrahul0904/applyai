@@ -80,8 +80,9 @@ export function JobDetailView({ jobId }: { jobId: string }) {
               <div className="cx-action-icon"><Sparkles size={19} /></div>
               <div><span className="cx-action-label">Decide deliberately</span><h2>Pursue this opportunity?</h2></div>
             </div>
-            <p>Saving keeps the role on your radar. Starting an application creates an active opportunity workspace with résumé, outreach, interview, follow-up, and share context.</p>
-            <Button onClick={() => applying.mutate()} disabled={applying.isPending}><Sparkles size={17} />{applying.isPending ? "Starting…" : "Start application"}</Button>
+            <p>Saving keeps the role on your radar. ApplyAI can also turn the role into a tailored application kit, skill plan, interview book, and adaptive mock interview.</p>
+            <Link className="ui-button" href={`/interview/${jobId}`}><Sparkles size={17} />Build application & interview kit</Link>
+            <Button variant="secondary" onClick={() => applying.mutate()} disabled={applying.isPending}><Sparkles size={17} />{applying.isPending ? "Starting…" : "Start application"}</Button>
             <Button variant="secondary" onClick={() => saving.mutate()} disabled={saving.isPending} aria-pressed={item.saved}><Bookmark size={17} fill={item.saved ? "currentColor" : "none"} />{item.saved ? "Saved for later" : "Save for later"}</Button>
             <Link className="ui-button ui-button-secondary" href={shareHref}><Share2 size={17} />Create private resume share</Link>
 

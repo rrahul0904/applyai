@@ -1,6 +1,6 @@
-import { InterviewWorkspace } from "@/components/platform-workspaces";
+import { InterviewIntelligenceWorkspace } from "@/components/interview-intelligence-workspace";
 
 export default async function InterviewPage({ params }: { params: Promise<{ jobId: string }> }) {
   const { jobId } = await params;
-  return <InterviewWorkspace jobId={jobId} />;
+  return <InterviewIntelligenceWorkspace jobId={jobId} />;
 }

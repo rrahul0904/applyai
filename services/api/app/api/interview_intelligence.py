@@ -97,7 +97,9 @@ def _owned_preparation(session: Session, user: User, job_id: uuid.UUID) -> Inter
     return item
 
 
-def _owned_phase(session: Session, user: User, phase_id: uuid.UUID) -> tuple[InterviewPreparation, InterviewPhase]:
+def _owned_phase(
+    session: Session, user: User, phase_id: uuid.UUID
+) -> tuple[InterviewPreparation, InterviewPhase]:
     phase = session.get(InterviewPhase, phase_id)
     if phase is None:
         raise HTTPException(status_code=404, detail="Interview phase not found")
@@ -176,7 +178,10 @@ def _serialize_preparation(session: Session, prep: InterviewPreparation) -> dict
     return {
         "id": str(prep.id),
         "job_id": str(prep.job_id),
-        "job": {"title": job.title if job else "Interview", "description": job.description if job else ""},
+        "job": {
+            "title": job.title if job else "Interview",
+            "description": job.description if job else "",
+        },
         "status": prep.status,
         "country": prep.country,
         "interview_date": prep.interview_date,
@@ -223,36 +228,117 @@ def _serialize_preparation(session: Session, prep: InterviewPreparation) -> dict
 
 
 def _refresh_readiness(session: Session, prep: InterviewPreparation) -> None:
-    phases = list(session.scalars(select(InterviewPhase).where(InterviewPhase.preparation_id == prep.id)))
+    phases = list(
+        session.scalars(select(InterviewPhase).where(InterviewPhase.preparation_id == prep.id))
+    )
     phase_ids = [phase.id for phase in phases]
-    question_ids = list(
-        session.scalars(select(InterviewPracticeQuestion.id).where(InterviewPracticeQuestion.phase_id.in_(phase_ids)))
-    ) if phase_ids else []
-    scores = list(
-        session.scalars(
-            select(InterviewPracticeAttempt.score).where(
-                InterviewPracticeAttempt.user_id == prep.user_id,
-                InterviewPracticeAttempt.question_id.in_(question_ids),
+    question_ids = (
+        list(
+            session.scalars(
+                select(InterviewPracticeQuestion.id).where(
+                    InterviewPracticeQuestion.phase_id.in_(phase_ids)
+                )
             )
         )
-    ) if question_ids else []
-    completed_reflections = sum(1 for phase in phases if phase.reflection)
-    completed_notes = sum(1 for phase in phases if (phase.notes or "").strip())
-    prep.readiness = readiness_from_scores(scores, completed_reflections, completed_notes, len(phases))
-    for phase in phases:
-        ids = list(session.scalars(select(InterviewPracticeQuestion.id).where(InterviewPracticeQuestion.phase_id == phase.id)))
-        phase_scores = list(
+        if phase_ids
+        else []
+    )
+    scores = (
+        list(
             session.scalars(
                 select(InterviewPracticeAttempt.score).where(
                     InterviewPracticeAttempt.user_id == prep.user_id,
-                    InterviewPracticeAttempt.question_id.in_(ids),
+                    InterviewPracticeAttempt.question_id.in_(question_ids),
                 )
             )
-        ) if ids else []
+        )
+        if question_ids
+        else []
+    )
+    completed_reflections = sum(1 for phase in phases if phase.reflection)
+    completed_notes = sum(1 for phase in phases if (phase.notes or "").strip())
+    prep.readiness = readiness_from_scores(
+        scores, completed_reflections, completed_notes, len(phases)
+    )
+    for phase in phases:
+        ids = list(
+            session.scalars(
+                select(InterviewPracticeQuestion.id).where(
+                    InterviewPracticeQuestion.phase_id == phase.id
+                )
+            )
+        )
+        phase_scores = (
+            list(
+                session.scalars(
+                    select(InterviewPracticeAttempt.score).where(
+                        InterviewPracticeAttempt.user_id == prep.user_id,
+                        InterviewPracticeAttempt.question_id.in_(ids),
+                    )
+                )
+            )
+            if ids
+            else []
+        )
         phase.readiness = {
             "score": round(sum(phase_scores) / len(phase_scores)) if phase_scores else 45,
             "attempt_count": len(phase_scores),
         }
+
+
+def _upsert_questions(
+    session: Session,
+    phase: InterviewPhase,
+    generated_questions: list[dict[str, Any]],
+) -> None:
+    """Refresh question content without changing IDs or deleting attempt history."""
+    existing = {
+        item.display_order: item
+        for item in session.scalars(
+            select(InterviewPracticeQuestion).where(
+                InterviewPracticeQuestion.phase_id == phase.id
+            )
+        )
+    }
+    for payload in generated_questions:
+        display_order = int(payload["display_order"])
+        item = existing.get(display_order)
+        if item is None:
+            session.add(InterviewPracticeQuestion(phase_id=phase.id, **payload))
+            continue
+        item.mode = str(payload["mode"])
+        item.prompt = str(payload["prompt"])
+        item.model_answer = str(payload["model_answer"])
+        item.rubric = dict(payload.get("rubric") or {})
+        item.followups = list(payload.get("followups") or [])
+
+
+def _upsert_episodes(
+    session: Session,
+    prep: InterviewPreparation,
+    generated_episodes: list[dict[str, Any]],
+) -> None:
+    existing = {
+        item.episode_number: item
+        for item in session.scalars(
+            select(InterviewPodcastEpisode).where(
+                InterviewPodcastEpisode.preparation_id == prep.id
+            )
+        )
+    }
+    for payload in generated_episodes:
+        episode_number = int(payload["episode_number"])
+        item = existing.get(episode_number)
+        if item is None:
+            session.add(InterviewPodcastEpisode(preparation_id=prep.id, **payload))
+            continue
+        item.title = str(payload["title"])
+        item.summary = str(payload["summary"])
+        item.script = list(payload.get("script") or [])
+        item.duration_estimate_minutes = int(payload.get("duration_estimate_minutes") or 10)
+        # Preserve hosted audio when refreshing only the written preparation.
+        if not item.audio_url:
+            item.status = "SCRIPT_READY"
 
 
 def _generate(session: Session, prep: InterviewPreparation, user: User) -> None:
@@ -275,12 +361,17 @@ def _generate(session: Session, prep: InterviewPreparation, user: User) -> None:
             "How do you evaluate excellent performance on this team?",
             "Which trade-offs are hardest for the team right now?",
         ],
-        "evidence_note": "Interviewer-specific claims are not invented. Add reviewed public-source evidence when available.",
+        "evidence_note": (
+            "Interviewer-specific claims are not invented. Add reviewed public-source "
+            "evidence when available."
+        ),
     }
 
     existing_phases = {
         item.phase_number: item
-        for item in session.scalars(select(InterviewPhase).where(InterviewPhase.preparation_id == prep.id))
+        for item in session.scalars(
+            select(InterviewPhase).where(InterviewPhase.preparation_id == prep.id)
+        )
     }
     for phase_number, phase_type, title in PHASES:
         generated = phase_content(ctx, phase_number, phase_type, title)
@@ -295,24 +386,24 @@ def _generate(session: Session, prep: InterviewPreparation, user: User) -> None:
             )
             session.add(phase)
             session.flush()
-        phase.phase_type = phase_type
-        phase.title = title
-        phase.status = "CURRENT" if phase_number == prep.current_phase_number else ("COMPLETE" if phase_number < prep.current_phase_number else "UPCOMING")
         prior_notes = phase.notes
         prior_reflection = phase.reflection
+        phase.phase_type = phase_type
+        phase.title = title
+        phase.status = (
+            "CURRENT"
+            if phase_number == prep.current_phase_number
+            else ("COMPLETE" if phase_number < prep.current_phase_number else "UPCOMING")
+        )
         phase.prep = generated["prep"]
         phase.quiz = generated["quiz"]
         phase.flashcards = generated["flashcards"]
         phase.cheat_sheet = generated["cheat_sheet"]
         phase.notes = prior_notes
         phase.reflection = prior_reflection
-        session.query(InterviewPracticeQuestion).filter(InterviewPracticeQuestion.phase_id == phase.id).delete(synchronize_session=False)
-        for question in generated["questions"]:
-            session.add(InterviewPracticeQuestion(phase_id=phase.id, **question))
+        _upsert_questions(session, phase, generated["questions"])
 
-    session.query(InterviewPodcastEpisode).filter(InterviewPodcastEpisode.preparation_id == prep.id).delete(synchronize_session=False)
-    for episode in podcast_episodes(ctx, analysis):
-        session.add(InterviewPodcastEpisode(preparation_id=prep.id, **episode))
+    _upsert_episodes(session, prep, podcast_episodes(ctx, analysis))
     prep.status = "READY"
     _refresh_readiness(session, prep)
 
@@ -359,12 +450,28 @@ def bootstrap_preparation(
     prep.interviewer_name = payload.interviewer_name
     prep.interviewer_title = payload.interviewer_title
     prep.interviewer_url = str(payload.interviewer_url) if payload.interviewer_url else None
-    has_phases = bool(session.scalar(select(func.count()).select_from(InterviewPhase).where(InterviewPhase.preparation_id == prep.id)))
+    has_phases = bool(
+        session.scalar(
+            select(func.count())
+            .select_from(InterviewPhase)
+            .where(InterviewPhase.preparation_id == prep.id)
+        )
+    )
     if created or payload.regenerate or not has_phases:
         _generate(session, prep, user)
     else:
-        for phase in session.scalars(select(InterviewPhase).where(InterviewPhase.preparation_id == prep.id)):
-            phase.status = "CURRENT" if phase.phase_number == prep.current_phase_number else ("COMPLETE" if phase.phase_number < prep.current_phase_number else "UPCOMING")
+        for phase in session.scalars(
+            select(InterviewPhase).where(InterviewPhase.preparation_id == prep.id)
+        ):
+            phase.status = (
+                "CURRENT"
+                if phase.phase_number == prep.current_phase_number
+                else (
+                    "COMPLETE"
+                    if phase.phase_number < prep.current_phase_number
+                    else "UPCOMING"
+                )
+            )
         prep.interviewer_brief = {
             **(prep.interviewer_brief or {}),
             "name": prep.interviewer_name,
@@ -426,10 +533,17 @@ def save_phase_reflection(
             *payload.difficult_questions,
             *([payload.prepare_differently] if payload.prepare_differently else []),
         ]
-        next_phase.prep = {**(next_phase.prep or {}), "carry_forward": carry_forward[:10]}
+        next_phase.prep = {
+            **(next_phase.prep or {}),
+            "carry_forward": carry_forward[:10],
+        }
     _refresh_readiness(session, prep)
     session.commit()
-    return {"reflection": phase.reflection, "next_phase_number": prep.current_phase_number, "readiness": prep.readiness}
+    return {
+        "reflection": phase.reflection,
+        "next_phase_number": prep.current_phase_number,
+        "readiness": prep.readiness,
+    }
 
 
 @router.post("/questions/{question_id}/attempts", status_code=status.HTTP_201_CREATED)
@@ -443,7 +557,9 @@ def create_attempt(
     if question is None:
         raise HTTPException(status_code=404, detail="Practice question not found")
     prep, phase = _owned_phase(session, user, question.phase_id)
-    score, feedback = evaluate_answer(payload.answer_text, question.model_answer, question.followups)
+    score, feedback = evaluate_answer(
+        payload.answer_text, question.model_answer, question.followups
+    )
     attempt = InterviewPracticeAttempt(
         user_id=user.id,
         question_id=question.id,
@@ -479,7 +595,10 @@ def list_attempts(
     items = list(
         session.scalars(
             select(InterviewPracticeAttempt)
-            .where(InterviewPracticeAttempt.question_id == question_id, InterviewPracticeAttempt.user_id == user.id)
+            .where(
+                InterviewPracticeAttempt.question_id == question_id,
+                InterviewPracticeAttempt.user_id == user.id,
+            )
             .order_by(InterviewPracticeAttempt.created_at.desc())
         )
     )
@@ -516,7 +635,12 @@ def add_research_source(
     session.add(item)
     session.commit()
     session.refresh(item)
-    return {"id": str(item.id), "title": item.title, "url": item.url, "source_kind": item.source_kind}
+    return {
+        "id": str(item.id),
+        "title": item.title,
+        "url": item.url,
+        "source_kind": item.source_kind,
+    }
 
 
 @router.get("/stories/all")
@@ -524,13 +648,26 @@ def list_stories(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> list[dict[str, Any]]:
-    items = list(session.scalars(select(InterviewStory).where(InterviewStory.user_id == user.id).order_by(InterviewStory.updated_at.desc())))
+    items = list(
+        session.scalars(
+            select(InterviewStory)
+            .where(InterviewStory.user_id == user.id)
+            .order_by(InterviewStory.updated_at.desc())
+        )
+    )
     return [
         {
-            "id": str(item.id), "title": item.title, "categories": item.categories,
-            "situation": item.situation, "task": item.task, "action": item.action,
-            "result": item.result, "metrics": item.metrics, "skills": item.skills,
-            "source_fact_ids": item.source_fact_ids, "verified": item.verified,
+            "id": str(item.id),
+            "title": item.title,
+            "categories": item.categories,
+            "situation": item.situation,
+            "task": item.task,
+            "action": item.action,
+            "result": item.result,
+            "metrics": item.metrics,
+            "skills": item.skills,
+            "source_fact_ids": item.source_fact_ids,
+            "verified": item.verified,
         }
         for item in items
     ]
@@ -556,7 +693,12 @@ def update_story(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
-    item = session.scalar(select(InterviewStory).where(InterviewStory.id == story_id, InterviewStory.user_id == user.id))
+    item = session.scalar(
+        select(InterviewStory).where(
+            InterviewStory.id == story_id,
+            InterviewStory.user_id == user.id,
+        )
+    )
     if item is None:
         raise HTTPException(status_code=404, detail="Interview story not found")
     for key, value in payload.model_dump().items():
@@ -571,7 +713,12 @@ def delete_story(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> None:
-    item = session.scalar(select(InterviewStory).where(InterviewStory.id == story_id, InterviewStory.user_id == user.id))
+    item = session.scalar(
+        select(InterviewStory).where(
+            InterviewStory.id == story_id,
+            InterviewStory.user_id == user.id,
+        )
+    )
     if item is None:
         raise HTTPException(status_code=404, detail="Interview story not found")
     session.delete(item)
@@ -579,8 +726,16 @@ def delete_story(
 
 
 @router.get("/feed/{token}.xml", include_in_schema=False)
-def private_podcast_feed(token: str, request: Request, session: Session = Depends(get_session)) -> Response:
-    prep = session.scalar(select(InterviewPreparation).where(InterviewPreparation.private_feed_token == token))
+def private_podcast_feed(
+    token: str,
+    request: Request,
+    session: Session = Depends(get_session),
+) -> Response:
+    prep = session.scalar(
+        select(InterviewPreparation).where(
+            InterviewPreparation.private_feed_token == token
+        )
+    )
     if prep is None:
         raise HTTPException(status_code=404, detail="Private feed not found")
     job = session.get(Job, prep.job_id)
@@ -591,15 +746,28 @@ def private_podcast_feed(token: str, request: Request, session: Session = Depend
             .order_by(InterviewPodcastEpisode.episode_number)
         )
     )
-    channel_title = html.escape(f"ApplyAI Interview Prep — {job.title if job else 'Interview'}")
+    channel_title = html.escape(
+        f"ApplyAI Interview Prep — {job.title if job else 'Interview'}"
+    )
     items: list[str] = []
     for episode in episodes:
-        episode_link = str(request.base_url).rstrip("/") + f"/interview/{prep.job_id}?episode={episode.episode_number}"
-        enclosure = f'<enclosure url="{html.escape(episode.audio_url)}" type="audio/mpeg" />' if episode.audio_url else ""
-        transcript = " ".join(str(segment.get("text", "")) for segment in (episode.script or []) if isinstance(segment, dict))
+        episode_link = (
+            str(request.base_url).rstrip("/")
+            + f"/interview/{prep.job_id}?episode={episode.episode_number}"
+        )
+        enclosure = (
+            f'<enclosure url="{html.escape(episode.audio_url)}" type="audio/mpeg" />'
+            if episode.audio_url
+            else ""
+        )
+        transcript = " ".join(
+            str(segment.get("text", ""))
+            for segment in (episode.script or [])
+            if isinstance(segment, dict)
+        )
         items.append(
             "<item>"
-            f"<guid isPermaLink=\"false\">applyai-{episode.id}</guid>"
+            f'<guid isPermaLink="false">applyai-{episode.id}</guid>'
             f"<title>{html.escape(episode.title)}</title>"
             f"<description>{html.escape(transcript)}</description>"
             f"<link>{html.escape(episode_link)}</link>"

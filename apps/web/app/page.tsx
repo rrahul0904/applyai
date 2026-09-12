@@ -84,12 +84,12 @@ export default async function Home() {
         process.env.CLERK_SECRET_KEY,
     );
 
-  const primaryHref = session.authenticated ? "/dashboard" : identityConfigured ? "/sign-up" : "/demo";
+  const primaryHref = session.authenticated ? "/dashboard" : identityConfigured ? "/sign-up" : "/#foundation";
   const primaryLabel = session.authenticated
     ? "Open my career workspace"
     : identityConfigured
       ? "Build my career workspace"
-      : "Explore the interactive demo";
+      : "Explore how ApplyAI works";
 
   return (
     <main className="command-landing">
@@ -107,7 +107,7 @@ export default async function Home() {
               <Link className="button" href="/sign-up">Create account</Link>
             </>
           ) : (
-            <Link className="text-button" href="/demo">View product demo</Link>
+            <Link className="text-button" href="/#foundation">How ApplyAI works</Link>
           )}
         </nav>
       </header>
@@ -126,8 +126,8 @@ export default async function Home() {
             <Link className="button" href={primaryHref}>
               {primaryLabel} <ArrowRight size={17} />
             </Link>
-            <Link className="command-secondary-link" href={session.authenticated ? "/jobs" : "/demo"}>
-              <Radar size={17} /> See how Recruiter Lens works
+            <Link className="command-secondary-link" href={session.authenticated ? "/jobs" : "/#foundation"}>
+              <Radar size={17} /> {session.authenticated ? "Inspect my opportunities" : "See how ApplyAI works"}
             </Link>
           </div>
           <div className="command-trust-row" aria-label="ApplyAI product principles">

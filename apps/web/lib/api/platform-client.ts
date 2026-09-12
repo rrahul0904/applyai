@@ -68,6 +68,79 @@ export type NotificationItem = {
   created_at: string;
 };
 
+export type InterviewQuestion = {
+  id: string;
+  mode: string;
+  prompt: string;
+  model_answer: string;
+  rubric: Record<string, number>;
+  followups: string[];
+  display_order: number;
+};
+
+export type InterviewPhase = {
+  id: string;
+  phase_number: number;
+  phase_type: string;
+  title: string;
+  status: string;
+  prep: { focus?: string[]; target_questions?: string[]; carry_forward?: string[] };
+  quiz: Array<{ id: string; question: string; options: string[]; correct_index: number; explanation: string }>;
+  flashcards: Array<{ front: string; back: string }>;
+  notes: string | null;
+  reflection: Record<string, unknown>;
+  cheat_sheet: { remember?: string[]; stories?: string[]; questions_to_ask?: string[] };
+  readiness: { score?: number; attempt_count?: number };
+  questions: InterviewQuestion[];
+};
+
+export type PodcastEpisode = {
+  id: string;
+  episode_number: number;
+  title: string;
+  summary: string;
+  script: Array<{ speaker: string; text: string }>;
+  duration_estimate_minutes: number;
+  audio_url: string | null;
+  status: string;
+};
+
+export type InterviewPreparation = {
+  id: string;
+  job_id: string;
+  job: { title: string; description: string };
+  status: string;
+  country: string | null;
+  interview_date: string | null;
+  current_phase_number: number;
+  interviewer: { name: string | null; title: string | null; url: string | null; brief: Record<string, unknown> };
+  company_research: Record<string, unknown>;
+  role_analysis: Record<string, unknown>;
+  resume_analysis: Record<string, unknown>;
+  market_benchmark: Record<string, unknown>;
+  readiness: { overall?: number; practice?: number; round_learning?: number; notes?: number; attempt_count?: number };
+  private_feed_token: string;
+  phases: InterviewPhase[];
+  episodes: PodcastEpisode[];
+  research_sources: Array<{ id: string; source_kind: string; title: string; url: string | null; snippet: string | null; source_metadata: Record<string, unknown>; created_at: string }>;
+};
+
+export type InterviewAttemptResult = {
+  id: string;
+  score: number;
+  feedback: {
+    word_count?: number;
+    strengths?: string[];
+    improvements?: string[];
+    model_answer?: string;
+    next_followup?: string;
+    dimensions?: Record<string, number>;
+    scoring_note?: string;
+  };
+  phase_readiness: Record<string, unknown>;
+  overall_readiness: Record<string, unknown>;
+};
+
 export const platformApi = {
   semanticMatches: (limit = 25) => request<{ engine: string; items: SemanticMatch[] }>(`/semantic-matches?limit=${limit}`),
   savedSearches: {
@@ -101,6 +174,19 @@ export const platformApi = {
     create: (payload: Record<string, unknown>) => request<Record<string, unknown>>("/interview-practice", { method: "POST", body: JSON.stringify(payload) }),
     update: (id: string, payload: Record<string, unknown>) => request<Record<string, unknown>>(`/interview-practice/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   },
+  interviewIntelligence: {
+    get: (jobId: string) => request<InterviewPreparation>(`/interview-intelligence/${jobId}`),
+    bootstrap: (jobId: string, payload: Record<string, unknown>) => request<InterviewPreparation>(`/interview-intelligence/${jobId}/bootstrap`, { method: "POST", body: JSON.stringify(payload) }),
+    regenerate: (jobId: string) => request<InterviewPreparation>(`/interview-intelligence/${jobId}/regenerate`, { method: "POST" }),
+    saveNotes: (phaseId: string, notes: string) => request<{ id: string; notes: string; readiness: Record<string, unknown> }>(`/interview-intelligence/phases/${phaseId}/notes`, { method: "PUT", body: JSON.stringify({ notes }) }),
+    saveReflection: (phaseId: string, payload: Record<string, unknown>) => request<{ reflection: Record<string, unknown>; next_phase_number: number; readiness: Record<string, unknown> }>(`/interview-intelligence/phases/${phaseId}/reflection`, { method: "POST", body: JSON.stringify(payload) }),
+    submitAttempt: (questionId: string, payload: { answer_text: string; transcript_source?: string; duration_seconds?: number | null }) => request<InterviewAttemptResult>(`/interview-intelligence/questions/${questionId}/attempts`, { method: "POST", body: JSON.stringify(payload) }),
+    attempts: (questionId: string) => request<Array<Record<string, unknown>>>(`/interview-intelligence/questions/${questionId}/attempts`),
+    addResearchSource: (jobId: string, payload: Record<string, unknown>) => request<Record<string, unknown>>(`/interview-intelligence/${jobId}/research-sources`, { method: "POST", body: JSON.stringify(payload) }),
+    stories: () => request<Array<Record<string, unknown>>>("/interview-intelligence/stories/all"),
+    createStory: (payload: Record<string, unknown>) => request<Record<string, unknown>>("/interview-intelligence/stories", { method: "POST", body: JSON.stringify(payload) }),
+    feedPath: (token: string) => `/api/backend/interview-intelligence/feed/${token}.xml`,
+  },
   billing: {
     subscription: () => request<Record<string, unknown>>("/billing/subscription"),
     checkout: (plan: "PRO" | "TEAM") => request<{ checkout_url?: string }>("/billing/checkout", { method: "POST", body: JSON.stringify({ plan }) }),
@@ -120,7 +206,7 @@ export const platformApi = {
     createJob: (organizationId: string, payload: Record<string, unknown>) => request<Record<string, unknown>>(`/employer/organizations/${organizationId}/jobs`, { method: "POST", body: JSON.stringify(payload) }),
     publishJob: (jobId: string) => request<Record<string, unknown>>(`/employer/jobs/${jobId}/publish`, { method: "POST" }),
     closeJob: (jobId: string) => request<Record<string, unknown>>(`/employer/jobs/${jobId}/close`, { method: "POST" }),
-    applicants: (jobId: string) => request<Array<Record<string, unknown>>>(`/employer/jobs/${jobId}/applicants`),
+    applicants: (jobId: string) => request<Array<Record<string, unknown>>(`/employer/jobs/${jobId}/applicants`),
     updateApplicant: (applicantId: string, payload: Record<string, unknown>) => request<Record<string, unknown>>(`/employer/applicants/${applicantId}`, { method: "PATCH", body: JSON.stringify(payload) }),
   },
 };

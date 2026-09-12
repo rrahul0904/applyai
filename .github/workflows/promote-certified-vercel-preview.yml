@@ -1,0 +1,63 @@
+name: Promote certified Vercel preview
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/promote-certified-vercel-preview.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  promote:
+    name: Promote certified preview to production
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      VERCEL_PROJECT_ID: prj_ndsNidodVhB8tVlDUPi5Z47tnx2J
+      VERCEL_TEAM_ID: team_zmEezpOKGZy2sH5nqTfO44LD
+      VERCEL_DEPLOYMENT_ID: dpl_AxWc3qyDBS9BeucGdeaJK5iqkMRU
+      PRODUCTION_URL: https://applyai-gold.vercel.app
+    steps:
+      - name: Require Vercel token
+        shell: bash
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${VERCEL_TOKEN:-}" ]]; then
+            echo "ERROR: repository secret VERCEL_TOKEN is not configured." >&2
+            exit 1
+          fi
+
+      - name: Promote already-certified deployment
+        shell: bash
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer ${VERCEL_TOKEN}" \
+            --header "Content-Type: application/json" \
+            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/promote/${VERCEL_DEPLOYMENT_ID}?teamId=${VERCEL_TEAM_ID}"
+
+      - name: Verify production traffic
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            root_code="$(curl -L --silent --output /tmp/applyai-root.html --write-out '%{http_code}' "${PRODUCTION_URL}/")"
+            signin_code="$(curl -L --silent --output /tmp/applyai-signin.html --write-out '%{http_code}' "${PRODUCTION_URL}/sign-in")"
+            api_code="$(curl --silent --output /tmp/applyai-api.txt --write-out '%{http_code}' "${PRODUCTION_URL}/api/backend/me")"
+            if [[ "$root_code" == "200" && "$signin_code" == "200" && "$api_code" == "401" ]]; then
+              echo "Production verification passed: /=$root_code /sign-in=$signin_code /api/backend/me=$api_code"
+              exit 0
+            fi
+            echo "Waiting for production promotion: /=$root_code /sign-in=$signin_code /api/backend/me=$api_code"
+            sleep 10
+          done
+          echo "ERROR: production did not converge to the certified deployment." >&2
+          exit 1

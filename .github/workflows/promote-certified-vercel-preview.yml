@@ -21,21 +21,38 @@ jobs:
       VERCEL_DEPLOYMENT_ID: dpl_AxWc3qyDBS9BeucGdeaJK5iqkMRU
       PRODUCTION_URL: https://applyai-gold.vercel.app
     steps:
-      - name: Require Vercel token
+      - name: Select configured Vercel token
+        id: token
         shell: bash
         env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          TOKEN_1: ${{ secrets.VERCEL_TOKEN }}
+          TOKEN_2: ${{ secrets.VERCEL_ACCESS_TOKEN }}
+          TOKEN_3: ${{ secrets.VERCEL_API_TOKEN }}
+          TOKEN_4: ${{ secrets.VERCEL_DEPLOY_TOKEN }}
+          TOKEN_5: ${{ secrets.VERCEL_CLI_TOKEN }}
         run: |
           set -euo pipefail
-          if [[ -z "${VERCEL_TOKEN:-}" ]]; then
-            echo "ERROR: repository secret VERCEL_TOKEN is not configured." >&2
+          selected=""
+          selected_name=""
+          for candidate_name in TOKEN_1 TOKEN_2 TOKEN_3 TOKEN_4 TOKEN_5; do
+            candidate="${!candidate_name:-}"
+            if [[ -n "$candidate" ]]; then
+              selected="$candidate"
+              selected_name="$candidate_name"
+              break
+            fi
+          done
+          if [[ -z "$selected" ]]; then
+            echo "ERROR: no supported Vercel token secret is configured (checked VERCEL_TOKEN, VERCEL_ACCESS_TOKEN, VERCEL_API_TOKEN, VERCEL_DEPLOY_TOKEN, VERCEL_CLI_TOKEN)." >&2
             exit 1
           fi
+          echo "Using a configured Vercel token secret (${selected_name})."
+          echo "token=${selected}" >> "$GITHUB_OUTPUT"
 
       - name: Promote already-certified deployment
         shell: bash
         env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TOKEN: ${{ steps.token.outputs.token }}
         run: |
           set -euo pipefail
           curl --fail-with-body --silent --show-error \

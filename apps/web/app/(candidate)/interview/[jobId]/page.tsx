@@ -1,6 +1,6 @@
-import { InterviewWorkspace } from "@/components/platform-workspaces";
+import { PrepareWorkspace } from "@/components/prepare-workspace";
 
 export default async function InterviewPage({ params }: { params: Promise<{ jobId: string }> }) {
   const { jobId } = await params;
-  return <InterviewWorkspace jobId={jobId} />;
+  return <PrepareWorkspace jobId={jobId} />;
 }

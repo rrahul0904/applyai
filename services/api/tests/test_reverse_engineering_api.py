@@ -1,13 +1,13 @@
-from app.core.internal_auth import require_internal_api
+from app.core.operator_auth import require_operator_or_internal
 from app.main import app
 
 
-def allow_internal() -> None:
+def allow_operator() -> None:
     return None
 
 
 def test_reverse_engineering_registry_auto_classifies_and_persists(client) -> None:
-    app.dependency_overrides[require_internal_api] = allow_internal
+    app.dependency_overrides[require_operator_or_internal] = allow_operator
     response = client.post(
         "/api/v1/internal/reverse-engineering/topics",
         json={
@@ -47,8 +47,48 @@ def test_reverse_engineering_registry_auto_classifies_and_persists(client) -> No
     assert reclassified.json()["applyai_fit"] == "INFRASTRUCTURE"
 
 
+def test_reverse_engineering_patch_rejects_null_for_required_columns(client) -> None:
+    app.dependency_overrides[require_operator_or_internal] = allow_operator
+    created = client.post(
+        "/api/v1/internal/reverse-engineering/topics",
+        json={
+            "title": "Required-field validation",
+            "summary": "Validate PATCH null handling.",
+        },
+    )
+    assert created.status_code == 201, created.text
+    topic_id = created.json()["id"]
+
+    for field in (
+        "title",
+        "source_type",
+        "summary",
+        "applyai_fit",
+        "fit_scope",
+        "destination",
+        "rationale",
+        "candidate_journey_stages",
+        "qualifying_capabilities",
+        "excluded_capabilities",
+        "evidence_urls",
+        "status",
+        "metadata_json",
+    ):
+        response = client.patch(
+            f"/api/v1/internal/reverse-engineering/topics/{topic_id}",
+            json={field: None},
+        )
+        assert response.status_code == 422, (field, response.text)
+
+    nullable_source = client.patch(
+        f"/api/v1/internal/reverse-engineering/topics/{topic_id}",
+        json={"source_url": None, "implementation_target": None},
+    )
+    assert nullable_source.status_code == 200, nullable_source.text
+
+
 def test_ai_release_evaluation_persists_immutable_content_bound_receipt(client) -> None:
-    app.dependency_overrides[require_internal_api] = allow_internal
+    app.dependency_overrides[require_operator_or_internal] = allow_operator
     payload = {
         "subject_type": "AGENT",
         "subject_name": "resume-agent",
@@ -87,3 +127,22 @@ def test_ai_release_evaluation_persists_immutable_content_bound_receipt(client) 
     assert listing.status_code == 200
     assert len(listing.json()) == 1
     assert listing.json()[0]["receipt_digest"] == receipt["receipt_digest"]
+
+
+def test_ai_release_evaluation_rejects_duplicate_arm_keys(client) -> None:
+    app.dependency_overrides[require_operator_or_internal] = allow_operator
+    payload = {
+        "subject_type": "AGENT",
+        "subject_name": "duplicate-key-api",
+        "subject_version": "v1",
+        "candidate_artifact": {"prompt": "candidate"},
+        "dataset_version": "duplicates-v1",
+        "baseline_runs": [
+            {"case": "a", "rep": 0, "passed": False},
+            {"case": "a", "rep": 0, "passed": True},
+        ],
+        "candidate_runs": [{"case": "a", "rep": 0, "passed": True}],
+    }
+    response = client.post("/api/v1/internal/ai-release-evaluation/evaluate", json=payload)
+    assert response.status_code == 422, response.text
+    assert "Duplicate baseline run key" in response.text

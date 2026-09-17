@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from sqlalchemy import select
@@ -5,6 +6,7 @@ from sqlalchemy import select
 from app.api.career_radar import _bucket
 from app.career_models import CareerMatch
 from app.core.database import SessionLocal
+from app.jobs.dataset import build_seed_records
 from app.jobs.seed import seed_development_jobs
 
 
@@ -41,6 +43,16 @@ def profile_payload() -> dict:
     }
 
 
+def seed_recent_jobs(count: int = 4) -> None:
+    posted_at = datetime.now(timezone.utc).isoformat()
+    records = [
+        {**record, "posted_at": posted_at}
+        for record in build_seed_records()[:count]
+    ]
+    with SessionLocal() as session:
+        seed_development_jobs(session, records=records)
+
+
 def test_radar_bucket_tracks_current_and_legacy_decisions():
     assert _bucket(None) == "PENDING_JUDGMENT"
     assert _bucket(SimpleNamespace(decision="PRIORITIZE")) == "TOP_MATCH"
@@ -52,9 +64,7 @@ def test_radar_bucket_tracks_current_and_legacy_decisions():
 
 
 def test_radar_refresh_judges_recent_unmatched_jobs(client):
-    with SessionLocal() as session:
-        seed_development_jobs(session)
-
+    seed_recent_jobs()
     assert client.put("/api/v1/profile", json=profile_payload()).status_code == 200
 
     initial = client.get("/api/v1/career-v2/radar?limit=20")
@@ -83,9 +93,7 @@ def test_radar_refresh_judges_recent_unmatched_jobs(client):
 
 
 def test_radar_refresh_skips_jobs_already_judged(client):
-    with SessionLocal() as session:
-        seed_development_jobs(session)
-
+    seed_recent_jobs()
     assert client.put("/api/v1/profile", json=profile_payload()).status_code == 200
 
     first = client.post("/api/v1/career-v2/radar/refresh?max_jobs=1")

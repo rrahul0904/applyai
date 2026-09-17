@@ -49,11 +49,11 @@ ApplyAI should preserve those principles while retaining its richer Career V2 sc
 - Fresh-job Radar over the existing global job supply.
 - Batch judgment of recent active jobs that do not yet have a current Career V2 match for the candidate.
 - Reuse of the existing `AI_DEEP_MATCH` task, idempotent AI-run model, outbox, and worker runtime.
-- High-signal Radar buckets:
-  - `TOP_MATCH` for Career V2 `APPLY_NOW` / `STRONG` decisions.
+- High-signal Radar buckets aligned to the current Career V2 decision contract:
+  - `TOP_MATCH` for `PRIORITIZE`, while accepting legacy `APPLY_NOW` / `STRONG` aliases.
   - `WATCH` for `CONSIDER`.
   - `PENDING_JUDGMENT` for fresh roles not yet evaluated.
-  - `LOW_PRIORITY` for current evidence that does not justify promotion.
+  - `LOW_PRIORITY` for `STRETCH`, `SKIP`, or other non-promoted decisions.
 - Explainable reasons derived from existing Career V2 factors/evidence.
 - Coverage counts so candidates can see what is promoted, waiting, watched, or deprioritized.
 - Candidate-facing Radar controls and promoted fresh roles on the existing `/matches` experience.
@@ -91,7 +91,7 @@ Current repository behavior includes:
 - `GET /api/v1/career-v2/radar` for recent active jobs, current Career V2 judgments, Radar buckets, counts, and explainable reasons.
 - `POST /api/v1/career-v2/radar/refresh` to select recent active jobs without a current `applyai-hybrid-fit-v2` row and queue existing `AI_DEEP_MATCH` runs.
 - ApplyAI Job Radar on `/matches`, with fresh-role counts, manual judgment refresh, periodic page refresh, and a compact top/pending queue above the existing recommendations.
-- Backend tests for fresh unmatched-job judgment and skip-already-judged behavior.
+- Backend tests for fresh unmatched-job judgment, current/legacy decision bucketing, and skip-already-judged behavior.
 - An idempotent reverse-engineering registry script that records the source, ApplyAI fit, qualifying/excluded capabilities, and implementation target.
 
 Repository CI and preview/browser evidence remain certification boundaries. This document does not claim that the draft PR is merge-ready until those checks pass.

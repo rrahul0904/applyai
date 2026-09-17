@@ -47,7 +47,6 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("user_id", "job_id", name="uq_interview_preparations_user_job"),
-        sa.UniqueConstraint("private_feed_token"),
     )
     op.create_index("ix_interview_preparations_user_id", "interview_preparations", ["user_id"], unique=False)
     op.create_index("ix_interview_preparations_job_id", "interview_preparations", ["job_id"], unique=False)

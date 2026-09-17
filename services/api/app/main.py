@@ -12,7 +12,7 @@ from app.api import (
     career_product_contract, career_product_polish, career_system, company_intelligence, employer_platform,
     internal_agents, internal_ai_evaluation, internal_ai_quality, internal_job_discoveries, internal_job_quality,
     internal_job_sources, internal_job_supply, internal_operations, internal_platform_admin, internal_worker,
-    interview_media, job_imports, jobs, me, onboarding, privacy, profiles, recruiter_lens, resume_shares,
+    interview_media, job_imports, jobs, mcp, me, onboarding, privacy, profiles, recruiter_lens, resume_shares,
     resumes, semantic_matching,
 )
 from app.core.clerk_instance import clerk_instance_fingerprint
@@ -24,7 +24,21 @@ from app.workers.postgres import drain_bounded
 
 settings = get_settings()
 app = FastAPI(title="ApplyAI API", version="0.5.0", openapi_url="/api/v1/openapi.json", docs_url="/api/docs")
-app.add_middleware(CORSMiddleware, allow_origins=settings.allowed_web_origins, allow_credentials=True, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"], allow_headers=["Authorization", "Content-Type", "X-ApplyAI-Internal-Token", "Stripe-Signature"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.allowed_web_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "X-ApplyAI-Internal-Token",
+        "Stripe-Signature",
+        "MCP-Protocol-Version",
+        "Mcp-Method",
+        "Mcp-Name",
+    ],
+)
 
 @app.middleware("http")
 async def request_triggered_tasks(request: Request, call_next):
@@ -99,6 +113,7 @@ def ready() -> dict[str, str | bool]:
 app.include_router(career_prepare.router,prefix="/api/v1",include_in_schema=False)
 app.include_router(application_materials.router,prefix="/api/v1",include_in_schema=False)
 app.include_router(interview_media.router,prefix="/api/v1",include_in_schema=False)
+app.include_router(mcp.router,prefix="/api/v1",include_in_schema=False)
 
 for router in (me.router,onboarding.router,profiles.router,resumes.router,jobs.router,applications.router,career_memory.router,career_intelligence_v2.router,candidate_platform.router,semantic_matching.router,company_intelligence.router,employer_platform.router,billing_platform.router,privacy.router): app.include_router(router,prefix="/api/v1")
 for product_router in (candidate_workspace.router,career_product_contract.router,career_product_polish.router,career_product.router,career_system.router,recruiter_lens.router,resume_shares.router,agents.router,application_agent.router,application_agent_documents.router): app.include_router(product_router,prefix="/api/v1",include_in_schema=False)

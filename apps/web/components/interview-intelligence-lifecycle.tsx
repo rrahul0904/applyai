@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookOpenCheck, BrainCircuit, CheckCircle2, Headphones, RefreshCw, Save, Sparkles } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge, Button, Card, Field, PageHeader, Skeleton, Textarea } from "@/components/ui";
@@ -25,7 +25,6 @@ function PhasePanel({ jobId, workspace, phase }: { jobId: string; workspace: Int
   const queryClient = useQueryClient();
   const [notes, setNotes] = useState(phase.notes ?? "");
   const [reflection, setReflection] = useState({ how_it_went: "", surprise: "", prepare_differently: "" });
-  useEffect(() => setNotes(phase.notes ?? ""), [phase.notes]);
   const save = useMutation({
     mutationFn: () => interviewIntelligenceApi.notes(jobId, phase.phase_number, notes),
     onSuccess: async () => {
@@ -89,7 +88,7 @@ export function InterviewIntelligenceLifecycle({ jobId }: { jobId: string }) {
     <PageHeader eyebrow="Interview intelligence" title={`${data.lifecycle.company} · ${data.lifecycle.job_title}`} description="Evidence-grounded lifecycle intelligence layered on top of ApplyAI Prepare." actions={<Button variant="secondary" onClick={() => refresh.mutate()} disabled={refresh.isPending}><RefreshCw size={15}/>Refresh context</Button>} />
     <div className="dashboard-grid"><Card><p className="eyebrow">Readiness</p><h2>{data.readiness.score}%</h2><Badge tone={tone(data.readiness.score)}>{data.readiness.band}</Badge></Card><Card><p className="eyebrow">Current round</p><h2>{data.current_phase_number}/4</h2><p>{data.lifecycle.phases.find((item) => item.phase_number === data.current_phase_number)?.title ?? "Complete"}</p></Card><Card><p className="eyebrow">Evidence gaps</p><h2>{data.lifecycle.gaps.length}</h2><p>{data.lifecycle.gaps.slice(0, 3).join(" · ") || "No leading gaps detected"}</p></Card></div>
     <div className="button-row" style={{ margin: "20px 0" }}>{data.lifecycle.phases.map((item) => <Button key={item.phase_number} size="small" variant={(selectedPhase ?? data.current_phase_number) === item.phase_number ? "secondary" : "ghost"} onClick={() => setSelectedPhase(item.phase_number)}>Round {item.phase_number}: {item.title}</Button>)}</div>
-    {phase ? <PhasePanel jobId={jobId} workspace={data} phase={phase} /> : null}
+    {phase ? <PhasePanel key={phase.phase_number} jobId={jobId} workspace={data} phase={phase} /> : null}
     <Card className="detail-section"><div className="section-header"><div><p className="eyebrow">Audio-friendly prep</p><h2>Podcast briefings</h2><p>Five generated scripts use browser speech synthesis. No fake hosted audio or broken RSS feed is exposed.</p></div><Headphones size={22}/></div><div className="dashboard-grid">{data.podcasts.map((episode) => <Card key={episode.episode_number}><p className="eyebrow">Episode {episode.episode_number}</p><h3>{episode.title}</h3><p>{episode.summary}</p><Button size="small" variant="secondary" onClick={() => speak(episode.script)}><Headphones size={14}/>Listen</Button></Card>)}</div></Card>
     {data.lifecycle.carry_forward.length ? <Card className="detail-section"><h2><BrainCircuit size={18} style={{ verticalAlign: "middle", marginRight: 7 }}/>Carry-forward actions</h2><div className="list-stack">{data.lifecycle.carry_forward.map((item) => <p key={item}>• {item}</p>)}</div></Card> : null}
   </section>;

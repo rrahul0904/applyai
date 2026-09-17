@@ -9,19 +9,23 @@ from app.core.database import Base
 from app import (  # noqa: F401
     agent_models,
     agent_policy_models,
+    ai_evaluation_models,
     application_agent_models,
     career_memory_models,
     career_models,
     durability_models,
     global_job_supply_models,
+    interview_intelligence_models,
     job_quality_models,
     job_source_models,
     models,
     operations_models,
     platform_models,
     postgres_queue_models,
+    preparation_models,
     privacy_models,
     resume_share_models,
+    reverse_engineering_models,
     zero_cost_models,
 )
 

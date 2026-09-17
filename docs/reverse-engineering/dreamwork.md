@@ -1,8 +1,60 @@
+---
+applyai_fit: INTEGRATION
+fit_scope: PARTIAL
+destination: external-integration
+---
+
 # Dreamwork clean-room reverse-engineering map
 
 Date reviewed: 2026-09-16
 Target product: https://www.dreamworkhq.com/
 Target integration: ApplyAI
+
+## ApplyAI Fit
+
+**PARTIAL — APPLYAI INTEGRATION**
+
+Dreamwork overlaps several ApplyAI candidate-facing workflows that already exist. The qualifying gap in this reverse-engineering slice is its bring-your-own-agent interoperability model, so the correct destination is an integration boundary rather than a duplicate candidate product.
+
+## Why this qualifies
+
+The public Dreamwork behavior maps directly to ApplyAI job discovery, candidate context, application pipeline, and human approval controls. Its MCP-style external-agent access is valuable because it lets specialized agents consume those existing ApplyAI capabilities without bypassing candidate identity or submission guardrails.
+
+## Candidate journey stages
+
+- `DISCOVER_JOBS` — external agents can search and browse active ApplyAI listings.
+- `UNDERSTAND_FIT` — candidate context and match-oriented platform context can be exposed without cross-candidate access.
+- `APPLY` — agents can prepare/stage an application but cannot submit around human approval.
+- `TRACK` — staged applications enter the existing ApplyAI pipeline.
+
+## Absorb into ApplyAI
+
+- Bring-your-own-agent interoperability through a governed MCP boundary.
+- Authenticated candidate context for external agents.
+- Active job discovery/browse tools.
+- Idempotent pipeline staging.
+- A fail-closed approval boundary before employer submission.
+- Protocol/header validation and candidate isolation.
+
+## Keep separate
+
+- A duplicate resume/profile model where ApplyAI already has one.
+- A duplicate job ranking or application-material engine where ApplyAI already has those capabilities.
+- Recruiter reply inbox behavior not certified by the public review.
+- Guest resume-to-match demo behavior not certified by the public review.
+- Dreamwork-specific pricing/usage-tier behavior.
+
+## Implementation destination
+
+`external-integration`
+
+The implemented destination is ApplyAI's candidate MCP endpoint and existing guarded application workflow rather than a parallel Dreamwork-style product surface.
+
+## Implementation status
+
+**INTEGRATED — repository implementation**
+
+The current ApplyAI repository includes the stateless candidate MCP contract, candidate-scoped tools, idempotent pipeline staging, approval-required application behavior, and isolation tests. Production OAuth/token onboarding, third-party MCP-client certification, hosted evidence, and browser evidence remain separate release gates.
 
 ## Clean-room boundary
 
@@ -50,7 +102,7 @@ The endpoint uses the authenticated ApplyAI candidate identity on every request 
 Tools in the first slice:
 
 - `get_platform_context` — candidate profile, resume readiness, pipeline summary, and guardrails.
-- `search_jobs` — active listing search by text, location, work mode, and bounded result count.
+- `search_jobs` — active listing search by text, location, and work mode.
 - `browse_listings` — newest active listings with optional location/work-mode filters.
 - `add_listing_to_pipeline` — idempotently creates a `PREPARING` application and audit event.
 - `apply_to_job` — stages the application and returns `approval_required`; it does **not** submit externally and does **not** mark the application `APPLIED`.

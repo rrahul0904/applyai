@@ -1,8 +1,8 @@
 """add interview intelligence workspace
 
-Revision ID: p6h0l2e5i753
-Revises: o5g9k1d4h642
-Create Date: 2026-09-12
+Revision ID: r8j2n4g7k975
+Revises: q7i1m3f6j864
+Create Date: 2026-09-17
 """
 
 from collections.abc import Sequence
@@ -12,8 +12,8 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision: str = "p6h0l2e5i753"
-down_revision: str | None = "o5g9k1d4h642"
+revision: str = "r8j2n4g7k975"
+down_revision: str | None = "q7i1m3f6j864"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

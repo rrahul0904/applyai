@@ -99,8 +99,10 @@ async function forward(request: NextRequest, context: RouteContext) {
       signal: request.signal,
     });
     const responseHeaders = new Headers();
-    const responseType = response.headers.get("content-type");
-    if (responseType) responseHeaders.set("content-type", responseType);
+    for (const name of ["content-type", "content-disposition", "cache-control", "content-length"]) {
+      const value = response.headers.get(name);
+      if (value) responseHeaders.set(name, value);
+    }
     return new NextResponse(response.body, {
       status: response.status,
       headers: responseHeaders,

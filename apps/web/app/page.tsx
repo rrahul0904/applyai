@@ -1,7 +1,7 @@
-import { UserButton } from "@clerk/nextjs";
-import { auth } from "@clerk/nextjs/server";
 import { ArrowRight, CheckCircle2, LockKeyhole, Radar, ShieldCheck, Sparkles } from "lucide-react";
 import Link from "next/link";
+import { getApplyAISession } from "@/lib/auth/session";
+import { supabaseConfigured } from "@/lib/auth/supabase-http";
 
 function WorkspacePreview() {
   return (
@@ -76,18 +76,20 @@ function WorkspacePreview() {
 }
 
 export default async function Home() {
-  const clerkConfigured = Boolean(
-    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY &&
-      process.env.CLERK_SECRET_KEY,
-  );
-  const { userId } = clerkConfigured ? await auth() : { userId: null };
+  const session = await getApplyAISession();
+  const identityConfigured =
+    supabaseConfigured() ||
+    Boolean(
+      process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY &&
+        process.env.CLERK_SECRET_KEY,
+    );
 
-  const primaryHref = userId ? "/dashboard" : clerkConfigured ? "/sign-up" : "/demo";
-  const primaryLabel = userId
+  const primaryHref = session.authenticated ? "/dashboard" : identityConfigured ? "/sign-up" : "/#foundation";
+  const primaryLabel = session.authenticated
     ? "Open my career workspace"
-    : clerkConfigured
+    : identityConfigured
       ? "Build my career workspace"
-      : "Explore the interactive demo";
+      : "Explore how ApplyAI works";
 
   return (
     <main className="command-landing">
@@ -97,18 +99,15 @@ export default async function Home() {
           ApplyAI
         </Link>
         <nav aria-label="Account">
-          {userId ? (
-            <>
-              <Link className="text-button" href="/dashboard">Open workspace</Link>
-              <UserButton />
-            </>
-          ) : clerkConfigured ? (
+          {session.authenticated ? (
+            <Link className="text-button" href="/dashboard">Open workspace</Link>
+          ) : identityConfigured ? (
             <>
               <Link className="text-button" href="/sign-in">Sign in</Link>
               <Link className="button" href="/sign-up">Create account</Link>
             </>
           ) : (
-            <Link className="text-button" href="/demo">View product demo</Link>
+            <Link className="text-button" href="/#foundation">How ApplyAI works</Link>
           )}
         </nav>
       </header>
@@ -127,8 +126,8 @@ export default async function Home() {
             <Link className="button" href={primaryHref}>
               {primaryLabel} <ArrowRight size={17} />
             </Link>
-            <Link className="command-secondary-link" href={userId ? "/jobs" : "/demo"}>
-              <Radar size={17} /> See how Recruiter Lens works
+            <Link className="command-secondary-link" href={session.authenticated ? "/jobs" : "/#foundation"}>
+              <Radar size={17} /> {session.authenticated ? "Inspect my opportunities" : "See how ApplyAI works"}
             </Link>
           </div>
           <div className="command-trust-row" aria-label="ApplyAI product principles">

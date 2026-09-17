@@ -52,6 +52,21 @@ def _run_key(run: Mapping[str, Any]) -> tuple[str, int]:
     return str(run.get("case") or "case"), int(run.get("rep") or 0)
 
 
+def _index_runs(
+    runs: Sequence[Mapping[str, Any]],
+    *,
+    arm: str,
+) -> dict[tuple[str, int], Mapping[str, Any]]:
+    indexed: dict[tuple[str, int], Mapping[str, Any]] = {}
+    for run in runs:
+        key = _run_key(run)
+        if key in indexed:
+            case, rep = key
+            raise ValueError(f"Duplicate {arm} run key: case={case!r}, rep={rep}")
+        indexed[key] = run
+    return indexed
+
+
 def _mean_metric(runs: Sequence[Mapping[str, Any]], name: str) -> float | None:
     values = [float(run[name]) for run in runs if run.get(name) is not None]
     return mean(values) if values else None
@@ -110,8 +125,8 @@ def evaluate_release(
     if fail_threshold >= pass_threshold:
         raise ValueError("fail_threshold must be lower than pass_threshold")
 
-    baseline_by_key = {_run_key(run): run for run in baseline_runs}
-    candidate_by_key = {_run_key(run): run for run in candidate_runs}
+    baseline_by_key = _index_runs(baseline_runs, arm="baseline")
+    candidate_by_key = _index_runs(candidate_runs, arm="candidate")
     keys = sorted(set(baseline_by_key) | set(candidate_by_key))
 
     per_case: list[dict[str, Any]] = []

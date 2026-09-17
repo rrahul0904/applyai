@@ -3,6 +3,7 @@
 import { UserButton } from "@clerk/nextjs";
 import {
   Bell,
+  BrainCircuit,
   BriefcaseBusiness,
   CircleUserRound,
   Home,
@@ -45,7 +46,13 @@ const navigation: NavigationItem[] = [
     href: "/career",
     label: "Career Coach",
     icon: Sparkles,
-    activePrefixes: ["/career", "/resume", "/network", "/interview", "/analytics", "/portfolio"],
+    activePrefixes: ["/career", "/resume", "/network", "/analytics", "/portfolio"],
+  },
+  {
+    href: "/interview-prep",
+    label: "Interview Prep",
+    icon: BrainCircuit,
+    activePrefixes: ["/interview-prep", "/interview"],
   },
   {
     href: "/profile",

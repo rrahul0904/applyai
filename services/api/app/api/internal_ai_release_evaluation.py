@@ -18,12 +18,12 @@ from app.ai.release_evaluation import (
 )
 from app.ai_evaluation_models import AIEvaluationReceipt
 from app.core.database import get_session
-from app.core.internal_auth import require_internal_api
+from app.core.operator_auth import require_operator_or_internal
 
 router = APIRouter(
     prefix="/internal/ai-release-evaluation",
     tags=["internal-ai-release-evaluation"],
-    dependencies=[Depends(require_internal_api)],
+    dependencies=[Depends(require_operator_or_internal)],
 )
 
 

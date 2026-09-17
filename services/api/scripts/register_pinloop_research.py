@@ -8,7 +8,7 @@ from app.reverse_engineering import CLASSIFIER_VERSION
 from app.reverse_engineering_models import ReverseEngineeringTopic
 
 SOURCE_URL = "https://www.reddit.com/r/AgentsOfAI/s/TMzCnSDrbt"
-PROJECT_URL = "https://github.com/pinloop/pinloop"
+PROJECT_URL = "https://github.com/pinloop-ai/pinloop-cli"
 
 
 def upsert_pinloop_research(session: Session) -> ReverseEngineeringTopic:

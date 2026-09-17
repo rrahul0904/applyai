@@ -1,5 +1,8 @@
+from types import SimpleNamespace
+
 from sqlalchemy import select
 
+from app.api.career_radar import _bucket
 from app.career_models import CareerMatch
 from app.core.database import SessionLocal
 from app.jobs.seed import seed_development_jobs
@@ -21,7 +24,10 @@ def profile_payload() -> dict:
                 "title": "Senior Data Engineering Manager",
                 "start_date": "2021-01-01",
                 "end_date": None,
-                "description": "Led a cloud data engineering organization and modernized analytics pipelines.",
+                "description": (
+                    "Led a cloud data engineering organization and modernized "
+                    "analytics pipelines."
+                ),
                 "provenance": "USER_VERIFIED",
             }
         ],
@@ -33,6 +39,16 @@ def profile_payload() -> dict:
             {"name": "Snowflake", "provenance": "USER_VERIFIED"},
         ],
     }
+
+
+def test_radar_bucket_tracks_current_and_legacy_decisions():
+    assert _bucket(None) == "PENDING_JUDGMENT"
+    assert _bucket(SimpleNamespace(decision="PRIORITIZE")) == "TOP_MATCH"
+    assert _bucket(SimpleNamespace(decision="APPLY_NOW")) == "TOP_MATCH"
+    assert _bucket(SimpleNamespace(decision="STRONG")) == "TOP_MATCH"
+    assert _bucket(SimpleNamespace(decision="CONSIDER")) == "WATCH"
+    assert _bucket(SimpleNamespace(decision="STRETCH")) == "LOW_PRIORITY"
+    assert _bucket(SimpleNamespace(decision="SKIP")) == "LOW_PRIORITY"
 
 
 def test_radar_refresh_judges_recent_unmatched_jobs(client):
@@ -59,6 +75,7 @@ def test_radar_refresh_judges_recent_unmatched_jobs(client):
     assert len(judged) >= 2
     assert all(item["engine_version"] == "applyai-hybrid-fit-v2" for item in judged)
     assert all(item["reasons"] for item in judged)
+    assert all(item["radar_bucket"] != "PENDING_JUDGMENT" for item in judged)
 
     with SessionLocal() as session:
         matches = list(session.scalars(select(CareerMatch)))

@@ -335,7 +335,7 @@ def evaluate_answer(answer: str, model_answer: str, followups: list[str]) -> tup
     words = _words(text)
     word_count = len(words)
     numbers = bool(re.search(r"\b\d+(?:\.\d+)?%?\b", text))
-    ownership = any(token in {"i", "my", "me"} for token in words)
+    ownership = bool(re.search(r"\b(?:i|my|me)\b", text, flags=re.IGNORECASE))
     result_signal = any(token in words for token in ("result", "reduced", "increased", "improved", "saved", "delivered", "grew", "cut", "avoided"))
     structure = any(token in words for token in ("situation", "task", "action", "result"))
     concise = 45 <= word_count <= 260
@@ -376,7 +376,7 @@ def readiness_from_scores(scores: list[int], completed_reflections: int, complet
     practice = round(sum(scores) / len(scores)) if scores else 45
     reflection = round(min(100, completed_reflections / max(phase_count, 1) * 100))
     notes = round(min(100, completed_notes / max(phase_count, 1) * 100))
-    overall = round(practice * 0.7 + reflection * 0.2 + notes * 0.1)
+    overall = round((practice * 7 + reflection * 2 + notes) / 10)
     return {
         "overall": overall,
         "practice": practice,

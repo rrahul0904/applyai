@@ -17,7 +17,9 @@ from app.models import Company, Job, User
 router = APIRouter(prefix="/career-v2/radar", tags=["career radar"])
 
 ENGINE_VERSION = "applyai-hybrid-fit-v2"
-TOP_DECISIONS = {"APPLY_NOW", "STRONG"}
+# Career V2 currently materializes PRIORITIZE / CONSIDER / STRETCH / SKIP.
+# Keep the older aliases here so Radar remains compatible with existing rows.
+TOP_DECISIONS = {"PRIORITIZE", "APPLY_NOW", "STRONG"}
 WATCH_DECISIONS = {"CONSIDER"}
 
 

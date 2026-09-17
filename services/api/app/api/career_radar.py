@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -63,7 +62,8 @@ def _reasons(match: CareerMatch | None) -> list[str]:
     if reasons:
         return reasons
     return [
-        f"ApplyAI classified this role as {match.fit_band.lower()} fit with {match.confidence.lower()} confidence."
+        "ApplyAI classified this role as "
+        f"{match.fit_band.lower()} fit with {match.confidence.lower()} confidence."
     ]
 
 

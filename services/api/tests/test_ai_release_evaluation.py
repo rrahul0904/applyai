@@ -1,3 +1,5 @@
+import pytest
+
 from app.ai.release_evaluation import content_digest, evaluate_release
 
 
@@ -130,3 +132,31 @@ def test_receipt_redacts_credential_shaped_provenance_and_check_names() -> None:
     rendered = str(receipt)
     assert secret not in rendered
     assert "[redacted]" in rendered
+
+
+def test_duplicate_run_keys_are_rejected_instead_of_overwritten() -> None:
+    duplicate_baseline = [run("same", False), run("same", True)]
+    with pytest.raises(ValueError, match="Duplicate baseline run key"):
+        evaluate_release(
+            subject_type="AGENT",
+            subject_name="duplicate-key-guard",
+            subject_version="v1",
+            candidate_artifact={"definition": "candidate"},
+            dataset_version="duplicates-v1",
+            baseline_runs=duplicate_baseline,
+            candidate_runs=[run("same", True)],
+            evaluated_at="2026-09-17T16:00:00+00:00",
+        )
+
+    duplicate_candidate = [run("same", True), run("same", False)]
+    with pytest.raises(ValueError, match="Duplicate candidate run key"):
+        evaluate_release(
+            subject_type="AGENT",
+            subject_name="duplicate-key-guard",
+            subject_version="v1",
+            candidate_artifact={"definition": "candidate"},
+            dataset_version="duplicates-v1",
+            baseline_runs=[run("same", False)],
+            candidate_runs=duplicate_candidate,
+            evaluated_at="2026-09-17T16:00:00+00:00",
+        )

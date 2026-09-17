@@ -206,7 +206,7 @@ export const platformApi = {
     createJob: (organizationId: string, payload: Record<string, unknown>) => request<Record<string, unknown>>(`/employer/organizations/${organizationId}/jobs`, { method: "POST", body: JSON.stringify(payload) }),
     publishJob: (jobId: string) => request<Record<string, unknown>>(`/employer/jobs/${jobId}/publish`, { method: "POST" }),
     closeJob: (jobId: string) => request<Record<string, unknown>>(`/employer/jobs/${jobId}/close`, { method: "POST" }),
-    applicants: (jobId: string) => request<Array<Record<string, unknown>>(`/employer/jobs/${jobId}/applicants`),
+    applicants: (jobId: string) => request<Array<Record<string, unknown>>>(`/employer/jobs/${jobId}/applicants`),
     updateApplicant: (applicantId: string, payload: Record<string, unknown>) => request<Record<string, unknown>>(`/employer/applicants/${applicantId}`, { method: "PATCH", body: JSON.stringify(payload) }),
   },
 };

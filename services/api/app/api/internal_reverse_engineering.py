@@ -4,12 +4,12 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_session
-from app.core.internal_auth import require_internal_api
+from app.core.operator_auth import require_operator_or_internal
 from app.reverse_engineering import (
     CLASSIFIER_VERSION,
     ApplyAIFit,
@@ -24,7 +24,7 @@ from app.reverse_engineering_models import ReverseEngineeringTopic
 router = APIRouter(
     prefix="/internal/reverse-engineering",
     tags=["internal-reverse-engineering"],
-    dependencies=[Depends(require_internal_api)],
+    dependencies=[Depends(require_operator_or_internal)],
 )
 
 
@@ -68,6 +68,23 @@ class TopicPatch(BaseModel):
     status: TopicStatus | None = None
     implementation_target: str | None = None
     metadata_json: dict[str, Any] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_null_for_required_columns(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        nullable_fields = {"source_url", "implementation_target"}
+        rejected = sorted(
+            field
+            for field, field_value in value.items()
+            if field_value is None and field not in nullable_fields
+        )
+        if rejected:
+            raise ValueError(
+                "null is not allowed for required topic fields: " + ", ".join(rejected)
+            )
+        return value
 
 
 def _serialize(topic: ReverseEngineeringTopic) -> dict[str, Any]:
@@ -273,7 +290,7 @@ def update_topic(
             topic.classification_source = "MANUAL"
 
     for field, value in changes.items():
-        if field == "status" and value is not None:
+        if field == "status":
             value = value.value
         setattr(topic, field, value)
 

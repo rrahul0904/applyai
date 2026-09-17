@@ -65,6 +65,7 @@ class InterviewStory(Base):
 class InterviewIntelligenceQuestion(Base):
     __tablename__ = "interview_intelligence_questions"
     __table_args__ = (
+        Index("ix_interview_intelligence_questions_slug", "slug", unique=True),
         Index("ix_interview_intelligence_questions_track_published", "track", "published"),
         Index("ix_interview_intelligence_questions_frequency", "frequency_score"),
         Index("ix_interview_intelligence_questions_last_reported", "last_reported_at"),
@@ -97,6 +98,7 @@ class InterviewIntelligenceQuestion(Base):
 class InterviewIntelligenceReport(Base):
     __tablename__ = "interview_intelligence_reports"
     __table_args__ = (
+        Index("ix_interview_intelligence_reports_fingerprint", "fingerprint", unique=True),
         Index("ix_interview_intelligence_reports_status_created", "moderation_status", "created_at"),
         Index("ix_interview_intelligence_reports_company_reported", "company_label", "reported_at"),
     )

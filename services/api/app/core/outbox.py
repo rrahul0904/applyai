@@ -54,6 +54,10 @@ def _routing_filter(settings: Settings):
     supported = [TaskOutbox.event_type.notin_(SPECIAL_TASK_TYPES)]
     if settings.source_sqs_queue_url:
         supported.append(TaskOutbox.event_type.in_(SOURCE_TASK_TYPES))
+    elif settings.sqs_queue_url:
+        # Candidate-submitted URL imports historically use the default task worker
+        # when a dedicated source queue is not configured.
+        supported.append(TaskOutbox.event_type == "JOB_URL_IMPORT")
     if settings.ai_sqs_queue_url:
         supported.append(TaskOutbox.event_type.in_(AI_TASK_TYPES))
     if settings.agent_sqs_queue_url or settings.sqs_queue_url:

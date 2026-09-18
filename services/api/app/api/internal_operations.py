@@ -282,6 +282,25 @@ def operations_summary(
                 TaskOutbox.event_type == "SOURCE_INGEST",
                 TaskOutbox.published_at.is_(None),
             ),
+            "daily_refresh_target": settings.job_daily_refresh_target,
+            "daily_refresh_remaining": max(
+                settings.job_daily_refresh_target - int(run_totals[0] or 0),
+                0,
+            ),
+            "daily_refresh_progress_percentage": round(
+                min(
+                    100.0,
+                    (int(run_totals[0] or 0) / settings.job_daily_refresh_target) * 100.0,
+                ),
+                2,
+            ),
+            "daily_refresh_target_met": int(run_totals[0] or 0)
+            >= settings.job_daily_refresh_target,
+            "daily_refresh_status": (
+                "PASS"
+                if int(run_totals[0] or 0) >= settings.job_daily_refresh_target
+                else "BLOCKED"
+            ),
         },
         "costs": {
             "billing_period": billing_period,

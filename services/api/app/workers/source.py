@@ -175,7 +175,7 @@ def process_message(body: str, settings: Settings | None = None) -> bool:
         except Exception:
             logger.exception("source_verify_failed", extra={"job_source_id": str(source_id)})
             return False
-    if task_type == "SOURCE_DISCOVERY":
+    if task_type in {"JOB_URL_IMPORT", "SOURCE_DISCOVERY"}:
         return process_discovery_message(body, settings)
     return True
 

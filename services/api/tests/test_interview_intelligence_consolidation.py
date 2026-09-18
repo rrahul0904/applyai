@@ -142,7 +142,7 @@ def test_interview_intelligence_end_to_end_and_evidence_reversal(client, databas
         app.dependency_overrides[require_operator_or_internal] = lambda: None
         try:
             seeded = client.post(
-                "/api/v1/internal/interview-intelligence-catalog/questions",
+                "/api/v1/internal/interview-intelligence/questions",
                 json={
                     "title": "Design a resilient high-scale service",
                     "track": "SYSTEM_DESIGN",

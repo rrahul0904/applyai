@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+
+import pytest
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -124,51 +126,68 @@ def test_internal_operations_certification_is_persisted_and_cursor_paginated(
 def test_internal_operations_cost_ledger_is_auditable_and_separates_runtime_estimates(
     client, database_url: str
 ) -> None:
-    app.dependency_overrides[require_operator_or_internal] = lambda: None
-
-    response = client.post(
-        "/api/v1/internal/operations/costs",
-        json={
-            "provider": "Vercel",
-            "service": "Web and API hosting",
-            "category": "HOSTING",
-            "cost_type": "INVOICE",
-            "amount_usd": "42.125000",
-            "period_start": "2026-09-01T00:00:00Z",
-            "period_end": "2026-09-30T23:59:59Z",
-            "source_ref": "invoice:vercel:2026-09",
-            "notes": "September provider invoice",
-            "created_by": "operator@example.test",
-        },
+    app.dependency_overrides[require_operator_or_internal] = (
+        lambda: "user:test-operator@example.test"
     )
+    now = datetime.now(timezone.utc)
+    period_start = now - timedelta(days=20)
+    period_end = now - timedelta(days=10)
+    payload = {
+        "provider": "Vercel",
+        "service": "Web and API hosting",
+        "category": "HOSTING",
+        "cost_type": "INVOICE",
+        "amount_usd": "42.125000",
+        "period_start": period_start.isoformat(),
+        "period_end": period_end.isoformat(),
+        "source_ref": "invoice:vercel:test-period",
+        "notes": "Provider invoice used by the operations ledger test",
+    }
+
+    response = client.post("/api/v1/internal/operations/costs", json=payload)
     assert response.status_code == 201, response.text
     created = response.json()
     assert created["provider"] == "Vercel"
     assert created["amount_usd"] == 42.125
+    assert created["created_by"] == "user:test-operator@example.test"
+    assert len(created["idempotency_key"]) == 64
+
+    duplicate = client.post("/api/v1/internal/operations/costs", json=payload)
+    assert duplicate.status_code == 200, duplicate.text
+    assert duplicate.json()["id"] == created["id"]
 
     costs = client.get("/api/v1/internal/operations/costs?days=30")
     assert costs.status_code == 200, costs.text
-    payload = costs.json()
-    assert payload["recorded_service_total_usd"] == 42.125
-    assert payload["career_ai_estimated_usd"] >= 0
-    assert payload["agent_runtime_measured_usd"] >= 0
-    assert payload["by_provider"] == [{"provider": "Vercel", "amount_usd": 42.125}]
-    assert payload["entries"][0]["source_ref"] == "invoice:vercel:2026-09"
-    assert "not added" in payload["accounting_note"]
+    result = costs.json()
+    assert result["recorded_service_total_usd"] == pytest.approx(42.125, rel=1e-6)
+    assert result["career_ai_estimated_usd"] >= 0
+    assert result["agent_runtime_measured_usd"] >= 0
+    assert result["by_provider"][0]["provider"] == "Vercel"
+    assert result["by_provider"][0]["amount_usd"] == pytest.approx(42.125, rel=1e-6)
+    assert result["entries"][0]["source_ref"] == "invoice:vercel:test-period"
+    assert "not added" in result["accounting_note"]
 
     invalid = client.post(
         "/api/v1/internal/operations/costs",
         json={
-            "provider": "Supabase",
-            "service": "Database",
-            "category": "DATABASE",
-            "cost_type": "INVOICE",
-            "amount_usd": "10.00",
-            "period_start": "2026-09-30T00:00:00Z",
-            "period_end": "2026-09-01T00:00:00Z",
+            **payload,
+            "source_ref": "invoice:invalid-period",
+            "period_start": now.isoformat(),
+            "period_end": (now - timedelta(days=1)).isoformat(),
         },
     )
     assert invalid.status_code == 422
+
+    mixed_timezone = client.post(
+        "/api/v1/internal/operations/costs",
+        json={
+            **payload,
+            "source_ref": "invoice:naive-period",
+            "period_start": "2026-09-01T00:00:00",
+            "period_end": "2026-09-02T00:00:00Z",
+        },
+    )
+    assert mixed_timezone.status_code == 422
 
     engine = create_engine(database_url)
     try:
@@ -176,5 +195,36 @@ def test_internal_operations_cost_ledger_is_auditable_and_separates_runtime_esti
             records = list(session.scalars(select(ServiceCostEntry)))
             assert len(records) == 1
             assert records[0].service == "Web and API hosting"
+            assert records[0].created_by == "user:test-operator@example.test"
     finally:
         engine.dispose()
+
+
+def test_internal_operations_cost_summary_prorates_overlapping_billing_period(client) -> None:
+    app.dependency_overrides[require_operator_or_internal] = (
+        lambda: "user:test-operator@example.test"
+    )
+    now = datetime.now(timezone.utc)
+    response = client.post(
+        "/api/v1/internal/operations/costs",
+        json={
+            "provider": "Supabase",
+            "service": "Database",
+            "category": "DATABASE",
+            "cost_type": "INVOICE",
+            "amount_usd": "200.00",
+            "period_start": (now - timedelta(days=10)).isoformat(),
+            "period_end": (now + timedelta(days=10)).isoformat(),
+            "source_ref": "invoice:supabase:20-day-window",
+        },
+    )
+    assert response.status_code == 201, response.text
+
+    costs = client.get("/api/v1/internal/operations/costs?days=5")
+    assert costs.status_code == 200
+    result = costs.json()
+    # Five of the twenty billing days overlap the five-day reporting window.
+    assert result["recorded_service_total_usd"] == pytest.approx(50.0, rel=5e-4)
+    assert result["by_category"] == pytest.approx(
+        [{"category": "DATABASE", "amount_usd": 50.0}], rel=5e-4
+    )

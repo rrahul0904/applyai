@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import and_, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.agent_models import AgentCostEvent
@@ -103,12 +105,19 @@ class ServiceCostWrite(BaseModel):
         "OTHER",
     ] = "OTHER"
     cost_type: Literal["INVOICE", "ESTIMATE", "MEASURED"] = "INVOICE"
+    idempotency_key: str | None = Field(default=None, min_length=8, max_length=64)
     amount_usd: Decimal = Field(ge=0, max_digits=14, decimal_places=6)
     period_start: datetime
     period_end: datetime
     source_ref: str | None = Field(default=None, max_length=500)
     notes: str | None = Field(default=None, max_length=4000)
-    created_by: str | None = Field(default=None, max_length=255)
+
+    @field_validator("period_start", "period_end")
+    @classmethod
+    def require_timezone_aware_period(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("Billing timestamps must include a timezone")
+        return value.astimezone(timezone.utc)
 
 
 def _certification_dict(row: OperationsCertification) -> dict[str, Any]:
@@ -132,6 +141,7 @@ def _cost_dict(row: ServiceCostEntry) -> dict[str, Any]:
         "service": row.service,
         "category": row.category,
         "cost_type": row.cost_type,
+        "idempotency_key": row.idempotency_key,
         "amount_usd": float(row.amount_usd),
         "period_start": row.period_start,
         "period_end": row.period_end,
@@ -140,6 +150,53 @@ def _cost_dict(row: ServiceCostEntry) -> dict[str, Any]:
         "created_by": row.created_by,
         "created_at": row.created_at,
     }
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _allocated_cost(
+    row: ServiceCostEntry,
+    *,
+    since: datetime,
+    until: datetime,
+) -> Decimal:
+    start = _as_utc(row.period_start)
+    end = _as_utc(row.period_end)
+    if end < since or start > until:
+        return Decimal("0")
+    if end <= start:
+        return row.amount_usd if since <= start <= until else Decimal("0")
+
+    overlap_start = max(start, since)
+    overlap_end = min(end, until)
+    overlap_seconds = max(0.0, (overlap_end - overlap_start).total_seconds())
+    period_seconds = (end - start).total_seconds()
+    if overlap_seconds <= 0 or period_seconds <= 0:
+        return Decimal("0")
+    ratio = Decimal(str(overlap_seconds)) / Decimal(str(period_seconds))
+    return row.amount_usd * ratio
+
+
+def _cost_idempotency_key(payload: ServiceCostWrite) -> str:
+    if payload.idempotency_key:
+        return payload.idempotency_key.strip().lower()
+    canonical = {
+        "provider": payload.provider.strip().lower(),
+        "service": payload.service.strip().lower(),
+        "category": payload.category,
+        "cost_type": payload.cost_type,
+        "amount_usd": str(payload.amount_usd),
+        "period_start": payload.period_start.isoformat(),
+        "period_end": payload.period_end.isoformat(),
+        "source_ref": (payload.source_ref or "").strip().lower(),
+    }
+    return hashlib.sha256(
+        json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
 
 
 def _cost_window_summary(
@@ -163,32 +220,22 @@ def _cost_window_summary(
                 ServiceCostEntry.created_at.desc(),
                 ServiceCostEntry.id.desc(),
             )
-            .limit(entry_limit)
         )
     )
-    recorded_total = session.scalar(
-        select(func.coalesce(func.sum(ServiceCostEntry.amount_usd), 0)).where(
-            *active_window
-        )
-    )
-    provider_rows = session.execute(
-        select(
-            ServiceCostEntry.provider,
-            func.coalesce(func.sum(ServiceCostEntry.amount_usd), 0),
-        )
-        .where(*active_window)
-        .group_by(ServiceCostEntry.provider)
-        .order_by(ServiceCostEntry.provider)
-    ).all()
-    category_rows = session.execute(
-        select(
-            ServiceCostEntry.category,
-            func.coalesce(func.sum(ServiceCostEntry.amount_usd), 0),
-        )
-        .where(*active_window)
-        .group_by(ServiceCostEntry.category)
-        .order_by(ServiceCostEntry.category)
-    ).all()
+
+    recorded_total = Decimal("0")
+    provider_totals: dict[str, Decimal] = {}
+    category_totals: dict[str, Decimal] = {}
+    for row in entries:
+        allocated = _allocated_cost(row, since=since, until=now)
+        recorded_total += allocated
+        provider_totals[row.provider] = provider_totals.get(
+            row.provider, Decimal("0")
+        ) + allocated
+        category_totals[row.category] = category_totals.get(
+            row.category, Decimal("0")
+        ) + allocated
+
     career_ai_estimated = session.scalar(
         select(func.coalesce(func.sum(AIJobRun.estimated_cost_usd), 0)).where(
             AIJobRun.created_at >= since
@@ -203,22 +250,23 @@ def _cost_window_summary(
         "days": days,
         "period_start": since,
         "period_end": now,
-        "recorded_service_total_usd": float(recorded_total or 0),
+        "recorded_service_total_usd": float(recorded_total),
         "career_ai_estimated_usd": float(career_ai_estimated or 0),
         "agent_runtime_measured_usd": float(agent_runtime_measured or 0),
         "by_provider": [
-            {"provider": provider, "amount_usd": float(amount or 0)}
-            for provider, amount in provider_rows
+            {"provider": provider, "amount_usd": float(amount)}
+            for provider, amount in sorted(provider_totals.items())
         ],
         "by_category": [
-            {"category": category, "amount_usd": float(amount or 0)}
-            for category, amount in category_rows
+            {"category": category, "amount_usd": float(amount)}
+            for category, amount in sorted(category_totals.items())
         ],
-        "entries": [_cost_dict(row) for row in entries],
+        "entries": [_cost_dict(row) for row in entries[:entry_limit]],
+        "entry_count": len(entries),
         "accounting_note": (
-            "Recorded service spend is the operator ledger total. Runtime AI estimates "
-            "are reported separately and are not added to that total to avoid "
-            "double-counting provider invoices."
+            "Recorded service spend is allocated to the selected rolling window from "
+            "each entry's billing period. Runtime AI estimates are reported separately "
+            "and are not added to that total to avoid double-counting provider invoices."
         ),
     }
 
@@ -520,6 +568,8 @@ def service_costs(
 @router.post("/costs", status_code=status.HTTP_201_CREATED)
 def create_service_cost(
     payload: ServiceCostWrite,
+    response: Response,
+    actor: str = Depends(require_operator_or_internal),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     if payload.period_end < payload.period_start:
@@ -530,9 +580,38 @@ def create_service_cost(
                 "message": "period_end must be on or after period_start",
             },
         )
-    row = ServiceCostEntry(**payload.model_dump())
+
+    idempotency_key = _cost_idempotency_key(payload)
+    existing = session.scalar(
+        select(ServiceCostEntry).where(
+            ServiceCostEntry.idempotency_key == idempotency_key
+        )
+    )
+    if existing is not None:
+        response.status_code = status.HTTP_200_OK
+        return _cost_dict(existing)
+
+    values = payload.model_dump(exclude={"idempotency_key"})
+    row = ServiceCostEntry(
+        **values,
+        idempotency_key=idempotency_key,
+        created_by=actor,
+    )
     session.add(row)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        existing = session.scalar(
+            select(ServiceCostEntry).where(
+                ServiceCostEntry.idempotency_key == idempotency_key
+            )
+        )
+        if existing is None:
+            raise
+        response.status_code = status.HTTP_200_OK
+        return _cost_dict(existing)
+
     session.refresh(row)
     return _cost_dict(row)
 

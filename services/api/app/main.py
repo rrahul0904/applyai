@@ -115,7 +115,8 @@ app.include_router(career_prepare.router,prefix="/api/v1",include_in_schema=Fals
 app.include_router(application_materials.router,prefix="/api/v1",include_in_schema=False)
 app.include_router(interview_media.router,prefix="/api/v1",include_in_schema=False)
 app.include_router(interview_intelligence.router,prefix="/api/v1",include_in_schema=False)
-app.include_router(mcp.router,prefix="/api/v1",include_in_schema=False)\napp.include_router(career_radar.router,prefix="/api/v1",include_in_schema=False)
+app.include_router(mcp.router,prefix="/api/v1",include_in_schema=False)
+app.include_router(career_radar.router,prefix="/api/v1",include_in_schema=False)
 
 for router in (me.router,onboarding.router,profiles.router,resumes.router,jobs.router,applications.router,career_memory.router,career_intelligence_v2.router,candidate_platform.router,semantic_matching.router,company_intelligence.router,employer_platform.router,billing_platform.router,privacy.router): app.include_router(router,prefix="/api/v1")
 for product_router in (candidate_workspace.router,career_product_contract.router,career_product_polish.router,career_product.router,career_system.router,recruiter_lens.router,resume_shares.router,agents.router,application_agent.router,application_agent_documents.router): app.include_router(product_router,prefix="/api/v1",include_in_schema=False)

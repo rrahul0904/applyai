@@ -225,6 +225,6 @@ def test_internal_operations_cost_summary_prorates_overlapping_billing_period(cl
     result = costs.json()
     # Five of the twenty billing days overlap the five-day reporting window.
     assert result["recorded_service_total_usd"] == pytest.approx(50.0, rel=5e-4)
-    assert result["by_category"] == pytest.approx(
-        [{"category": "DATABASE", "amount_usd": 50.0}], rel=5e-4
-    )
+    assert len(result["by_category"]) == 1
+    assert result["by_category"][0]["category"] == "DATABASE"
+    assert result["by_category"][0]["amount_usd"] == pytest.approx(50.0, rel=5e-4)

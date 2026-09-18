@@ -21,23 +21,21 @@ def phrase_tokens(value: str) -> set[str]:
 
 
 def skill_is_present(required_skill: str, candidate_skills: Iterable[str]) -> bool:
-    """Match multi-word skills without splitting an exact skill into false gaps."""
+    """Require the complete required skill phrase/tokens within one candidate skill."""
     required = normalize_phrase(required_skill)
     if not required:
         return True
     required_tokens = phrase_tokens(required)
-    combined_tokens: set[str] = set()
     for raw in candidate_skills:
         candidate = normalize_phrase(raw)
         if not candidate:
             continue
-        if required == candidate or required in candidate or candidate in required:
+        if required == candidate or required in candidate:
             return True
         tokens = phrase_tokens(candidate)
-        combined_tokens.update(tokens)
         if required_tokens and required_tokens.issubset(tokens):
             return True
-    return bool(required_tokens) and required_tokens.issubset(combined_tokens)
+    return False
 
 
 def report_fingerprint(*, company: str | None, role: str | None, stage: str | None, body: str) -> str:

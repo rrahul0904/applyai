@@ -34,3 +34,34 @@ export async function recordOperationsCertification(formData: FormData) {
   });
   revalidatePath("/admin/operations");
 }
+
+
+export async function recordServiceCost(formData: FormData) {
+  const email = await requireOperatorEmail();
+  const provider = String(formData.get("provider") ?? "").trim();
+  const service = String(formData.get("service") ?? "").trim();
+  const category = String(formData.get("category") ?? "OTHER").toUpperCase();
+  const costType = String(formData.get("cost_type") ?? "INVOICE").toUpperCase();
+  const amountUsd = Number(formData.get("amount_usd") ?? NaN);
+  const periodStart = String(formData.get("period_start") ?? "").trim();
+  const periodEnd = String(formData.get("period_end") ?? "").trim();
+  if (!provider || !service || !Number.isFinite(amountUsd) || amountUsd < 0 || !periodStart || !periodEnd) {
+    return;
+  }
+  await operatorApi("operations/costs", {
+    method: "POST",
+    body: JSON.stringify({
+      provider,
+      service,
+      category,
+      cost_type: costType,
+      amount_usd: amountUsd,
+      period_start: new Date(`${periodStart}T00:00:00Z`).toISOString(),
+      period_end: new Date(`${periodEnd}T23:59:59Z`).toISOString(),
+      source_ref: String(formData.get("source_ref") ?? "").trim() || null,
+      notes: String(formData.get("notes") ?? "").trim() || null,
+      created_by: email,
+    }),
+  });
+  revalidatePath("/admin/operations");
+}

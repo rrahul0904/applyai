@@ -13,12 +13,12 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
 from app.core.database import get_session
-from app.core.internal_auth import require_internal_api
+from app.core.operator_auth import require_operator_or_internal
 from app.growth_models import ReferralCode, ReferralCreditLedger, ReferralEvent
 from app.models import User
 
 router = APIRouter(prefix="/referrals", tags=["referrals"])
-internal_router = APIRouter(prefix="/internal/referrals", tags=["internal-referrals"], dependencies=[Depends(require_internal_api)])
+internal_router = APIRouter(prefix="/internal/referrals", tags=["internal-referrals"], dependencies=[Depends(require_operator_or_internal)])
 
 
 class ReferralClaimWrite(BaseModel):
@@ -78,6 +78,37 @@ def claim_referral(payload: ReferralClaimWrite, user: User = Depends(get_current
         session.rollback(); raise HTTPException(status_code=409, detail="Referral has already been claimed") from exc
     session.refresh(item)
     return {"id": item.id, "status": item.status, "already_claimed": False}
+
+
+@internal_router.get("/events")
+def referral_events(
+    status_filter: str | None = Query(default=None, alias="status", max_length=32),
+    limit: int = Query(default=100, ge=1, le=500),
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    statement = select(ReferralEvent).order_by(ReferralEvent.created_at.desc())
+    if status_filter:
+        statement = statement.where(ReferralEvent.status == status_filter.upper())
+    events = list(session.scalars(statement.limit(limit)))
+    payload: list[dict[str, Any]] = []
+    for event in events:
+        referrer = session.get(User, event.referrer_user_id)
+        referred = session.get(User, event.referred_user_id)
+        code = session.get(ReferralCode, event.referral_code_id)
+        payload.append(
+            {
+                "id": event.id,
+                "code": code.code if code is not None else None,
+                "status": event.status,
+                "referrer_user_id": event.referrer_user_id,
+                "referrer_email": referrer.email if referrer is not None else None,
+                "referred_user_id": event.referred_user_id,
+                "referred_email": referred.email if referred is not None else None,
+                "qualified_at": event.qualified_at,
+                "created_at": event.created_at,
+            }
+        )
+    return payload
 
 
 @internal_router.get("/metrics")

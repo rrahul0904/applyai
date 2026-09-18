@@ -9,7 +9,7 @@ from app.core.operator_auth import require_operator_or_internal
 from app.durability_models import TaskOutbox
 from app.job_source_models import JobSourceRegistry
 from app.main import app
-from app.operations_models import OperationsCertification
+from app.operations_models import OperationsCertification, OperationsServiceCost
 
 
 def _seed_source(database_url: str) -> str:
@@ -116,5 +116,61 @@ def test_internal_operations_certification_is_persisted_and_cursor_paginated(
         with Session(engine) as session:
             records = list(session.scalars(select(OperationsCertification)))
             assert {row.status for row in records} == {"PASS", "BLOCKED"}
+    finally:
+        engine.dispose()
+
+
+
+def test_internal_operations_service_costs_and_refresh_slo_are_truthful(
+    client, database_url: str
+) -> None:
+    app.dependency_overrides[require_operator_or_internal] = lambda: None
+
+    created = client.post(
+        "/api/v1/internal/operations/service-costs",
+        json={
+            "service_key": "railway-api",
+            "display_name": "Railway API",
+            "provider": "Railway",
+            "category": "api-hosting",
+            "environment": "development",
+            "billing_period": datetime.now(timezone.utc).strftime("%Y-%m"),
+            "fixed_cost_cents": 500,
+            "usage_cost_cents": 275,
+            "credits_cents": 100,
+            "currency": "USD",
+            "source": "test-provider-statement",
+            "notes": "Measured test record",
+        },
+    )
+    assert created.status_code == 200, created.text
+    assert created.json()["total_cost_cents"] == 675
+
+    listing = client.get(
+        "/api/v1/internal/operations/service-costs",
+        params={
+            "billing_period": datetime.now(timezone.utc).strftime("%Y-%m"),
+            "environment": "development",
+        },
+    )
+    assert listing.status_code == 200
+    assert listing.json()["services_recorded"] == 1
+    assert listing.json()["total_cost_cents"] == 675
+
+    summary = client.get("/api/v1/internal/operations/summary")
+    assert summary.status_code == 200
+    ingestion = summary.json()["ingestion"]
+    assert ingestion["daily_refresh_target"] == 2_000_000
+    assert ingestion["daily_refresh_target_met"] is False
+    assert ingestion["daily_refresh_status"] == "BLOCKED"
+    assert ingestion["daily_refresh_remaining"] == 2_000_000
+
+    engine = create_engine(database_url)
+    try:
+        with Session(engine) as session:
+            record = session.scalar(select(OperationsServiceCost))
+            assert record is not None
+            assert record.service_key == "railway-api"
+            assert record.usage_cost_cents == 275
     finally:
         engine.dispose()

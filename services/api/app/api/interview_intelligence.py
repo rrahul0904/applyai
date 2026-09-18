@@ -308,10 +308,15 @@ def bootstrap_workspace(
         item = InterviewIntelligenceWorkspace(user_id=user.id, job_id=job_id)
         session.add(item)
         session.flush()
-    item.interview_date = payload.interview_date
-    item.interviewer_name = payload.interviewer_name
-    item.interviewer_title = payload.interviewer_title
-    item.interviewer_url = str(payload.interviewer_url) if payload.interviewer_url else None
+    fields_set = payload.model_fields_set
+    if "interview_date" in fields_set:
+        item.interview_date = payload.interview_date
+    if "interviewer_name" in fields_set:
+        item.interviewer_name = payload.interviewer_name
+    if "interviewer_title" in fields_set:
+        item.interviewer_title = payload.interviewer_title
+    if "interviewer_url" in fields_set:
+        item.interviewer_url = str(payload.interviewer_url) if payload.interviewer_url else None
     company = _company_name(session, job)
     lifecycle = build_lifecycle(
         job_title=job.title,
@@ -561,7 +566,11 @@ def create_community_post(payload: CommunityPostWrite, user: User = Depends(get_
 
 @router.post("/community/{post_id}/replies", status_code=status.HTTP_201_CREATED)
 def create_community_reply(post_id: uuid.UUID, payload: CommunityReplyWrite, user: User = Depends(get_current_user), session: Session = Depends(get_session)) -> dict[str, Any]:
-    item = session.get(InterviewCommunityPost, post_id)
+    item = session.scalar(
+        select(InterviewCommunityPost)
+        .where(InterviewCommunityPost.id == post_id)
+        .with_for_update()
+    )
     if item is None or item.moderation_status != "PUBLISHED":
         raise HTTPException(status_code=404, detail="Community post not found")
     replies = list(item.replies_json or [])
@@ -574,7 +583,11 @@ def create_community_reply(post_id: uuid.UUID, payload: CommunityReplyWrite, use
 
 @router.post("/community/{post_id}/react")
 def react(post_id: uuid.UUID, user: User = Depends(get_current_user), session: Session = Depends(get_session)) -> dict[str, Any]:
-    item = session.get(InterviewCommunityPost, post_id)
+    item = session.scalar(
+        select(InterviewCommunityPost)
+        .where(InterviewCommunityPost.id == post_id)
+        .with_for_update()
+    )
     if item is None or item.moderation_status != "PUBLISHED":
         raise HTTPException(status_code=404, detail="Community post not found")
     users = list(item.reaction_user_ids or [])
@@ -609,7 +622,25 @@ def moderate_report(report_id: uuid.UUID, payload: ModerationWrite, session: Ses
     item = session.get(InterviewIntelligenceReport, report_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Interview report not found")
-    item.moderation_status = "APPROVED_UNLINKED" if payload.decision == "APPROVED" else "REJECTED"
+    evidence_rows = list(
+        session.scalars(
+            select(InterviewQuestionEvidence).where(
+                InterviewQuestionEvidence.report_id == item.id
+            )
+        )
+    )
+    if payload.decision == "APPROVED":
+        item.moderation_status = "APPROVED_LINKED" if evidence_rows else "APPROVED_UNLINKED"
+    else:
+        affected_question_ids = {evidence.question_id for evidence in evidence_rows}
+        for evidence in evidence_rows:
+            session.delete(evidence)
+        session.flush()
+        item.moderation_status = "REJECTED"
+        for question_id in affected_question_ids:
+            question = session.get(InterviewIntelligenceQuestion, question_id)
+            if question is not None:
+                _recompute_question(session, question)
     session.commit()
     return {"id": str(item.id), "moderation_status": item.moderation_status}
 

@@ -5,6 +5,7 @@ import {
   Bell,
   BrainCircuit,
   BriefcaseBusiness,
+  Gift,
   CircleUserRound,
   Home,
   LogOut,
@@ -53,6 +54,12 @@ const navigation: NavigationItem[] = [
     label: "Interview Prep",
     icon: BrainCircuit,
     activePrefixes: ["/interview-prep", "/interview"],
+  },
+  {
+    href: "/referrals",
+    label: "Referrals",
+    icon: Gift,
+    activePrefixes: ["/referrals"],
   },
   {
     href: "/profile",

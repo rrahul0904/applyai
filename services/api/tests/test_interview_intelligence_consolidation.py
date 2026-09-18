@@ -101,8 +101,8 @@ def test_interview_intelligence_end_to_end_and_evidence_reversal(client, databas
     assert "machine learning" in workspace["lifecycle"]["strengths"]
     assert "kubernetes" in workspace["lifecycle"]["gaps"]
     assert len(workspace["podcasts"]) == 5
-    assert workspace["interviewer_name"] == "Casey Morgan"
-    assert workspace["interviewer_title"] == "VP Engineering"
+    assert workspace["interviewer"]["name"] == "Casey Morgan"
+    assert workspace["interviewer"]["title"] == "VP Engineering"
 
     notes = client.put(
         f"/api/v1/interview-intelligence/workspaces/{job_id}/phases/1/notes",
@@ -132,8 +132,8 @@ def test_interview_intelligence_end_to_end_and_evidence_reversal(client, databas
     assert regenerated.status_code == 201, regenerated.text
     assert regenerated.json()["lifecycle"]["phases"][0]["notes"] == "Ask about platform ownership."
     assert "Practice the migration trade-off story." in regenerated.json()["lifecycle"]["carry_forward"]
-    assert regenerated.json()["interviewer_name"] == "Casey Morgan"
-    assert regenerated.json()["interviewer_title"] == "VP Engineering"
+    assert regenerated.json()["interviewer"]["name"] == "Casey Morgan"
+    assert regenerated.json()["interviewer"]["title"] == "VP Engineering"
 
     questions = client.get("/api/v1/interview-intelligence/questions")
     assert questions.status_code == 200, questions.text

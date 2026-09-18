@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { Badge, Button, Card, PageHeader } from "@/components/ui";
 import { operatorApi, requireOperatorEmail } from "@/lib/auth/operator";
 
-import { recordOperationsCertification, refreshOperationSource } from "./actions";
+import { recordOperationsCertification, recordServiceCost, refreshOperationSource } from "./actions";
 
 type Summary = {
   generated_at: string;
@@ -43,6 +43,34 @@ type Summary = {
     records: number;
     latest: Certification | null;
   };
+};
+
+type CostEntry = {
+  id: string;
+  provider: string;
+  service: string;
+  category: string;
+  cost_type: string;
+  amount_usd: number;
+  period_start: string;
+  period_end: string;
+  source_ref: string | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+};
+
+type CostSummary = {
+  days: number;
+  period_start: string;
+  period_end: string;
+  recorded_service_total_usd: number;
+  career_ai_estimated_usd: number;
+  agent_runtime_measured_usd: number;
+  by_provider: Array<{ provider: string; amount_usd: number }>;
+  by_category: Array<{ category: string; amount_usd: number }>;
+  entries: CostEntry[];
+  accounting_note: string;
 };
 
 type Source = {
@@ -109,6 +137,16 @@ function formatDate(value: string | null) {
   }).format(new Date(value));
 }
 
+
+function formatMoney(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  }).format(value);
+}
+
 export default async function OperationsPage() {
   try {
     await requireOperatorEmail();
@@ -116,11 +154,12 @@ export default async function OperationsPage() {
     redirect("/dashboard");
   }
 
-  const [summary, sources, ingestion, certifications] = await Promise.all([
+  const [summary, sources, ingestion, certifications, costs] = await Promise.all([
     operatorApi<Summary>("operations/summary"),
     operatorApi<CursorPage<Source>>("operations/sources?limit=25"),
     operatorApi<CursorPage<IngestionRun>>("operations/ingestion?limit=25"),
     operatorApi<CursorPage<Certification>>("operations/certifications?limit=25"),
+    operatorApi<CostSummary>("operations/costs?days=30"),
   ]);
 
   return (
@@ -185,6 +224,66 @@ export default async function OperationsPage() {
             Supabase project fingerprint {summary.runtime.supabase_project_fingerprint || "unavailable"}
           </p>
         ) : null}
+      </Card>
+
+      <Card className="detail-section">
+        <div className="section-header">
+          <div>
+            <h2>Platform service cost</h2>
+            <p>Recorded provider spend is kept separate from runtime AI estimates so invoices are never double-counted.</p>
+          </div>
+          <Badge tone={costs.recorded_service_total_usd > 0 ? "info" : "neutral"}>
+            {formatMoney(costs.recorded_service_total_usd)} recorded / {costs.days}d
+          </Badge>
+        </div>
+        <div className="dashboard-grid">
+          <div><p className="eyebrow">Provider ledger</p><h2>{formatMoney(costs.recorded_service_total_usd)}</h2><p>Invoices, measured charges and operator estimates</p></div>
+          <div><p className="eyebrow">Career AI estimate</p><h2>{formatMoney(costs.career_ai_estimated_usd)}</h2><p>Runtime token/model estimate, not added to ledger total</p></div>
+          <div><p className="eyebrow">Agent runtime measured</p><h2>{formatMoney(costs.agent_runtime_measured_usd)}</h2><p>Governed agent metering, shown separately</p></div>
+        </div>
+        <p className="muted">{costs.accounting_note}</p>
+        <div className="detail-grid">
+          <div className="detail-main">
+            <h3>Recent recorded spend</h3>
+            <div className="list-stack">
+              {costs.entries.map((entry) => (
+                <div className="note" key={entry.id}>
+                  <div className="section-header">
+                    <div>
+                      <strong>{entry.provider} · {entry.service}</strong>
+                      <p>{entry.category} · {entry.cost_type} · {formatDate(entry.period_start)} to {formatDate(entry.period_end)}</p>
+                    </div>
+                    <strong>{formatMoney(entry.amount_usd)}</strong>
+                  </div>
+                  {entry.source_ref ? <p>Source: {entry.source_ref}</p> : null}
+                  {entry.notes ? <p>{entry.notes}</p> : null}
+                </div>
+              ))}
+              {costs.entries.length === 0 ? <p>No provider spend has been recorded yet. Runtime estimates remain visible above.</p> : null}
+            </div>
+            {costs.by_provider.length > 0 ? (
+              <div className="note">
+                <strong>By provider</strong>
+                <p>{costs.by_provider.map((item) => `${item.provider} ${formatMoney(item.amount_usd)}`).join(" · ")}</p>
+              </div>
+            ) : null}
+          </div>
+          <aside className="detail-aside">
+            <form action={recordServiceCost} className="note stack-form">
+              <h3>Record provider spend</h3>
+              <label>Provider<input name="provider" required placeholder="Vercel, Supabase, OpenAI…" /></label>
+              <label>Service<input name="service" required placeholder="Web hosting, database, storage…" /></label>
+              <label>Category<select name="category" defaultValue="HOSTING"><option>HOSTING</option><option>DATABASE</option><option>STORAGE</option><option>AI</option><option>AUTH</option><option>EMAIL</option><option>OBSERVABILITY</option><option>OTHER</option></select></label>
+              <label>Cost type<select name="cost_type" defaultValue="INVOICE"><option>INVOICE</option><option>MEASURED</option><option>ESTIMATE</option></select></label>
+              <label>Amount USD<input name="amount_usd" type="number" min="0" step="0.000001" required /></label>
+              <label>Period start<input name="period_start" type="date" required /></label>
+              <label>Period end<input name="period_end" type="date" required /></label>
+              <label>Source reference<input name="source_ref" placeholder="Invoice ID, billing export, provider report…" /></label>
+              <label>Notes<textarea name="notes" rows={3} /></label>
+              <Button type="submit">Record spend</Button>
+            </form>
+          </aside>
+        </div>
       </Card>
 
       <Card className="detail-section">

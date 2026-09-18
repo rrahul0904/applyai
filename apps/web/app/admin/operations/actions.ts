@@ -34,3 +34,39 @@ export async function recordOperationsCertification(formData: FormData) {
   });
   revalidatePath("/admin/operations");
 }
+
+
+function dollarsToCents(value: FormDataEntryValue | null) {
+  const parsed = Number(String(value ?? "0").trim() || "0");
+  if (!Number.isFinite(parsed) || parsed < 0) return 0;
+  return Math.round(parsed * 100);
+}
+
+export async function recordServiceCost(formData: FormData) {
+  await requireOperatorEmail();
+  const serviceKey = String(formData.get("service_key") ?? "").trim().toLowerCase();
+  const displayName = String(formData.get("display_name") ?? "").trim();
+  const provider = String(formData.get("provider") ?? "").trim();
+  const category = String(formData.get("category") ?? "").trim();
+  const billingPeriod = String(formData.get("billing_period") ?? "").trim();
+  if (!serviceKey || !displayName || !provider || !category || !billingPeriod) return;
+
+  await operatorApi("operations/service-costs", {
+    method: "POST",
+    body: JSON.stringify({
+      service_key: serviceKey,
+      display_name: displayName,
+      provider,
+      category,
+      environment: String(formData.get("environment") ?? process.env.VERCEL_ENV ?? "production"),
+      billing_period: billingPeriod,
+      fixed_cost_cents: dollarsToCents(formData.get("fixed_cost_usd")),
+      usage_cost_cents: dollarsToCents(formData.get("usage_cost_usd")),
+      credits_cents: dollarsToCents(formData.get("credits_usd")),
+      currency: "USD",
+      source: String(formData.get("source") ?? "operator").trim() || "operator",
+      notes: String(formData.get("notes") ?? "").trim() || null,
+    }),
+  });
+  revalidatePath("/admin/operations");
+}

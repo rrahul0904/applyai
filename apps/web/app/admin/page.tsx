@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Badge, Button, Card, PageHeader } from "@/components/ui";
 import { operatorApi, requireOperatorEmail } from "@/lib/auth/operator";
@@ -171,6 +172,11 @@ export default async function AdminPage() {
   return <main className="app-main">
     <PageHeader eyebrow="Operator-only" title="ApplyAI Operations" description="Platform health, governed agents, job supply, employer trust, candidate engagement and AI evaluation without exposing the internal operator token to the browser." action={<form action={dispatchEngagement}><Button type="submit">Dispatch due engagement</Button></form>} />
 
+    <div className="button-row">
+      <Link className="button button-secondary" href="/admin/operations">Operations control</Link>
+      <Link className="button button-secondary" href="/admin/interview-intelligence">Interview intelligence</Link>
+      <Link className="button button-secondary" href="/admin/referrals">Referral operations</Link>
+    </div>
     <div className="dashboard-grid">{Object.entries(metrics).map(([key,value]) => <Card key={key}><p className="eyebrow">{key.replaceAll("_"," ")}</p><h2>{value}</h2></Card>)}</div>
 
     <Card className="detail-section">

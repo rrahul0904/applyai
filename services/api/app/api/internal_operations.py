@@ -21,7 +21,7 @@ from app.job_source_models import JobSourceRegistry
 from app.models import Job
 from app.postgres_queue_models import PostgresTask
 from app.core.supabase_instance import supabase_instance_fingerprint
-from app.operations_models import OperationsCertification
+from app.operations_models import OperationsCertification, OperationsServiceCost
 
 
 router = APIRouter(
@@ -86,6 +86,21 @@ class CertificationWrite(BaseModel):
     created_by: str | None = Field(default=None, max_length=255)
 
 
+class ServiceCostWrite(BaseModel):
+    service_key: str = Field(min_length=2, max_length=80, pattern=r"^[a-z0-9][a-z0-9._-]*$")
+    display_name: str = Field(min_length=2, max_length=160)
+    provider: str = Field(min_length=2, max_length=120)
+    category: str = Field(min_length=2, max_length=64)
+    environment: str = Field(default="production", min_length=2, max_length=48)
+    billing_period: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
+    fixed_cost_cents: int = Field(default=0, ge=0, le=100_000_000_000)
+    usage_cost_cents: int = Field(default=0, ge=0, le=100_000_000_000)
+    credits_cents: int = Field(default=0, ge=0, le=100_000_000_000)
+    currency: str = Field(default="USD", min_length=3, max_length=3)
+    source: str = Field(default="operator", min_length=2, max_length=160)
+    notes: str | None = Field(default=None, max_length=4000)
+
+
 def _certification_dict(row: OperationsCertification) -> dict[str, Any]:
     return {
         "id": row.id,
@@ -97,6 +112,28 @@ def _certification_dict(row: OperationsCertification) -> dict[str, Any]:
         "notes": row.notes,
         "created_by": row.created_by,
         "created_at": row.created_at,
+    }
+
+
+def _service_cost_dict(row: OperationsServiceCost) -> dict[str, Any]:
+    total_cost_cents = row.fixed_cost_cents + row.usage_cost_cents - row.credits_cents
+    return {
+        "id": row.id,
+        "service_key": row.service_key,
+        "display_name": row.display_name,
+        "provider": row.provider,
+        "category": row.category,
+        "environment": row.environment,
+        "billing_period": row.billing_period,
+        "fixed_cost_cents": row.fixed_cost_cents,
+        "usage_cost_cents": row.usage_cost_cents,
+        "credits_cents": row.credits_cents,
+        "total_cost_cents": total_cost_cents,
+        "currency": row.currency,
+        "source": row.source,
+        "notes": row.notes,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
     }
 
 
@@ -137,6 +174,19 @@ def operations_summary(
         JobSourceRegistry.locked_by.is_not(None),
         JobSourceRegistry.lease_expires_at.is_not(None),
         JobSourceRegistry.lease_expires_at > now,
+    )
+    billing_period = now.strftime("%Y-%m")
+    cost_rows = list(
+        session.scalars(
+            select(OperationsServiceCost).where(
+                OperationsServiceCost.billing_period == billing_period,
+                OperationsServiceCost.environment == settings.app_env,
+            )
+        )
+    )
+    total_service_cost_cents = sum(
+        row.fixed_cost_cents + row.usage_cost_cents - row.credits_cents
+        for row in cost_rows
     )
 
     return {
@@ -232,6 +282,31 @@ def operations_summary(
                 TaskOutbox.event_type == "SOURCE_INGEST",
                 TaskOutbox.published_at.is_(None),
             ),
+            "daily_refresh_target": settings.job_daily_refresh_target,
+            "daily_refresh_remaining": max(
+                settings.job_daily_refresh_target - int(run_totals[0] or 0),
+                0,
+            ),
+            "daily_refresh_progress_percentage": round(
+                min(
+                    100.0,
+                    (int(run_totals[0] or 0) / settings.job_daily_refresh_target) * 100.0,
+                ),
+                2,
+            ),
+            "daily_refresh_target_met": int(run_totals[0] or 0)
+            >= settings.job_daily_refresh_target,
+            "daily_refresh_status": (
+                "PASS"
+                if int(run_totals[0] or 0) >= settings.job_daily_refresh_target
+                else "BLOCKED"
+            ),
+        },
+        "costs": {
+            "billing_period": billing_period,
+            "environment": settings.app_env,
+            "services_recorded": len(cost_rows),
+            "total_cost_cents": total_service_cost_cents,
         },
         "certification": {
             "records": _count(session, OperationsCertification),
@@ -240,6 +315,61 @@ def operations_summary(
             else None,
         },
     }
+
+
+@router.get("/service-costs")
+def list_service_costs(
+    billing_period: str | None = Query(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+    environment: str | None = Query(default=None, min_length=2, max_length=48),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    period = billing_period or utcnow().strftime("%Y-%m")
+    statement = select(OperationsServiceCost).where(
+        OperationsServiceCost.billing_period == period
+    )
+    if environment:
+        statement = statement.where(OperationsServiceCost.environment == environment)
+    rows = list(
+        session.scalars(
+            statement.order_by(
+                OperationsServiceCost.category.asc(),
+                OperationsServiceCost.service_key.asc(),
+            )
+        )
+    )
+    items = [_service_cost_dict(row) for row in rows]
+    return {
+        "billing_period": period,
+        "environment": environment,
+        "services_recorded": len(items),
+        "total_cost_cents": sum(int(item["total_cost_cents"]) for item in items),
+        "items": items,
+    }
+
+
+@router.post("/service-costs")
+def upsert_service_cost(
+    payload: ServiceCostWrite,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    row = session.scalar(
+        select(OperationsServiceCost).where(
+            OperationsServiceCost.service_key == payload.service_key,
+            OperationsServiceCost.environment == payload.environment,
+            OperationsServiceCost.billing_period == payload.billing_period,
+        )
+    )
+    values = payload.model_dump()
+    values["currency"] = payload.currency.upper()
+    if row is None:
+        row = OperationsServiceCost(**values)
+        session.add(row)
+    else:
+        for key, value in values.items():
+            setattr(row, key, value)
+    session.commit()
+    session.refresh(row)
+    return _service_cost_dict(row)
 
 
 @router.get("/sources")

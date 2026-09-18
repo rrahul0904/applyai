@@ -14,7 +14,7 @@ from app.core.config import get_settings
 
 COMPANY_ID = "00000000-0000-4000-8000-000000000001"
 BENCHMARK_ORIGIN = "SYNTHETIC_BENCHMARK"
-SUPPORTED_ROWS = (10_000, 50_000, 250_000, 500_000, 1_000_000)
+SUPPORTED_ROWS = (10_000, 50_000, 250_000, 500_000, 1_000_000, 2_000_000)
 
 
 def uuid_sql(prefix: str, value: str) -> str:

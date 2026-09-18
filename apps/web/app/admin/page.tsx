@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Badge, Button, Card, PageHeader } from "@/components/ui";
 import { operatorApi, requireOperatorEmail } from "@/lib/auth/operator";

@@ -34,7 +34,6 @@ def upgrade() -> None:
         sa.Column("created_by", sa.String(length=255), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("idempotency_key"),
     )
     op.create_index("ix_service_cost_entries_idempotency_key", "service_cost_entries", ["idempotency_key"], unique=True)
     op.create_index("ix_service_cost_entries_provider", "service_cost_entries", ["provider"], unique=False)

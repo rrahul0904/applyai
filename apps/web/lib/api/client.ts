@@ -131,6 +131,49 @@ export type CareerMatchV2 = {
   updated_at: string;
 };
 
+export type CareerRadarBucket =
+  | "TOP_MATCH"
+  | "WATCH"
+  | "PENDING_JUDGMENT"
+  | "LOW_PRIORITY";
+
+export type CareerRadarItem = {
+  job_id: string;
+  title: string;
+  company: string;
+  employment_type: string | null;
+  seniority: string | null;
+  freshness_at: string;
+  radar_bucket: CareerRadarBucket;
+  score: number | null;
+  decision: string | null;
+  fit_band: string | null;
+  confidence: string | null;
+  engine_version: string | null;
+  reasons: string[];
+  judged_at: string | null;
+};
+
+export type CareerRadarResponse = {
+  items: CareerRadarItem[];
+  counts: {
+    top_match: number;
+    watch: number;
+    pending_judgment: number;
+    low_priority: number;
+  };
+  lookback_days: number;
+  engine_version: string;
+  generated_at: string;
+};
+
+export type CareerRadarRefreshResponse = {
+  scheduled: number;
+  runs: Array<{ run_id: string; job_id: string; status: string }>;
+  lookback_days: number;
+  engine_version: string;
+};
+
 export type CareerFactCategory =
   | "ACHIEVEMENT"
   | "PROJECT"
@@ -319,6 +362,12 @@ export const api = {
       request<{ items: CareerMatchV2[] }>("/career-v2/matches", { signal }),
     match: (jobId: string, signal?: AbortSignal) =>
       request<CareerMatchV2>(`/career-v2/matches/${jobId}`, { signal }),
+    radar: (signal?: AbortSignal) =>
+      request<CareerRadarResponse>("/career-v2/radar", { signal }),
+    refreshRadar: () =>
+      request<CareerRadarRefreshResponse>("/career-v2/radar/refresh", {
+        method: "POST",
+      }),
     feedback: (artifactId: string, action: string) =>
       request<{ id: string; artifact_id: string; action: string }>(
         `/career-v2/artifacts/${artifactId}/feedback`,
@@ -338,7 +387,10 @@ export const api = {
         method: "POST",
         body: JSON.stringify(payload),
       }),
-    update: (factId: string, payload: Partial<CareerFactWrite> & { user_verified?: boolean }) =>
+    update: (
+      factId: string,
+      payload: Partial<CareerFactWrite> & { user_verified?: boolean },
+    ) =>
       request<CareerFact>(`/career-memory/${factId}`, {
         method: "PATCH",
         body: JSON.stringify(payload),

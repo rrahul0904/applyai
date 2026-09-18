@@ -3,12 +3,18 @@ from types import SimpleNamespace
 
 from sqlalchemy import select
 
-from app.api.career_radar import _bucket, _effective_refresh_limit, _freshness_at
+from app.api.career_radar import (
+    _bucket,
+    _effective_refresh_limit,
+    _freshness_at,
+    _recover_dead_postgres_run,
+)
 from app.career_models import AIJobRun, CareerMatch
 from app.core.config import Settings
 from app.core.database import SessionLocal
 from app.jobs.dataset import build_seed_records
 from app.jobs.seed import seed_development_jobs
+from app.postgres_queue_models import PostgresTask
 
 
 def profile_payload() -> dict:
@@ -93,6 +99,23 @@ def test_radar_includes_newly_discovered_job_with_old_posted_date(client):
     assert response.json()["counts"]["pending_judgment"] >= 1
 
 
+def test_radar_counts_cover_full_window_not_only_limited_items(client):
+    seed_recent_jobs(count=4)
+    assert client.put("/api/v1/profile", json=profile_payload()).status_code == 200
+
+    refresh = client.post("/api/v1/career-v2/radar/refresh?max_jobs=1")
+    assert refresh.status_code == 200
+
+    response = client.get("/api/v1/career-v2/radar?limit=1")
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["items"]) == 1
+    assert payload["returned"] == 1
+    assert payload["total"] == 4
+    assert sum(payload["counts"].values()) == 4
+    assert payload["counts"]["pending_judgment"] == 3
+
+
 def test_radar_refresh_judges_recent_unmatched_jobs(client):
     seed_recent_jobs()
     assert client.put("/api/v1/profile", json=profile_payload()).status_code == 200
@@ -165,6 +188,58 @@ def test_radar_refresh_retries_failed_idempotent_run(client):
             )
         )
         assert match is not None
+
+
+def test_radar_rearms_dead_postgres_delivery_after_explicit_refresh(client):
+    seed_recent_jobs(count=1)
+    assert client.put("/api/v1/profile", json=profile_payload()).status_code == 200
+    first = client.post("/api/v1/career-v2/radar/refresh?max_jobs=1")
+    run_id = first.json()["runs"][0]["run_id"]
+
+    with SessionLocal() as session:
+        run = session.get(AIJobRun, run_id)
+        assert run is not None
+        match = session.scalar(
+            select(CareerMatch).where(
+                CareerMatch.user_id == run.user_id,
+                CareerMatch.job_id == run.job_id,
+            )
+        )
+        assert match is not None
+        session.delete(match)
+        run.status = "QUEUED"
+        run.error_code = "TRANSIENT_AI"
+        run.error_summary = "Synthetic exhausted delivery."
+        task = PostgresTask(
+            task_type=run.task_type,
+            payload={"run_id": str(run.id)},
+            idempotency_key=f"ai-run:{run.id}",
+            status="DEAD",
+            attempt_count=3,
+            last_error="TRANSIENT_AI",
+        )
+        session.add(task)
+        session.commit()
+        task_id = task.id
+
+        recovered = _recover_dead_postgres_run(
+            run,
+            session=session,
+            settings=Settings(
+                task_queue_provider="postgres",
+                request_triggered_tasks_enabled=True,
+                request_triggered_task_limit=1,
+            ),
+        )
+        assert recovered.status == "QUEUED"
+
+        task = session.get(PostgresTask, task_id)
+        assert task is not None
+        assert task.status == "QUEUED"
+        assert task.attempt_count == 0
+        assert task.last_error is None
+        assert run.error_code is None
+        assert run.error_summary is None
 
 
 def test_radar_refresh_skips_jobs_already_judged(client):

@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.ai.runtime import execute_ai_run
@@ -15,7 +15,9 @@ from app.core.config import Settings, get_settings
 from app.core.database import get_session
 from app.core.outbox import add_task_outbox_event
 from app.core.queue import Task
+from app.durability_models import TaskOutbox
 from app.models import Company, Job, User
+from app.postgres_queue_models import PostgresTask
 
 router = APIRouter(prefix="/career-v2/radar", tags=["career radar"])
 
@@ -82,6 +84,74 @@ def _retry_failed_run(
     return run
 
 
+def _recover_dead_postgres_run(
+    run: AIJobRun,
+    *,
+    session: Session,
+    settings: Settings,
+) -> AIJobRun:
+    """Make an exhausted durable delivery retryable after an explicit Radar refresh.
+
+    Transient AI failures deliberately leave the domain run in QUEUED while the
+    PostgreSQL delivery retries. Once that delivery reaches DEAD, the domain run
+    otherwise has no state transition that would make a subsequent user refresh
+    create work. Re-arming the durable delivery here is safe because we first
+    prove there is no active delivery or unpublished outbox event for the run.
+    """
+
+    if settings.task_queue_provider != "postgres" or run.status != "QUEUED":
+        return run
+
+    key_prefix = f"ai-run:{run.id}"
+    active_task = session.scalar(
+        select(PostgresTask.id)
+        .where(
+            PostgresTask.idempotency_key.like(f"{key_prefix}%"),
+            PostgresTask.status.in_(("QUEUED", "RETRY_WAIT", "RUNNING")),
+        )
+        .limit(1)
+    )
+    pending_outbox = session.scalar(
+        select(TaskOutbox.id)
+        .where(
+            TaskOutbox.aggregate_type == "AIJobRun",
+            TaskOutbox.aggregate_id == run.id,
+            TaskOutbox.event_type == run.task_type,
+            TaskOutbox.published_at.is_(None),
+            TaskOutbox.status.in_(("PENDING", "CLAIMED")),
+        )
+        .limit(1)
+    )
+    if active_task is not None or pending_outbox is not None:
+        return run
+
+    dead_task = session.scalar(
+        select(PostgresTask)
+        .where(
+            PostgresTask.idempotency_key.like(f"{key_prefix}%"),
+            PostgresTask.status == "DEAD",
+        )
+        .order_by(PostgresTask.created_at.desc(), PostgresTask.id.desc())
+        .limit(1)
+    )
+    if dead_task is None:
+        return run
+
+    dead_task.status = "QUEUED"
+    dead_task.attempt_count = 0
+    dead_task.available_at = utcnow()
+    dead_task.leased_at = None
+    dead_task.lease_expires_at = None
+    dead_task.lease_owner = None
+    dead_task.completed_at = None
+    dead_task.cancelled_at = None
+    dead_task.last_error = None
+    run.error_code = None
+    run.error_summary = None
+    session.commit()
+    return run
+
+
 def _bucket(match: CareerMatch | None) -> str:
     if match is None:
         return "PENDING_JUDGMENT"
@@ -91,6 +161,53 @@ def _bucket(match: CareerMatch | None) -> str:
     if decision in WATCH_DECISIONS:
         return "WATCH"
     return "LOW_PRIORITY"
+
+
+def _bucket_for_decision(decision: str | None) -> str:
+    if decision is None:
+        return "PENDING_JUDGMENT"
+    normalized = decision.upper()
+    if normalized in TOP_DECISIONS:
+        return "TOP_MATCH"
+    if normalized in WATCH_DECISIONS:
+        return "WATCH"
+    return "LOW_PRIORITY"
+
+
+def _coverage_counts(
+    session: Session,
+    *,
+    user: User,
+    cutoff: datetime,
+) -> dict[str, int]:
+    match_join = and_(
+        CareerMatch.job_id == Job.id,
+        CareerMatch.user_id == user.id,
+        CareerMatch.engine_version == ENGINE_VERSION,
+    )
+    grouped = session.execute(
+        select(CareerMatch.decision, func.count(Job.id))
+        .outerjoin(CareerMatch, match_join)
+        .where(Job.status == "ACTIVE", _freshness_filter(cutoff))
+        .group_by(CareerMatch.decision)
+    ).all()
+
+    counts = {
+        "top_match": 0,
+        "watch": 0,
+        "pending_judgment": 0,
+        "low_priority": 0,
+    }
+    for decision, count in grouped:
+        bucket = _bucket_for_decision(decision)
+        key = {
+            "TOP_MATCH": "top_match",
+            "WATCH": "watch",
+            "PENDING_JUDGMENT": "pending_judgment",
+            "LOW_PRIORITY": "low_priority",
+        }[bucket]
+        counts[key] += int(count)
+    return counts
 
 
 def _reasons(match: CareerMatch | None) -> list[str]:
@@ -170,19 +287,12 @@ def list_radar(
         )
     )
     items = [_item(job, company, match) for job, company, match in rows]
-    counts = {
-        "top_match": sum(item["radar_bucket"] == "TOP_MATCH" for item in items),
-        "watch": sum(item["radar_bucket"] == "WATCH" for item in items),
-        "pending_judgment": sum(
-            item["radar_bucket"] == "PENDING_JUDGMENT" for item in items
-        ),
-        "low_priority": sum(
-            item["radar_bucket"] == "LOW_PRIORITY" for item in items
-        ),
-    }
+    counts = _coverage_counts(session, user=user, cutoff=cutoff)
     return {
         "items": items,
         "counts": counts,
+        "total": sum(counts.values()),
+        "returned": len(items),
         "lookback_days": lookback_days,
         "engine_version": ENGINE_VERSION,
         "generated_at": utcnow().isoformat(),
@@ -233,6 +343,8 @@ def refresh_radar(
         )
         if run.status == "FAILED":
             run = _retry_failed_run(run, session=session, settings=settings)
+        elif run.status == "QUEUED":
+            run = _recover_dead_postgres_run(run, session=session, settings=settings)
         runs.append(
             {
                 "run_id": str(run.id),

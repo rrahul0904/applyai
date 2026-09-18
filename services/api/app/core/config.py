@@ -160,6 +160,7 @@ class Settings(BaseSettings):
     job_source_failure_max_backoff_seconds: int = Field(default=604_800, ge=3_600, le=2_592_000)
     job_source_request_timeout_seconds: float = Field(default=20.0, ge=1.0, le=120.0)
     job_source_max_pages: int = Field(default=20, ge=1, le=100)
+    job_daily_refresh_target: int = Field(default=2_000_000, ge=1, le=100_000_000)
 
     career_discovery_max_pages: int = Field(default=8, ge=2, le=40)
     career_discovery_max_bytes: int = Field(

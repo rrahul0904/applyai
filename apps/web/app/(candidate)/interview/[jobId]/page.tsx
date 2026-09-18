@@ -1,4 +1,5 @@
 import { ApplicationKitPanel } from "@/components/application-kit-panel";
+import { InterviewIntelligenceLifecycle } from "@/components/interview-intelligence-lifecycle";
 import { PrepareWorkspace } from "@/components/prepare-workspace";
 
 export default async function InterviewPage({ params }: { params: Promise<{ jobId: string }> }) {
@@ -7,6 +8,7 @@ export default async function InterviewPage({ params }: { params: Promise<{ jobI
     <>
       <ApplicationKitPanel jobId={jobId} />
       <PrepareWorkspace jobId={jobId} />
+      <InterviewIntelligenceLifecycle jobId={jobId} />
     </>
   );
 }

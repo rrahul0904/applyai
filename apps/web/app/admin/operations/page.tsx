@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { Badge, Button, Card, PageHeader } from "@/components/ui";
 import { operatorApi, requireOperatorEmail } from "@/lib/auth/operator";
 
-import { recordOperationsCertification, refreshOperationSource } from "./actions";
+import { recordOperationsCertification, recordServiceCost, refreshOperationSource } from "./actions";
 
 type Summary = {
   generated_at: string;
@@ -39,10 +39,42 @@ type Summary = {
     closed_24h: number;
     pending_source_tasks: number;
   };
+  costs: {
+    billing_period: string;
+    environment: string;
+    services_recorded: number;
+    total_cost_cents: number;
+  };
   certification: {
     records: number;
     latest: Certification | null;
   };
+};
+
+type ServiceCost = {
+  id: string;
+  service_key: string;
+  display_name: string;
+  provider: string;
+  category: string;
+  environment: string;
+  billing_period: string;
+  fixed_cost_cents: number;
+  usage_cost_cents: number;
+  credits_cents: number;
+  total_cost_cents: number;
+  currency: string;
+  source: string;
+  notes: string | null;
+  updated_at: string;
+};
+
+type ServiceCostSummary = {
+  billing_period: string;
+  environment: string | null;
+  services_recorded: number;
+  total_cost_cents: number;
+  items: ServiceCost[];
 };
 
 type Source = {
@@ -116,11 +148,15 @@ export default async function OperationsPage() {
     redirect("/dashboard");
   }
 
-  const [summary, sources, ingestion, certifications] = await Promise.all([
+  const billingPeriod = new Date().toISOString().slice(0, 7);
+  const [summary, sources, ingestion, certifications, serviceCosts] = await Promise.all([
     operatorApi<Summary>("operations/summary"),
     operatorApi<CursorPage<Source>>("operations/sources?limit=25"),
     operatorApi<CursorPage<IngestionRun>>("operations/ingestion?limit=25"),
     operatorApi<CursorPage<Certification>>("operations/certifications?limit=25"),
+    operatorApi<ServiceCostSummary>(
+      `operations/service-costs?billing_period=${billingPeriod}&environment=production`,
+    ),
   ]);
 
   return (
@@ -185,6 +221,55 @@ export default async function OperationsPage() {
             Supabase project fingerprint {summary.runtime.supabase_project_fingerprint || "unavailable"}
           </p>
         ) : null}
+      </Card>
+
+
+      <Card className="detail-section">
+        <div className="section-header">
+          <div>
+            <h2>Service cost ledger</h2>
+            <p>Durable monthly FinOps records for the full ApplyAI stack. Only recorded provider charges are totaled; missing services are not estimated.</p>
+          </div>
+          <Badge tone={serviceCosts.services_recorded ? "success" : "warning"}>
+            ${(serviceCosts.total_cost_cents / 100).toFixed(2)} / {serviceCosts.billing_period}
+          </Badge>
+        </div>
+        <div className="dashboard-grid">
+          <div><p className="eyebrow">Services recorded</p><h2>{serviceCosts.services_recorded}</h2></div>
+          <div><p className="eyebrow">Recorded total</p><h2>${(serviceCosts.total_cost_cents / 100).toFixed(2)}</h2></div>
+          <div><p className="eyebrow">Environment</p><h2>{serviceCosts.environment ?? "all"}</h2></div>
+        </div>
+        <form action={recordServiceCost} className="note">
+          <input type="hidden" name="billing_period" value={billingPeriod} />
+          <input type="hidden" name="environment" value="production" />
+          <div className="dashboard-grid">
+            <label>Service key<input name="service_key" placeholder="railway-api" required /></label>
+            <label>Display name<input name="display_name" placeholder="Railway API" required /></label>
+            <label>Provider<input name="provider" placeholder="Railway" required /></label>
+            <label>Category<input name="category" placeholder="api-hosting" required /></label>
+            <label>Fixed cost USD<input name="fixed_cost_usd" inputMode="decimal" defaultValue="0" /></label>
+            <label>Usage cost USD<input name="usage_cost_usd" inputMode="decimal" defaultValue="0" /></label>
+            <label>Credits USD<input name="credits_usd" inputMode="decimal" defaultValue="0" /></label>
+            <label>Source<input name="source" placeholder="provider invoice / dashboard" defaultValue="operator" /></label>
+          </div>
+          <label>Notes<textarea name="notes" rows={2} placeholder="Plan, usage window, invoice reference, or verification notes" /></label>
+          <Button type="submit">Record service cost</Button>
+        </form>
+        <div className="list-stack">
+          {serviceCosts.items.map((item) => (
+            <div className="note" key={item.id}>
+              <div className="section-header">
+                <div><strong>{item.display_name}</strong><p>{item.provider} · {item.category} · {item.source}</p></div>
+                <Badge>${(item.total_cost_cents / 100).toFixed(2)}</Badge>
+              </div>
+              <p>
+                fixed ${(item.fixed_cost_cents / 100).toFixed(2)} · usage ${(item.usage_cost_cents / 100).toFixed(2)} · credits ${(item.credits_cents / 100).toFixed(2)}
+              </p>
+              {item.notes ? <p>{item.notes}</p> : null}
+            </div>
+          ))}
+          {serviceCosts.items.length === 0 && <p>No service costs have been recorded for this billing period yet.</p>}
+        </div>
       </Card>
 
       <Card className="detail-section">

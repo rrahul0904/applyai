@@ -48,6 +48,8 @@ def test_multi_word_skill_matching_does_not_create_false_gap() -> None:
     assert skill_is_present("machine learning", ["Machine Learning", "Python"])
     assert skill_is_present("machine learning", ["production machine learning systems"])
     assert skill_is_present("system design", ["distributed system design"])
+    assert not skill_is_present("machine learning", ["machine"])
+    assert not skill_is_present("system design", ["design"])
     assert not skill_is_present("kubernetes", ["machine learning", "system design"])
 
 
@@ -83,7 +85,15 @@ def test_report_fingerprint_is_whitespace_and_case_stable() -> None:
 def test_interview_intelligence_end_to_end_and_evidence_reversal(client, database_url) -> None:
     job_id = _seed(database_url, client)
 
-    created = client.post(f"/api/v1/interview-intelligence/workspaces/{job_id}", json={})
+    created = client.post(
+        f"/api/v1/interview-intelligence/workspaces/{job_id}",
+        json={
+            "interview_date": "2026-10-01T15:00:00Z",
+            "interviewer_name": "Casey Morgan",
+            "interviewer_title": "VP Engineering",
+            "interviewer_url": "https://example.com/interviewer",
+        },
+    )
     assert created.status_code == 201, created.text
     workspace = created.json()
     assert workspace["current_phase_number"] == 1
@@ -91,6 +101,8 @@ def test_interview_intelligence_end_to_end_and_evidence_reversal(client, databas
     assert "machine learning" in workspace["lifecycle"]["strengths"]
     assert "kubernetes" in workspace["lifecycle"]["gaps"]
     assert len(workspace["podcasts"]) == 5
+    assert workspace["interviewer_name"] == "Casey Morgan"
+    assert workspace["interviewer_title"] == "VP Engineering"
 
     notes = client.put(
         f"/api/v1/interview-intelligence/workspaces/{job_id}/phases/1/notes",
@@ -120,6 +132,8 @@ def test_interview_intelligence_end_to_end_and_evidence_reversal(client, databas
     assert regenerated.status_code == 201, regenerated.text
     assert regenerated.json()["lifecycle"]["phases"][0]["notes"] == "Ask about platform ownership."
     assert "Practice the migration trade-off story." in regenerated.json()["lifecycle"]["carry_forward"]
+    assert regenerated.json()["interviewer_name"] == "Casey Morgan"
+    assert regenerated.json()["interviewer_title"] == "VP Engineering"
 
     questions = client.get("/api/v1/interview-intelligence/questions")
     assert questions.status_code == 200, questions.text
@@ -208,5 +222,28 @@ def test_interview_intelligence_end_to_end_and_evidence_reversal(client, databas
         assert unlinked.json()["report_status"] == "APPROVED_UNLINKED"
         assert unlinked.json()["question"]["report_count"] == 0
         assert "Example Co" not in unlinked.json()["question"]["companies"]
+
+        approved_again = client.post(
+            f"/api/v1/internal/interview-intelligence/reports/{report_id}/moderate",
+            json={"decision": "APPROVED"},
+        )
+        assert approved_again.status_code == 200
+        relinked = client.post(
+            f"/api/v1/internal/interview-intelligence/reports/{report_id}/evidence",
+            json={"question_id": question_id, "confidence": 90, "evidence_notes": "Firsthand user report"},
+        )
+        assert relinked.status_code == 200
+        assert relinked.json()["question"]["report_count"] == 1
+
+        rejected = client.post(
+            f"/api/v1/internal/interview-intelligence/reports/{report_id}/moderate",
+            json={"decision": "REJECTED"},
+        )
+        assert rejected.status_code == 200
+        assert rejected.json()["moderation_status"] == "REJECTED"
+        catalog_after_reject = client.get("/api/v1/internal/interview-intelligence-catalog/questions")
+        rejected_question = next(item for item in catalog_after_reject.json() if item["id"] == question_id)
+        assert rejected_question["report_count"] == 0
+        assert "Example Co" not in rejected_question["companies"]
     finally:
         app.dependency_overrides.pop(require_operator_or_internal, None)

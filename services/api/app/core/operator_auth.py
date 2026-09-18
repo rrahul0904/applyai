@@ -43,8 +43,8 @@ def require_operator_or_internal(
     settings: Settings = Depends(get_settings),
     provider: AuthProvider = Depends(get_auth_provider),
     session: Session = Depends(get_session),
-) -> None:
-    """Authorize a backend service token or an authenticated database-role operator."""
+) -> str:
+    """Authorize an operator and return an audit-safe server-derived actor."""
 
     supplied_internal = request.headers.get("x-applyai-internal-token", "")
     expected_internal = settings.internal_api_token
@@ -53,15 +53,16 @@ def require_operator_or_internal(
         and supplied_internal
         and secrets.compare_digest(supplied_internal, expected_internal)
     ):
-        return
+        return "internal-service"
 
     claims = provider.authenticate(request)
 
     # Temporary migration bridge for existing Clerk/dev environments only. Supabase
     # authorization deliberately never trusts an environment-variable email allowlist.
     if claims.provider != "supabase":
-        if claims.email.strip().lower() in settings.allowed_operator_emails:
-            return
+        normalized_email = claims.email.strip().lower()
+        if normalized_email in settings.allowed_operator_emails:
+            return f"user:{normalized_email}"
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
@@ -76,7 +77,7 @@ def require_operator_or_internal(
         subject=claims.subject,
     )
     if user is not None and _has_operator_role(session, user.id):
-        return
+        return f"user:{user.email.strip().lower()}"
 
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,

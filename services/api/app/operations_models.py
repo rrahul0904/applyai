@@ -49,6 +49,7 @@ class ServiceCostEntry(Base):
     service: Mapped[str] = mapped_column(String(120), nullable=False)
     category: Mapped[str] = mapped_column(String(48), nullable=False, index=True)
     cost_type: Mapped[str] = mapped_column(String(32), nullable=False, default="INVOICE")
+    idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
     amount_usd: Mapped[Decimal] = mapped_column(Numeric(14, 6), nullable=False)
     period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     period_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

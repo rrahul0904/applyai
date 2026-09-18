@@ -111,18 +111,7 @@ def _recover_dead_postgres_run(
         )
         .limit(1)
     )
-    pending_outbox = session.scalar(
-        select(TaskOutbox.id)
-        .where(
-            TaskOutbox.aggregate_type == "AIJobRun",
-            TaskOutbox.aggregate_id == run.id,
-            TaskOutbox.event_type == run.task_type,
-            TaskOutbox.published_at.is_(None),
-            TaskOutbox.status.in_(("PENDING", "CLAIMED")),
-        )
-        .limit(1)
-    )
-    if active_task is not None or pending_outbox is not None:
+    if active_task is not None:
         return run
 
     dead_task = session.scalar(
@@ -136,6 +125,28 @@ def _recover_dead_postgres_run(
     )
     if dead_task is None:
         return run
+
+    # An explicit Radar refresh is allowed to re-arm an exhausted durable delivery.
+    # If an unpublished outbox event for the same run survived an earlier provider
+    # path, suppress it as already delivered by the re-armed Postgres task. Keeping
+    # both paths live would risk a second delivery with a different idempotency key.
+    pending_outbox = list(
+        session.scalars(
+            select(TaskOutbox).where(
+                TaskOutbox.aggregate_type == "AIJobRun",
+                TaskOutbox.aggregate_id == run.id,
+                TaskOutbox.event_type == run.task_type,
+                TaskOutbox.published_at.is_(None),
+                TaskOutbox.status.in_(("PENDING", "CLAIMED")),
+            )
+        )
+    )
+    for event in pending_outbox:
+        event.status = "PUBLISHED"
+        event.published_at = utcnow()
+        event.locked_at = None
+        event.lock_owner = None
+        event.last_error = None
 
     dead_task.status = "QUEUED"
     dead_task.attempt_count = 0

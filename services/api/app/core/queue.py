@@ -149,6 +149,8 @@ def supports_task_type(settings: Settings, task_type: str) -> bool:
         return bool(resolve_agent_queue_url(settings))
     if task_type in AI_TASK_TYPES:
         return bool(settings.ai_sqs_queue_url)
+    if task_type == "JOB_URL_IMPORT":
+        return bool(settings.source_sqs_queue_url or settings.sqs_queue_url)
     if task_type in SOURCE_TASK_TYPES:
         return bool(settings.source_sqs_queue_url)
     return bool(settings.sqs_queue_url)
@@ -174,8 +176,10 @@ def get_task_queue_for_type(
             queue_url = settings.ai_sqs_queue_url
             family = "AI"
         elif is_source_task:
-            queue_url = settings.source_sqs_queue_url
-            family = "source"
+            queue_url = settings.source_sqs_queue_url or (
+                settings.sqs_queue_url if task_type == "JOB_URL_IMPORT" else None
+            )
+            family = "source" if settings.source_sqs_queue_url else "default"
         else:
             queue_url = settings.sqs_queue_url
             family = "default"

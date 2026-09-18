@@ -4,14 +4,17 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
+from app.ai.runtime import execute_ai_run
 from app.api.career_intelligence_v2 import _queue_run
-from app.career_models import CareerMatch
+from app.career_models import AIJobRun, CareerMatch
 from app.core.auth import get_current_user
 from app.core.config import Settings, get_settings
 from app.core.database import get_session
+from app.core.outbox import add_task_outbox_event
+from app.core.queue import Task
 from app.models import Company, Job, User
 
 router = APIRouter(prefix="/career-v2/radar", tags=["career radar"])
@@ -28,7 +31,55 @@ def utcnow() -> datetime:
 
 
 def _freshness_at(job: Job) -> datetime:
-    return job.posted_at or job.first_seen_at
+    candidates = [value for value in (job.posted_at, job.first_seen_at) if value is not None]
+    return max(candidates) if candidates else utcnow()
+
+
+def _freshness_filter(cutoff: datetime):
+    # Radar covers roles that are newly posted OR newly discovered by ApplyAI.
+    # Using COALESCE would incorrectly hide a newly discovered role when the
+    # upstream source carries an older posted_at value.
+    return or_(Job.posted_at >= cutoff, Job.first_seen_at >= cutoff)
+
+
+def _effective_refresh_limit(max_jobs: int, settings: Settings) -> int:
+    # In the lean production profile a mutating request drains only a bounded
+    # number of PostgreSQL tasks after the handler returns. Never advertise a
+    # refresh batch that the request-triggered worker cannot actually consume.
+    if settings.task_queue_provider == "postgres" and settings.request_triggered_tasks_enabled:
+        return min(max_jobs, settings.request_triggered_task_limit)
+    return max_jobs
+
+
+def _retry_failed_run(
+    run: AIJobRun,
+    *,
+    session: Session,
+    settings: Settings,
+) -> AIJobRun:
+    if run.status != "FAILED":
+        return run
+
+    run.status = "QUEUED"
+    run.error_code = None
+    run.error_summary = None
+    add_task_outbox_event(
+        session,
+        task=Task(
+            task_type=run.task_type,
+            payload={"run_id": str(run.id)},
+            idempotency_key=f"ai-run:{run.id}:{run.attempt_count + 1}",
+        ),
+        aggregate_type="AIJobRun",
+        aggregate_id=run.id,
+    )
+    session.commit()
+
+    if settings.task_queue_provider == "memory":
+        execute_ai_run(run.id, settings)
+        session.expire_all()
+        return session.get(AIJobRun, run.id) or run
+    return run
 
 
 def _bucket(match: CareerMatch | None) -> str:
@@ -97,7 +148,6 @@ def list_radar(
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     cutoff = utcnow() - timedelta(days=lookback_days)
-    freshness = func.coalesce(Job.posted_at, Job.first_seen_at)
     match_join = and_(
         CareerMatch.job_id == Job.id,
         CareerMatch.user_id == user.id,
@@ -109,10 +159,11 @@ def list_radar(
             select(Job, Company, CareerMatch)
             .join(Company, Company.id == Job.company_id)
             .outerjoin(CareerMatch, match_join)
-            .where(Job.status == "ACTIVE", freshness >= cutoff)
+            .where(Job.status == "ACTIVE", _freshness_filter(cutoff))
             .order_by(
                 CareerMatch.final_score.desc().nullslast(),
-                freshness.desc(),
+                Job.first_seen_at.desc(),
+                Job.posted_at.desc().nullslast(),
                 Job.id,
             )
             .limit(limit)
@@ -147,7 +198,7 @@ def refresh_radar(
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     cutoff = utcnow() - timedelta(days=lookback_days)
-    freshness = func.coalesce(Job.posted_at, Job.first_seen_at)
+    effective_max_jobs = _effective_refresh_limit(max_jobs, settings)
     match_join = and_(
         CareerMatch.job_id == Job.id,
         CareerMatch.user_id == user.id,
@@ -159,11 +210,15 @@ def refresh_radar(
             .outerjoin(CareerMatch, match_join)
             .where(
                 Job.status == "ACTIVE",
-                freshness >= cutoff,
+                _freshness_filter(cutoff),
                 CareerMatch.id.is_(None),
             )
-            .order_by(freshness.desc(), Job.id)
-            .limit(max_jobs)
+            .order_by(
+                Job.first_seen_at.desc(),
+                Job.posted_at.desc().nullslast(),
+                Job.id,
+            )
+            .limit(effective_max_jobs)
         )
     )
 
@@ -176,6 +231,8 @@ def refresh_radar(
             session=session,
             settings=settings,
         )
+        if run.status == "FAILED":
+            run = _retry_failed_run(run, session=session, settings=settings)
         runs.append(
             {
                 "run_id": str(run.id),
@@ -185,7 +242,10 @@ def refresh_radar(
         )
 
     return {
+        "requested": max_jobs,
         "scheduled": len(runs),
+        "effective_max_jobs": effective_max_jobs,
+        "queue_limited": effective_max_jobs < max_jobs,
         "runs": runs,
         "lookback_days": lookback_days,
         "engine_version": ENGINE_VERSION,

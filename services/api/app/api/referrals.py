@@ -39,7 +39,9 @@ def _ensure_code(session: Session, user: User) -> ReferralCode:
         item = ReferralCode(user_id=user.id, code=token, enabled=True)
         session.add(item)
         try:
-            session.commit(); session.refresh(item); return item
+            session.commit()
+            session.refresh(item)
+            return item
         except IntegrityError:
             session.rollback()
     raise HTTPException(status_code=503, detail="Could not generate referral code")
@@ -75,7 +77,8 @@ def claim_referral(payload: ReferralClaimWrite, user: User = Depends(get_current
     try:
         session.commit()
     except IntegrityError as exc:
-        session.rollback(); raise HTTPException(status_code=409, detail="Referral has already been claimed") from exc
+        session.rollback()
+        raise HTTPException(status_code=409, detail="Referral has already been claimed") from exc
     session.refresh(item)
     return {"id": item.id, "status": item.status, "already_claimed": False}
 
@@ -127,7 +130,8 @@ def qualify_referral(event_id: uuid.UUID, payload: ReferralQualifyWrite, session
     if event is None:
         raise HTTPException(status_code=404, detail="Referral event not found")
     if event.status == "PENDING":
-        event.status = "QUALIFIED"; event.qualified_at = datetime.now(timezone.utc)
+        event.status = "QUALIFIED"
+        event.qualified_at = datetime.now(timezone.utc)
     entries: list[ReferralCreditLedger] = []
     if payload.referrer_credit_cents:
         entries.append(ReferralCreditLedger(referral_event_id=event.id, beneficiary_user_id=event.referrer_user_id, entry_type="REFERRER_CREDIT", amount_cents=payload.referrer_credit_cents, status="AVAILABLE"))
@@ -135,7 +139,8 @@ def qualify_referral(event_id: uuid.UUID, payload: ReferralQualifyWrite, session
         entries.append(ReferralCreditLedger(referral_event_id=event.id, beneficiary_user_id=event.referred_user_id, entry_type="REFERRED_CREDIT", amount_cents=payload.referred_credit_cents, status="AVAILABLE"))
     for entry in entries:
         exists = session.scalar(select(ReferralCreditLedger).where(ReferralCreditLedger.referral_event_id == event.id, ReferralCreditLedger.beneficiary_user_id == entry.beneficiary_user_id, ReferralCreditLedger.entry_type == entry.entry_type))
-        if exists is None: session.add(entry)
+        if exists is None:
+            session.add(entry)
     event.status = "CREDITED"
     session.commit()
     return {"id": event.id, "status": event.status, "qualified_at": event.qualified_at}

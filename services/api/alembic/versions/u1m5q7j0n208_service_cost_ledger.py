@@ -25,6 +25,7 @@ def upgrade() -> None:
         sa.Column("service", sa.String(length=120), nullable=False),
         sa.Column("category", sa.String(length=48), nullable=False),
         sa.Column("cost_type", sa.String(length=32), nullable=False),
+        sa.Column("idempotency_key", sa.String(length=64), nullable=False),
         sa.Column("amount_usd", sa.Numeric(precision=14, scale=6), nullable=False),
         sa.Column("period_start", sa.DateTime(timezone=True), nullable=False),
         sa.Column("period_end", sa.DateTime(timezone=True), nullable=False),
@@ -33,7 +34,9 @@ def upgrade() -> None:
         sa.Column("created_by", sa.String(length=255), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("idempotency_key"),
     )
+    op.create_index("ix_service_cost_entries_idempotency_key", "service_cost_entries", ["idempotency_key"], unique=True)
     op.create_index("ix_service_cost_entries_provider", "service_cost_entries", ["provider"], unique=False)
     op.create_index("ix_service_cost_entries_category", "service_cost_entries", ["category"], unique=False)
     op.create_index("ix_service_cost_entries_period", "service_cost_entries", ["period_end", "period_start"], unique=False)
@@ -57,4 +60,5 @@ def downgrade() -> None:
     op.drop_index("ix_service_cost_entries_period", table_name="service_cost_entries")
     op.drop_index("ix_service_cost_entries_category", table_name="service_cost_entries")
     op.drop_index("ix_service_cost_entries_provider", table_name="service_cost_entries")
+    op.drop_index("ix_service_cost_entries_idempotency_key", table_name="service_cost_entries")
     op.drop_table("service_cost_entries")

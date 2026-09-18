@@ -4,6 +4,7 @@ import base64
 import json
 import uuid
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -11,6 +12,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
+from app.agent_models import AgentCostEvent
+from app.career_models import AIJobRun
 from app.core.config import Settings, get_settings
 from app.core.database import get_session
 from app.core.operator_auth import require_operator_or_internal
@@ -21,7 +24,7 @@ from app.job_source_models import JobSourceRegistry
 from app.models import Job
 from app.postgres_queue_models import PostgresTask
 from app.core.supabase_instance import supabase_instance_fingerprint
-from app.operations_models import OperationsCertification
+from app.operations_models import OperationsCertification, ServiceCostEntry
 
 
 router = APIRouter(
@@ -86,6 +89,28 @@ class CertificationWrite(BaseModel):
     created_by: str | None = Field(default=None, max_length=255)
 
 
+class ServiceCostWrite(BaseModel):
+    provider: str = Field(min_length=1, max_length=80)
+    service: str = Field(min_length=1, max_length=120)
+    category: Literal[
+        "HOSTING",
+        "DATABASE",
+        "STORAGE",
+        "AI",
+        "AUTH",
+        "EMAIL",
+        "OBSERVABILITY",
+        "OTHER",
+    ] = "OTHER"
+    cost_type: Literal["INVOICE", "ESTIMATE", "MEASURED"] = "INVOICE"
+    amount_usd: Decimal = Field(ge=0, max_digits=14, decimal_places=6)
+    period_start: datetime
+    period_end: datetime
+    source_ref: str | None = Field(default=None, max_length=500)
+    notes: str | None = Field(default=None, max_length=4000)
+    created_by: str | None = Field(default=None, max_length=255)
+
+
 def _certification_dict(row: OperationsCertification) -> dict[str, Any]:
     return {
         "id": row.id,
@@ -97,6 +122,104 @@ def _certification_dict(row: OperationsCertification) -> dict[str, Any]:
         "notes": row.notes,
         "created_by": row.created_by,
         "created_at": row.created_at,
+    }
+
+
+def _cost_dict(row: ServiceCostEntry) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "provider": row.provider,
+        "service": row.service,
+        "category": row.category,
+        "cost_type": row.cost_type,
+        "amount_usd": float(row.amount_usd),
+        "period_start": row.period_start,
+        "period_end": row.period_end,
+        "source_ref": row.source_ref,
+        "notes": row.notes,
+        "created_by": row.created_by,
+        "created_at": row.created_at,
+    }
+
+
+def _cost_window_summary(
+    session: Session,
+    *,
+    days: int,
+    entry_limit: int = 200,
+) -> dict[str, Any]:
+    now = utcnow()
+    since = now - timedelta(days=days)
+    active_window = (
+        ServiceCostEntry.period_end >= since,
+        ServiceCostEntry.period_start <= now,
+    )
+    entries = list(
+        session.scalars(
+            select(ServiceCostEntry)
+            .where(*active_window)
+            .order_by(
+                ServiceCostEntry.period_end.desc(),
+                ServiceCostEntry.created_at.desc(),
+                ServiceCostEntry.id.desc(),
+            )
+            .limit(entry_limit)
+        )
+    )
+    recorded_total = session.scalar(
+        select(func.coalesce(func.sum(ServiceCostEntry.amount_usd), 0)).where(
+            *active_window
+        )
+    )
+    provider_rows = session.execute(
+        select(
+            ServiceCostEntry.provider,
+            func.coalesce(func.sum(ServiceCostEntry.amount_usd), 0),
+        )
+        .where(*active_window)
+        .group_by(ServiceCostEntry.provider)
+        .order_by(ServiceCostEntry.provider)
+    ).all()
+    category_rows = session.execute(
+        select(
+            ServiceCostEntry.category,
+            func.coalesce(func.sum(ServiceCostEntry.amount_usd), 0),
+        )
+        .where(*active_window)
+        .group_by(ServiceCostEntry.category)
+        .order_by(ServiceCostEntry.category)
+    ).all()
+    career_ai_estimated = session.scalar(
+        select(func.coalesce(func.sum(AIJobRun.estimated_cost_usd), 0)).where(
+            AIJobRun.created_at >= since
+        )
+    )
+    agent_runtime_measured = session.scalar(
+        select(func.coalesce(func.sum(AgentCostEvent.cost_usd), 0)).where(
+            AgentCostEvent.created_at >= since
+        )
+    )
+    return {
+        "days": days,
+        "period_start": since,
+        "period_end": now,
+        "recorded_service_total_usd": float(recorded_total or 0),
+        "career_ai_estimated_usd": float(career_ai_estimated or 0),
+        "agent_runtime_measured_usd": float(agent_runtime_measured or 0),
+        "by_provider": [
+            {"provider": provider, "amount_usd": float(amount or 0)}
+            for provider, amount in provider_rows
+        ],
+        "by_category": [
+            {"category": category, "amount_usd": float(amount or 0)}
+            for category, amount in category_rows
+        ],
+        "entries": [_cost_dict(row) for row in entries],
+        "accounting_note": (
+            "Recorded service spend is the operator ledger total. Runtime AI estimates "
+            "are reported separately and are not added to that total to avoid "
+            "double-counting provider invoices."
+        ),
     }
 
 
@@ -384,6 +507,34 @@ def create_certification(
     session.commit()
     session.refresh(row)
     return _certification_dict(row)
+
+
+@router.get("/costs")
+def service_costs(
+    days: int = Query(default=30, ge=1, le=366),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    return _cost_window_summary(session, days=days)
+
+
+@router.post("/costs", status_code=status.HTTP_201_CREATED)
+def create_service_cost(
+    payload: ServiceCostWrite,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    if payload.period_end < payload.period_start:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "INVALID_COST_PERIOD",
+                "message": "period_end must be on or after period_start",
+            },
+        )
+    row = ServiceCostEntry(**payload.model_dump())
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return _cost_dict(row)
 
 
 @router.get("/certifications")

@@ -8,6 +8,7 @@ import {
   Gift,
   CircleUserRound,
   Home,
+  IdCard,
   LogOut,
   Search,
   Settings,
@@ -54,6 +55,12 @@ const navigation: NavigationItem[] = [
     label: "Interview Prep",
     icon: BrainCircuit,
     activePrefixes: ["/interview-prep", "/interview"],
+  },
+  {
+    href: "/portfolio",
+    label: "Portfolio",
+    icon: IdCard,
+    activePrefixes: ["/portfolio"],
   },
   {
     href: "/referrals",

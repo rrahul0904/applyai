@@ -38,6 +38,11 @@ type Summary = {
     updated_24h: number;
     closed_24h: number;
     pending_source_tasks: number;
+    daily_refresh_target: number;
+    daily_refresh_remaining: number;
+    daily_refresh_progress_percentage: number;
+    daily_refresh_target_met: boolean;
+    daily_refresh_status: "PASS" | "BLOCKED";
   };
   costs: {
     billing_period: string;
@@ -338,16 +343,26 @@ export default async function OperationsPage() {
             <h2>Ingestion</h2>
             <p>Recent source runs and queue pressure from the durable ingestion pipeline.</p>
           </div>
-          <Badge tone={summary.ingestion.failed_24h ? "warning" : "success"}>
-            {summary.ingestion.runs_24h} runs / 24h
+          <Badge tone={summary.ingestion.daily_refresh_target_met ? "success" : "warning"}>
+            {summary.ingestion.daily_refresh_status} · {summary.ingestion.daily_refresh_progress_percentage}%
           </Badge>
         </div>
         <div className="dashboard-grid">
-          <div><p className="eyebrow">Fetched</p><h2>{summary.ingestion.fetched_24h.toLocaleString()}</h2></div>
-          <div><p className="eyebrow">Created</p><h2>{summary.ingestion.created_24h.toLocaleString()}</h2></div>
-          <div><p className="eyebrow">Updated</p><h2>{summary.ingestion.updated_24h.toLocaleString()}</h2></div>
+          <div><p className="eyebrow">Fetched / 24h</p><h2>{summary.ingestion.fetched_24h.toLocaleString()}</h2></div>
+          <div><p className="eyebrow">Daily refresh target</p><h2>{summary.ingestion.daily_refresh_target.toLocaleString()}</h2></div>
+          <div><p className="eyebrow">Remaining to SLO</p><h2>{summary.ingestion.daily_refresh_remaining.toLocaleString()}</h2></div>
           <div><p className="eyebrow">Pending source tasks</p><h2>{summary.ingestion.pending_source_tasks}</h2></div>
         </div>
+        {!summary.ingestion.daily_refresh_target_met ? (
+          <div className="note">
+            <strong>2M/day production refresh SLO is not yet met.</strong>
+            <p>
+              This is a measured production requirement, not a synthetic benchmark claim.
+              ApplyAI still needs {summary.ingestion.daily_refresh_remaining.toLocaleString()} additional
+              fetched postings inside the rolling 24-hour window to pass.
+            </p>
+          </div>
+        ) : null}
         <div className="list-stack">
           {ingestion.items.map((run) => (
             <div className="note" key={run.id}>

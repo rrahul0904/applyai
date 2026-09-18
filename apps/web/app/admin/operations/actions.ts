@@ -37,7 +37,7 @@ export async function recordOperationsCertification(formData: FormData) {
 
 
 export async function recordServiceCost(formData: FormData) {
-  const email = await requireOperatorEmail();
+  await requireOperatorEmail();
   const provider = String(formData.get("provider") ?? "").trim();
   const service = String(formData.get("service") ?? "").trim();
   const category = String(formData.get("category") ?? "OTHER").toUpperCase();
@@ -60,7 +60,6 @@ export async function recordServiceCost(formData: FormData) {
       period_end: new Date(`${periodEnd}T23:59:59Z`).toISOString(),
       source_ref: String(formData.get("source_ref") ?? "").trim() || null,
       notes: String(formData.get("notes") ?? "").trim() || null,
-      created_by: email,
     }),
   });
   revalidatePath("/admin/operations");

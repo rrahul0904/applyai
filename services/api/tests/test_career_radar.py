@@ -12,6 +12,7 @@ from app.api.career_radar import (
 from app.career_models import AIJobRun, CareerMatch
 from app.core.config import Settings
 from app.core.database import SessionLocal
+from app.durability_models import TaskOutbox
 from app.jobs.dataset import build_seed_records
 from app.jobs.seed import seed_development_jobs
 from app.postgres_queue_models import PostgresTask
@@ -240,6 +241,19 @@ def test_radar_rearms_dead_postgres_delivery_after_explicit_refresh(client):
         assert task.last_error is None
         assert run.error_code is None
         assert run.error_summary is None
+
+        stale_outbox = list(
+            session.scalars(
+                select(TaskOutbox).where(
+                    TaskOutbox.aggregate_type == "AIJobRun",
+                    TaskOutbox.aggregate_id == run.id,
+                    TaskOutbox.event_type == run.task_type,
+                )
+            )
+        )
+        assert stale_outbox
+        assert all(item.status == "PUBLISHED" for item in stale_outbox)
+        assert all(item.published_at is not None for item in stale_outbox)
 
 
 def test_radar_refresh_skips_jobs_already_judged(client):

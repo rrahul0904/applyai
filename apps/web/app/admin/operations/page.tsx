@@ -233,11 +233,11 @@ export default async function OperationsPage() {
             <p>Recorded provider spend is kept separate from runtime AI estimates so invoices are never double-counted.</p>
           </div>
           <Badge tone={costs.recorded_service_total_usd > 0 ? "info" : "neutral"}>
-            {formatMoney(costs.recorded_service_total_usd)} recorded / {costs.days}d
+            {formatMoney(costs.recorded_service_total_usd)} allocated / {costs.days}d
           </Badge>
         </div>
         <div className="dashboard-grid">
-          <div><p className="eyebrow">Provider ledger</p><h2>{formatMoney(costs.recorded_service_total_usd)}</h2><p>Invoices, measured charges and operator estimates</p></div>
+          <div><p className="eyebrow">Provider ledger</p><h2>{formatMoney(costs.recorded_service_total_usd)}</h2><p>Billing-period spend allocated into this window</p></div>
           <div><p className="eyebrow">Career AI estimate</p><h2>{formatMoney(costs.career_ai_estimated_usd)}</h2><p>Runtime token/model estimate, not added to ledger total</p></div>
           <div><p className="eyebrow">Agent runtime measured</p><h2>{formatMoney(costs.agent_runtime_measured_usd)}</h2><p>Governed agent metering, shown separately</p></div>
         </div>

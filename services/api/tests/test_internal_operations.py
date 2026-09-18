@@ -9,7 +9,7 @@ from app.core.operator_auth import require_operator_or_internal
 from app.durability_models import TaskOutbox
 from app.job_source_models import JobSourceRegistry
 from app.main import app
-from app.operations_models import OperationsCertification
+from app.operations_models import OperationsCertification, ServiceCostEntry
 
 
 def _seed_source(database_url: str) -> str:
@@ -116,5 +116,65 @@ def test_internal_operations_certification_is_persisted_and_cursor_paginated(
         with Session(engine) as session:
             records = list(session.scalars(select(OperationsCertification)))
             assert {row.status for row in records} == {"PASS", "BLOCKED"}
+    finally:
+        engine.dispose()
+
+
+
+def test_internal_operations_cost_ledger_is_auditable_and_separates_runtime_estimates(
+    client, database_url: str
+) -> None:
+    app.dependency_overrides[require_operator_or_internal] = lambda: None
+
+    response = client.post(
+        "/api/v1/internal/operations/costs",
+        json={
+            "provider": "Vercel",
+            "service": "Web and API hosting",
+            "category": "HOSTING",
+            "cost_type": "INVOICE",
+            "amount_usd": "42.125000",
+            "period_start": "2026-09-01T00:00:00Z",
+            "period_end": "2026-09-30T23:59:59Z",
+            "source_ref": "invoice:vercel:2026-09",
+            "notes": "September provider invoice",
+            "created_by": "operator@example.test",
+        },
+    )
+    assert response.status_code == 201, response.text
+    created = response.json()
+    assert created["provider"] == "Vercel"
+    assert created["amount_usd"] == 42.125
+
+    costs = client.get("/api/v1/internal/operations/costs?days=30")
+    assert costs.status_code == 200, costs.text
+    payload = costs.json()
+    assert payload["recorded_service_total_usd"] == 42.125
+    assert payload["career_ai_estimated_usd"] >= 0
+    assert payload["agent_runtime_measured_usd"] >= 0
+    assert payload["by_provider"] == [{"provider": "Vercel", "amount_usd": 42.125}]
+    assert payload["entries"][0]["source_ref"] == "invoice:vercel:2026-09"
+    assert "not added" in payload["accounting_note"]
+
+    invalid = client.post(
+        "/api/v1/internal/operations/costs",
+        json={
+            "provider": "Supabase",
+            "service": "Database",
+            "category": "DATABASE",
+            "cost_type": "INVOICE",
+            "amount_usd": "10.00",
+            "period_start": "2026-09-30T00:00:00Z",
+            "period_end": "2026-09-01T00:00:00Z",
+        },
+    )
+    assert invalid.status_code == 422
+
+    engine = create_engine(database_url)
+    try:
+        with Session(engine) as session:
+            records = list(session.scalars(select(ServiceCostEntry)))
+            assert len(records) == 1
+            assert records[0].service == "Web and API hosting"
     finally:
         engine.dispose()

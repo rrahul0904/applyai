@@ -27,7 +27,7 @@ def test_specialized_sqs_tasks_fail_closed_without_dedicated_queue():
     settings = _sqs_settings()
     assert supports_task_type(settings, "RESUME_PARSE") is True
     assert supports_task_type(settings, "SOURCE_INGEST") is False
-    assert supports_task_type(settings, "JOB_URL_IMPORT") is False
+    assert supports_task_type(settings, "JOB_URL_IMPORT") is True
     assert supports_task_type(settings, "AI_DEEP_MATCH") is False
 
     with pytest.raises(RuntimeError, match="dedicated source queue"):
@@ -81,3 +81,20 @@ def test_source_worker_dispatches_candidate_job_url_import(monkeypatch):
     assert source_worker.process_message(body, settings) is True
     assert observed["body"]["task_type"] == "JOB_URL_IMPORT"
     assert observed["provider"] == "postgres"
+
+
+
+def test_job_url_import_uses_default_sqs_when_dedicated_source_queue_is_absent(monkeypatch):
+    settings = _sqs_settings(source_sqs_queue_url=None)
+    captured = {}
+
+    class FakeClient:
+        def send_message(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "app.core.queue.sqs_client",
+        lambda *, region: FakeClient(),
+    )
+    queue = get_task_queue_for_type(settings, task_type="JOB_URL_IMPORT")
+    assert queue.queue_url == settings.sqs_queue_url

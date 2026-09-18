@@ -20,12 +20,12 @@ def upgrade() -> None:
     op.create_table(
         "referral_codes",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True),
+        sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
         sa.Column("code", sa.String(32), nullable=False, unique=True),
         sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.text("true")),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
     )
-    op.create_index("ix_referral_codes_user_id", "referral_codes", ["user_id"])
+    op.create_index("ix_referral_codes_user_id", "referral_codes", ["user_id"], unique=True)
 
     op.create_table(
         "referral_events",
@@ -53,8 +53,8 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
         sa.UniqueConstraint("referral_event_id", "entry_type", "beneficiary_user_id"),
     )
-    op.create_index("ix_referral_credit_ledger_event", "referral_credit_ledger", ["referral_event_id"])
-    op.create_index("ix_referral_credit_ledger_beneficiary", "referral_credit_ledger", ["beneficiary_user_id"])
+    op.create_index("ix_referral_credit_ledger_referral_event_id", "referral_credit_ledger", ["referral_event_id"])
+    op.create_index("ix_referral_credit_ledger_beneficiary_user_id", "referral_credit_ledger", ["beneficiary_user_id"])
 
 
 def downgrade() -> None:

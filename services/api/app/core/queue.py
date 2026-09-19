@@ -176,10 +176,11 @@ def get_task_queue_for_type(
             queue_url = settings.ai_sqs_queue_url
             family = "AI"
         elif is_source_task:
+            use_default_queue = task_type == "JOB_URL_IMPORT" and not settings.source_sqs_queue_url
             queue_url = settings.source_sqs_queue_url or (
-                settings.sqs_queue_url if task_type == "JOB_URL_IMPORT" else None
+                settings.sqs_queue_url if use_default_queue else None
             )
-            family = "source" if settings.source_sqs_queue_url else "default"
+            family = "default" if use_default_queue else "source"
         else:
             queue_url = settings.sqs_queue_url
             family = "default"

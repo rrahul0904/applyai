@@ -116,8 +116,8 @@ def test_application_agent_reuses_verified_answers_and_requires_confirmation(cli
 
     unavailable = client.post(f"/api/v1/application-agent/executions/{payload['id']}/execute")
     assert unavailable.status_code == 503
-    assert unavailable.json()["detail"]["code"] == "BROWSER_WORKER_UNAVAILABLE"
-    assert unavailable.json()["detail"]["target_url"]
+    assert unavailable.json()["error"]["code"] == "BROWSER_WORKER_UNAVAILABLE"
+    assert unavailable.json()["error"]["target_url"]
 
     heartbeat = client.post(
         "/api/v1/internal/application-agent/browser-worker/heartbeat",

@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import uuid
 from types import SimpleNamespace
 
 from sqlalchemy import select
@@ -349,7 +350,7 @@ def test_due_radar_watch_runs_without_candidate_request(client):
     watch_id = created.json()["id"]
 
     with SessionLocal() as session:
-        watch = session.get(RadarWatch, watch_id)
+        watch = session.get(RadarWatch, uuid.UUID(watch_id))
         assert watch is not None
         watch.next_run_at = datetime.now(timezone.utc) - timedelta(minutes=1)
         session.commit()
@@ -357,7 +358,7 @@ def test_due_radar_watch_runs_without_candidate_request(client):
     assert run_radar_watch_once(Settings(task_queue_provider="memory")) is True
 
     with SessionLocal() as session:
-        watch = session.get(RadarWatch, watch_id)
+        watch = session.get(RadarWatch, uuid.UUID(watch_id))
         assert watch is not None
         assert watch.last_run_status == "SUCCEEDED"
         assert watch.last_scheduled_jobs == 1

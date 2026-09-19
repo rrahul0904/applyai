@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from typing import Any
+import uuid
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
@@ -18,6 +20,8 @@ from app.core.queue import Task
 from app.durability_models import TaskOutbox
 from app.models import Company, Job, User
 from app.postgres_queue_models import PostgresTask
+from app.radar_watch_models import RadarBucketTransition, RadarWatch
+from app.radar_watch_service import radar_bucket_for_decision
 
 router = APIRouter(prefix="/career-v2/radar", tags=["career radar"])
 
@@ -175,14 +179,7 @@ def _bucket(match: CareerMatch | None) -> str:
 
 
 def _bucket_for_decision(decision: str | None) -> str:
-    if decision is None:
-        return "PENDING_JUDGMENT"
-    normalized = decision.upper()
-    if normalized in TOP_DECISIONS:
-        return "TOP_MATCH"
-    if normalized in WATCH_DECISIONS:
-        return "WATCH"
-    return "LOW_PRIORITY"
+    return radar_bucket_for_decision(decision)
 
 
 def _coverage_counts(
@@ -372,4 +369,186 @@ def refresh_radar(
         "runs": runs,
         "lookback_days": lookback_days,
         "engine_version": ENGINE_VERSION,
+    }
+
+
+class RadarWatchCreate(BaseModel):
+    name: str = Field(default="Daily job radar", min_length=1, max_length=120)
+    interval_minutes: int = Field(default=1440, ge=60, le=10080)
+    lookback_days: int = Field(default=14, ge=1, le=90)
+    max_jobs: int = Field(default=5, ge=1, le=10)
+    run_immediately: bool = True
+
+
+class RadarWatchUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    enabled: bool | None = None
+    interval_minutes: int | None = Field(default=None, ge=60, le=10080)
+    lookback_days: int | None = Field(default=None, ge=1, le=90)
+    max_jobs: int | None = Field(default=None, ge=1, le=10)
+
+
+def _watch_payload(watch: RadarWatch) -> dict[str, Any]:
+    return {
+        "id": str(watch.id),
+        "name": watch.name,
+        "enabled": watch.enabled,
+        "interval_minutes": watch.interval_minutes,
+        "lookback_days": watch.lookback_days,
+        "max_jobs": watch.max_jobs,
+        "next_run_at": watch.next_run_at.isoformat(),
+        "last_run_at": watch.last_run_at.isoformat() if watch.last_run_at else None,
+        "last_run_status": watch.last_run_status,
+        "last_scheduled_jobs": watch.last_scheduled_jobs,
+        "last_error": watch.last_error,
+        "created_at": watch.created_at.isoformat() if watch.created_at else None,
+    }
+
+
+def _owned_watch(session: Session, user: User, watch_id: uuid.UUID) -> RadarWatch:
+    watch = session.scalar(
+        select(RadarWatch).where(RadarWatch.id == watch_id, RadarWatch.user_id == user.id)
+    )
+    if watch is None:
+        raise HTTPException(status_code=404, detail="Radar watch not found")
+    return watch
+
+
+@router.get("/watches")
+def list_radar_watches(
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    rows = list(
+        session.scalars(
+            select(RadarWatch)
+            .where(RadarWatch.user_id == user.id)
+            .order_by(RadarWatch.created_at, RadarWatch.id)
+        )
+    )
+    return {"items": [_watch_payload(row) for row in rows]}
+
+
+@router.post("/watches")
+def create_radar_watch(
+    body: RadarWatchCreate,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    count = int(
+        session.scalar(
+            select(func.count()).select_from(RadarWatch).where(RadarWatch.user_id == user.id)
+        )
+        or 0
+    )
+    if count >= 5:
+        raise HTTPException(status_code=409, detail="A candidate can have at most five Radar watches")
+    now = utcnow()
+    watch = RadarWatch(
+        user_id=user.id,
+        name=body.name,
+        enabled=True,
+        interval_minutes=body.interval_minutes,
+        lookback_days=body.lookback_days,
+        max_jobs=body.max_jobs,
+        next_run_at=now if body.run_immediately else now + timedelta(minutes=body.interval_minutes),
+    )
+    session.add(watch)
+    session.commit()
+    session.refresh(watch)
+    return _watch_payload(watch)
+
+
+@router.patch("/watches/{watch_id}")
+def update_radar_watch(
+    watch_id: uuid.UUID,
+    body: RadarWatchUpdate,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    watch = _owned_watch(session, user, watch_id)
+    values = body.model_dump(exclude_unset=True)
+    was_enabled = watch.enabled
+    for key, value in values.items():
+        setattr(watch, key, value)
+    if values.get("enabled") is True and not was_enabled:
+        watch.next_run_at = utcnow()
+    elif "interval_minutes" in values and watch.enabled:
+        watch.next_run_at = utcnow() + timedelta(minutes=watch.interval_minutes)
+    session.commit()
+    session.refresh(watch)
+    return _watch_payload(watch)
+
+
+@router.post("/watches/{watch_id}/run")
+def run_radar_watch_now(
+    watch_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    watch = _owned_watch(session, user, watch_id)
+    now = utcnow()
+    watch.last_run_at = now
+    watch.last_run_status = "RUNNING"
+    watch.last_error = None
+    watch.next_run_at = now + timedelta(minutes=watch.interval_minutes)
+    session.commit()
+    try:
+        result = refresh_radar(
+            max_jobs=watch.max_jobs,
+            lookback_days=watch.lookback_days,
+            user=user,
+            session=session,
+            settings=settings,
+        )
+        watch = _owned_watch(session, user, watch_id)
+        watch.last_run_status = "SUCCEEDED"
+        watch.last_scheduled_jobs = int(result["scheduled"])
+        session.commit()
+        session.refresh(watch)
+        return {"watch": _watch_payload(watch), "refresh": result}
+    except Exception as exc:
+        watch = _owned_watch(session, user, watch_id)
+        watch.last_run_status = "FAILED"
+        watch.last_error = f"{type(exc).__name__}:{exc}"[:1000]
+        session.commit()
+        raise HTTPException(status_code=503, detail="Radar watch could not run") from exc
+
+
+@router.get("/history")
+def list_radar_history(
+    limit: int = Query(default=50, ge=1, le=200),
+    job_id: uuid.UUID | None = Query(default=None),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    statement = select(RadarBucketTransition).where(RadarBucketTransition.user_id == user.id)
+    if job_id is not None:
+        statement = statement.where(RadarBucketTransition.job_id == job_id)
+    rows = list(
+        session.scalars(
+            statement.order_by(
+                RadarBucketTransition.created_at.desc(),
+                RadarBucketTransition.id.desc(),
+            ).limit(limit)
+        )
+    )
+    return {
+        "items": [
+            {
+                "id": str(row.id),
+                "job_id": str(row.job_id),
+                "from_bucket": row.from_bucket,
+                "to_bucket": row.to_bucket,
+                "from_decision": row.from_decision,
+                "to_decision": row.to_decision,
+                "engine_version": row.engine_version,
+                "model_run_id": str(row.model_run_id),
+                "entered_top_match": row.to_bucket == "TOP_MATCH" and row.from_bucket != "TOP_MATCH",
+                "left_top_match": row.from_bucket == "TOP_MATCH" and row.to_bucket != "TOP_MATCH",
+                "created_at": row.created_at.isoformat(),
+            }
+            for row in rows
+        ]
     }

@@ -16,6 +16,8 @@ from app.durability_models import TaskOutbox
 from app.jobs.dataset import build_seed_records
 from app.jobs.seed import seed_development_jobs
 from app.postgres_queue_models import PostgresTask
+from app.radar_watch_models import RadarBucketTransition, RadarWatch
+from app.workers.radar_watch import run_once as run_radar_watch_once
 
 
 def profile_payload() -> dict:
@@ -267,3 +269,97 @@ def test_radar_refresh_skips_jobs_already_judged(client):
     assert first.json()["scheduled"] == 1
     assert second.json()["scheduled"] == 1
     assert first.json()["runs"][0]["job_id"] != second.json()["runs"][0]["job_id"]
+
+
+
+def test_radar_records_bucket_transition_history(client):
+    seed_recent_jobs(count=1)
+    assert client.put("/api/v1/profile", json=profile_payload()).status_code == 200
+
+    refresh = client.post("/api/v1/career-v2/radar/refresh?max_jobs=1")
+    assert refresh.status_code == 200
+
+    history = client.get("/api/v1/career-v2/radar/history")
+    assert history.status_code == 200
+    items = history.json()["items"]
+    assert len(items) == 1
+    assert items[0]["from_bucket"] == "PENDING_JUDGMENT"
+    assert items[0]["to_bucket"] in {"TOP_MATCH", "WATCH", "LOW_PRIORITY"}
+
+    with SessionLocal() as session:
+        rows = list(session.scalars(select(RadarBucketTransition)))
+        assert len(rows) == 1
+
+
+def test_candidate_can_create_pause_and_run_radar_watch(client):
+    seed_recent_jobs(count=2)
+    assert client.put("/api/v1/profile", json=profile_payload()).status_code == 200
+
+    created = client.post(
+        "/api/v1/career-v2/radar/watches",
+        json={
+            "name": "Daily radar",
+            "interval_minutes": 1440,
+            "lookback_days": 14,
+            "max_jobs": 2,
+            "run_immediately": False,
+        },
+    )
+    assert created.status_code == 200
+    watch = created.json()
+    assert watch["enabled"] is True
+
+    listed = client.get("/api/v1/career-v2/radar/watches")
+    assert listed.status_code == 200
+    assert len(listed.json()["items"]) == 1
+
+    paused = client.patch(
+        f"/api/v1/career-v2/radar/watches/{watch['id']}",
+        json={"enabled": False},
+    )
+    assert paused.status_code == 200
+    assert paused.json()["enabled"] is False
+
+    resumed = client.patch(
+        f"/api/v1/career-v2/radar/watches/{watch['id']}",
+        json={"enabled": True},
+    )
+    assert resumed.status_code == 200
+    assert resumed.json()["enabled"] is True
+
+    ran = client.post(f"/api/v1/career-v2/radar/watches/{watch['id']}/run")
+    assert ran.status_code == 200
+    assert ran.json()["watch"]["last_run_status"] == "SUCCEEDED"
+    assert ran.json()["refresh"]["scheduled"] == 2
+
+
+def test_due_radar_watch_runs_without_candidate_request(client):
+    seed_recent_jobs(count=1)
+    assert client.put("/api/v1/profile", json=profile_payload()).status_code == 200
+    created = client.post(
+        "/api/v1/career-v2/radar/watches",
+        json={
+            "name": "Hourly radar",
+            "interval_minutes": 60,
+            "lookback_days": 14,
+            "max_jobs": 1,
+            "run_immediately": False,
+        },
+    )
+    watch_id = created.json()["id"]
+
+    with SessionLocal() as session:
+        watch = session.get(RadarWatch, watch_id)
+        assert watch is not None
+        watch.next_run_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+        session.commit()
+
+    assert run_radar_watch_once(Settings(task_queue_provider="memory")) is True
+
+    with SessionLocal() as session:
+        watch = session.get(RadarWatch, watch_id)
+        assert watch is not None
+        assert watch.last_run_status == "SUCCEEDED"
+        assert watch.last_scheduled_jobs == 1
+        assert watch.next_run_at > datetime.now(timezone.utc)
+        assert session.scalar(select(CareerMatch)) is not None

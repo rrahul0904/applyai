@@ -24,6 +24,7 @@ from app import (  # noqa: F401
     postgres_queue_models,
     preparation_models,
     privacy_models,
+    radar_watch_models,
     resume_share_models,
     reverse_engineering_models,
     zero_cost_models,

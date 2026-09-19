@@ -174,6 +174,35 @@ export type CareerRadarRefreshResponse = {
   engine_version: string;
 };
 
+export type CareerRadarWatch = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  interval_minutes: number;
+  lookback_days: number;
+  max_jobs: number;
+  next_run_at: string;
+  last_run_at: string | null;
+  last_run_status: string | null;
+  last_scheduled_jobs: number;
+  last_error: string | null;
+  created_at: string | null;
+};
+
+export type CareerRadarTransition = {
+  id: string;
+  job_id: string;
+  from_bucket: CareerRadarBucket;
+  to_bucket: CareerRadarBucket;
+  from_decision: string | null;
+  to_decision: string | null;
+  engine_version: string;
+  model_run_id: string;
+  entered_top_match: boolean;
+  left_top_match: boolean;
+  created_at: string;
+};
+
 export type CareerFactCategory =
   | "ACHIEVEMENT"
   | "PROJECT"
@@ -368,6 +397,31 @@ export const api = {
       request<CareerRadarRefreshResponse>("/career-v2/radar/refresh", {
         method: "POST",
       }),
+    radarWatches: (signal?: AbortSignal) =>
+      request<{ items: CareerRadarWatch[] }>("/career-v2/radar/watches", { signal }),
+    createRadarWatch: (payload: {
+      name?: string;
+      interval_minutes?: number;
+      lookback_days?: number;
+      max_jobs?: number;
+      run_immediately?: boolean;
+    }) =>
+      request<CareerRadarWatch>("/career-v2/radar/watches", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    updateRadarWatch: (watchId: string, payload: Partial<Pick<CareerRadarWatch, "name" | "enabled" | "interval_minutes" | "lookback_days" | "max_jobs">>) =>
+      request<CareerRadarWatch>(`/career-v2/radar/watches/${watchId}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      }),
+    runRadarWatch: (watchId: string) =>
+      request<{ watch: CareerRadarWatch; refresh: CareerRadarRefreshResponse }>(
+        `/career-v2/radar/watches/${watchId}/run`,
+        { method: "POST" },
+      ),
+    radarHistory: (signal?: AbortSignal) =>
+      request<{ items: CareerRadarTransition[] }>("/career-v2/radar/history", { signal }),
     feedback: (artifactId: string, action: string) =>
       request<{ id: string; artifact_id: string; action: string }>(
         `/career-v2/artifacts/${artifactId}/feedback`,

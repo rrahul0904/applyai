@@ -31,6 +31,16 @@ export function RecommendedJobsView() {
     retry: false,
     refetchInterval: 30_000,
   });
+  const watches = useQuery({
+    queryKey: ["career-v2-radar-watches"],
+    queryFn: ({ signal }) => api.careerV2.radarWatches(signal),
+    retry: false,
+  });
+  const radarHistory = useQuery({
+    queryKey: ["career-v2-radar-history"],
+    queryFn: ({ signal }) => api.careerV2.radarHistory(signal),
+    retry: false,
+  });
   const refreshRadar = useMutation({
     mutationFn: () => api.careerV2.refreshRadar(),
     onSuccess: async () => {
@@ -38,6 +48,24 @@ export function RecommendedJobsView() {
         queryClient.invalidateQueries({ queryKey: ["career-v2-radar"] }),
         queryClient.invalidateQueries({ queryKey: ["career-v2-matches"] }),
       ]);
+    },
+  });
+  const toggleWatch = useMutation({
+    mutationFn: async () => {
+      const watch = watches.data?.items[0];
+      if (!watch) {
+        return api.careerV2.createRadarWatch({
+          name: "Daily job radar",
+          interval_minutes: 1440,
+          lookback_days: 14,
+          max_jobs: 5,
+          run_immediately: true,
+        });
+      }
+      return api.careerV2.updateRadarWatch(watch.id, { enabled: !watch.enabled });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["career-v2-radar-watches"] });
     },
   });
 
@@ -50,6 +78,7 @@ export function RecommendedJobsView() {
     const scoreB = careerByJob.get(b.job_id)?.final_score ?? b.semantic_score;
     return scoreB - scoreA;
   });
+  const activeWatch = watches.data?.items[0];
   const radarItems = (radar.data?.items ?? [])
     .filter((item) => item.radar_bucket === "TOP_MATCH" || item.radar_bucket === "PENDING_JUDGMENT")
     .slice(0, 4);
@@ -72,15 +101,26 @@ export function RecommendedJobsView() {
               Radar reviews newly discovered jobs against your verified career evidence and promotes the strongest fits into your queue.
             </p>
           </div>
-          <button
-            className="ui-button ui-button-primary"
-            type="button"
-            disabled={refreshRadar.isPending}
-            onClick={() => refreshRadar.mutate()}
-          >
-            <RefreshCw size={16} />
-            {refreshRadar.isPending ? "Judging…" : "Judge fresh jobs"}
-          </button>
+          <div className="cx-recommendation-actions">
+            <button
+              className="ui-button ui-button-ghost"
+              type="button"
+              disabled={toggleWatch.isPending}
+              onClick={() => toggleWatch.mutate()}
+            >
+              <Radar size={16} />
+              {activeWatch?.enabled ? "Pause daily watch" : "Enable daily watch"}
+            </button>
+            <button
+              className="ui-button ui-button-primary"
+              type="button"
+              disabled={refreshRadar.isPending}
+              onClick={() => refreshRadar.mutate()}
+            >
+              <RefreshCw size={16} />
+              {refreshRadar.isPending ? "Judging…" : "Judge fresh jobs"}
+            </button>
+          </div>
         </div>
 
         {radar.data ? (
@@ -88,6 +128,7 @@ export function RecommendedJobsView() {
             <Badge tone="success">{radar.data.counts.top_match} top matches</Badge>
             <Badge>{radar.data.counts.pending_judgment} waiting for judgment</Badge>
             <span className="cx-confidence">Last {radar.data.lookback_days} days</span>
+            {activeWatch ? <Badge tone={activeWatch.enabled ? "success" : "neutral"}>{activeWatch.enabled ? "Daily watch on" : "Daily watch paused"}</Badge> : null}
           </div>
         ) : null}
 
@@ -100,6 +141,15 @@ export function RecommendedJobsView() {
 
         {refreshRadar.isError ? (
           <p className="cx-recommendation-explanation">Radar could not refresh right now. Your existing recommendations are still available below.</p>
+        ) : null}
+
+        {radarHistory.data?.items.length ? (
+          <div className="cx-trust-note">
+            <Radar size={16} />
+            <span>
+              Latest change: {radarHistory.data.items[0].from_bucket.replaceAll("_", " ")} → {radarHistory.data.items[0].to_bucket.replaceAll("_", " ")}
+            </span>
+          </div>
         ) : null}
 
         {radarItems.length ? (

@@ -449,6 +449,7 @@ def refresh_radar_watch(
             break
         if not _match_needs_rejudgment(session, user=user, job=job, match=match):
             continue
+        previous_model_run_id = match.model_run_id
         run = _queue_run(
             task_type="AI_DEEP_MATCH",
             job_id=job.id,
@@ -456,7 +457,7 @@ def refresh_radar_watch(
             session=session,
             settings=settings,
         )
-        if run.id == match.model_run_id and run.status == "COMPLETED":
+        if run.id == previous_model_run_id and run.status == "COMPLETED":
             continue
         if run.status == "FAILED":
             run = _retry_failed_run(run, session=session, settings=settings)

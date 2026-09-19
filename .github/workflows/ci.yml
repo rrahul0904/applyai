@@ -219,6 +219,14 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Build combined production worker image
         run: docker build --pull --file services/api/Dockerfile.worker --tag applyai-worker:ci services/api
+      - name: Verify combined worker launches queue and Radar processes
+        run: |
+          docker run --rm --entrypoint /bin/bash applyai-worker:ci -lc '
+            grep -F "python -m app.workers.postgres" /app/scripts/run_combined_worker.sh &&
+            grep -F "python -m app.workers.radar_watch" /app/scripts/run_combined_worker.sh
+          '
+      - name: Verify Railway keeps combined worker command
+        run: grep -F "applyai-worker deploy.startCommand '\''/app/scripts/run_combined_worker.sh'\''" scripts/railway-bootstrap.sh
 
   terraform-validate:
     name: Staging Terraform validation

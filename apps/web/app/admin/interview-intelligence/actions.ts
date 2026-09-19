@@ -53,6 +53,7 @@ export async function createInterviewQuestion(formData: FormData) {
       track: String(formData.get("track") ?? "BEHAVIORAL"),
       difficulty: String(formData.get("difficulty") ?? "MEDIUM"),
       companies: lines("companies"),
+      stages: lines("stages"),
       skills: lines("skills"),
       patterns: lines("patterns"),
       hints: lines("hints"),

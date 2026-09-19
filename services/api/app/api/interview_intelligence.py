@@ -468,7 +468,7 @@ def list_questions(
         pattern = f"%{q.strip()}%"
         statement = statement.where(or_(InterviewIntelligenceQuestion.title.ilike(pattern), InterviewIntelligenceQuestion.summary.ilike(pattern), InterviewIntelligenceQuestion.prompt.ilike(pattern)))
     if sort == "recent":
-        ordering = (InterviewIntelligenceQuestion.last_reported_at.desc(), InterviewIntelligenceQuestion.frequency_score.desc())
+        ordering = (InterviewIntelligenceQuestion.last_reported_at.desc().nulls_last(), InterviewIntelligenceQuestion.frequency_score.desc())
     elif sort == "confidence":
         ordering = (InterviewIntelligenceQuestion.confidence.desc(), InterviewIntelligenceQuestion.frequency_score.desc())
     else:

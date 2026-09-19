@@ -103,6 +103,12 @@ function FieldEditor({
 
 export function ApplicationAgentPanel({ applicationId, jobId }: { applicationId: string; jobId: string }) {
   const queryClient = useQueryClient();
+  const capabilities = useQuery({
+    queryKey: ["application-agent-capabilities"],
+    queryFn: ({ signal }) => applicationAgentApi.capabilities(signal),
+    refetchInterval: 10_000,
+    retry: false,
+  });
   const execution = useQuery({
     queryKey: ["application-agent", applicationId],
     queryFn: async ({ signal }) => {
@@ -203,6 +209,7 @@ export function ApplicationAgentPanel({ applicationId, jobId }: { applicationId:
   const humanAction = item.browser_handoff?.human_action as Record<string, unknown> | undefined;
   const cover = item.documents?.cover_letter;
   const resume = item.documents?.resume;
+  const browserAutomationAvailable = capabilities.data?.browser_automation_available === true;
 
   return (
     <Card className="detail-section">
@@ -228,6 +235,13 @@ export function ApplicationAgentPanel({ applicationId, jobId }: { applicationId:
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}><AlertTriangle size={19} /><strong>Human action required</strong></div>
           <p>{String(humanAction?.message || "The browser agent reached a step that must be completed manually.")}</p>
           {typeof humanAction?.url === "string" ? <a href={humanAction.url} target="_blank" rel="noreferrer">Open employer application <ExternalLink size={14} /></a> : null}
+        </div>
+      ) : null}
+
+      {item.state === "READY_FOR_EXECUTION" && !browserAutomationAvailable ? (
+        <div className="note" style={{ marginTop: 14, display: "grid", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}><AlertTriangle size={19} /><strong>Use the employer site for this application</strong></div>
+          <p>Automated browser execution is not currently available. Your reviewed application package is ready, and you can continue safely on the employer site without losing your ApplyAI work.</p>
         </div>
       ) : null}
 
@@ -288,7 +302,7 @@ export function ApplicationAgentPanel({ applicationId, jobId }: { applicationId:
 
       <div className="button-row" style={{ marginTop: 18 }}>
         {canApprove ? <Button onClick={() => approve.mutate(item.id)} disabled={approve.isPending}><ShieldCheck size={17} />Approve application package</Button> : null}
-        {item.state === "READY_FOR_EXECUTION" ? <Button onClick={() => execute.mutate(item.id)} disabled={execute.isPending}><Bot size={17} />Apply for me</Button> : null}
+        {item.state === "READY_FOR_EXECUTION" && browserAutomationAvailable ? <Button onClick={() => execute.mutate(item.id)} disabled={execute.isPending}><Bot size={17} />Apply for me</Button> : null}
         {["NEEDS_INPUT", "REVIEW_REQUIRED"].includes(item.state) ? <Badge tone="warning">{item.missing_fields.length} missing · {item.review_items.length} to review</Badge> : null}
         {["BROWSER_QUEUED", "BROWSER_RUNNING"].includes(item.state) ? <Badge tone="info">Browser agent running</Badge> : null}
         {item.target_url ? <a className="ui-button ui-button-ghost ui-button-small" href={item.target_url} target="_blank" rel="noreferrer">Open employer site <ExternalLink size={15} /></a> : null}

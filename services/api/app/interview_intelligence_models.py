@@ -69,6 +69,7 @@ class InterviewIntelligenceQuestion(Base):
         Index("ix_interview_intelligence_questions_track_published", "track", "published"),
         Index("ix_interview_intelligence_questions_frequency", "frequency_score"),
         Index("ix_interview_intelligence_questions_last_reported", "last_reported_at"),
+        Index("ix_interview_intelligence_questions_stages", "stages", postgresql_using="gin"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -80,6 +81,7 @@ class InterviewIntelligenceQuestion(Base):
     prompt: Mapped[str] = mapped_column(Text, nullable=False)
     baseline_company_labels: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     company_labels: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    stages: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     skills: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     patterns: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     hints: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)

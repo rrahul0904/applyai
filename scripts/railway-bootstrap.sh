@@ -69,12 +69,12 @@ done
 railway environment edit --service-config applyai-api deploy.healthcheckPath /ready
 railway environment edit --service-config applyai-api deploy.healthcheckTimeout 300
 railway environment edit --service-config applyai-api deploy.restartPolicyType ALWAYS
-railway environment edit --service-config applyai-worker deploy.startCommand 'python -m app.workers.postgres'
+railway environment edit --service-config applyai-worker deploy.startCommand '/app/scripts/run_combined_worker.sh'
 railway environment edit --service-config applyai-worker deploy.restartPolicyType ALWAYS
 
-# Browser execution is intentionally isolated. The repository does not claim this service is
-# production-ready until its browser image/runtime acceptance has passed; keep it at zero/paused
-# if the browser executor is not enabled for the launch.
+# The normal worker now uses the combined supervisor so Postgres queue processing and the
+# governed Radar scheduler run together. Browser execution remains separately gated by the
+# application-level capability switch and must stay fail-closed unless explicitly enabled.
 railway environment edit --service-config applyai-browser-worker deploy.restartPolicyType ON_FAILURE
 
 echo

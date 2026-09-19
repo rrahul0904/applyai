@@ -32,11 +32,14 @@ def upgrade() -> None:
         sa.Column("last_run_status", sa.String(32)),
         sa.Column("last_scheduled_jobs", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("last_error", sa.Text()),
+        sa.Column("lease_owner", sa.String(160)),
+        sa.Column("lease_expires_at", sa.DateTime(timezone=True)),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
     )
     op.create_index("ix_radar_watches_user_id", "radar_watches", ["user_id"])
     op.create_index("ix_radar_watches_next_run_at", "radar_watches", ["next_run_at"])
+    op.create_index("ix_radar_watches_lease_expires_at", "radar_watches", ["lease_expires_at"])
     op.create_index("ix_radar_watches_due", "radar_watches", ["enabled", "next_run_at", "id"])
     op.create_index("ix_radar_watches_user_created", "radar_watches", ["user_id", "created_at"])
 

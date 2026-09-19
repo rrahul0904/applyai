@@ -69,6 +69,7 @@ class InterviewIntelligenceQuestion(Base):
         Index("ix_interview_intelligence_questions_track_published", "track", "published"),
         Index("ix_interview_intelligence_questions_frequency", "frequency_score"),
         Index("ix_interview_intelligence_questions_last_reported", "last_reported_at"),
+        Index("ix_interview_intelligence_questions_stages", "stages", postgresql_using="gin"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()

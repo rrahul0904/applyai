@@ -212,6 +212,14 @@ jobs:
       - name: Build production API image
         run: docker build --pull --tag applyai-api:ci services/api
 
+  worker-container:
+    name: Combined worker container build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Build combined production worker image
+        run: docker build --pull --file services/api/Dockerfile.worker --tag applyai-worker:ci services/api
+
   terraform-validate:
     name: Staging Terraform validation
     runs-on: ubuntu-latest

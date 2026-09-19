@@ -364,3 +364,86 @@ def test_due_radar_watch_runs_without_candidate_request(client):
         assert watch.last_scheduled_jobs == 1
         assert watch.next_run_at > datetime.now(timezone.utc)
         assert session.scalar(select(CareerMatch)) is not None
+
+
+def test_radar_watch_rejudges_material_candidate_change(client):
+    seed_recent_jobs(count=1)
+    original = profile_payload()
+    assert client.put("/api/v1/profile", json=original).status_code == 200
+
+    created = client.post(
+        "/api/v1/career-v2/radar/watches",
+        json={
+            "name": "Material change radar",
+            "interval_minutes": 1440,
+            "lookback_days": 14,
+            "max_jobs": 1,
+            "run_immediately": False,
+        },
+    )
+    watch_id = created.json()["id"]
+
+    first = client.post(f"/api/v1/career-v2/radar/watches/{watch_id}/run")
+    assert first.status_code == 200
+    assert first.json()["refresh"]["scheduled"] == 1
+
+    with SessionLocal() as session:
+        first_runs = list(session.scalars(select(AIJobRun).where(AIJobRun.task_type == "AI_DEEP_MATCH")))
+        assert len(first_runs) == 1
+        first_run_id = first_runs[0].id
+
+    changed = {**original, "summary": original["summary"] + " Added verified platform leadership evidence."}
+    assert client.put("/api/v1/profile", json=changed).status_code == 200
+
+    second = client.post(f"/api/v1/career-v2/radar/watches/{watch_id}/run")
+    assert second.status_code == 200
+    assert second.json()["refresh"]["scheduled"] == 1
+    assert second.json()["refresh"]["rejudged"] == 1
+
+    with SessionLocal() as session:
+        runs = list(
+            session.scalars(
+                select(AIJobRun)
+                .where(AIJobRun.task_type == "AI_DEEP_MATCH")
+                .order_by(AIJobRun.created_at)
+            )
+        )
+        assert len(runs) == 2
+        assert runs[0].id == first_run_id
+        assert runs[1].id != first_run_id
+
+
+def test_radar_watch_ignores_last_seen_only_change(client):
+    seed_recent_jobs(count=1)
+    assert client.put("/api/v1/profile", json=profile_payload()).status_code == 200
+    created = client.post(
+        "/api/v1/career-v2/radar/watches",
+        json={
+            "name": "Stable radar",
+            "interval_minutes": 1440,
+            "lookback_days": 14,
+            "max_jobs": 1,
+            "run_immediately": False,
+        },
+    )
+    watch_id = created.json()["id"]
+    assert client.post(f"/api/v1/career-v2/radar/watches/{watch_id}/run").status_code == 200
+
+    with SessionLocal() as session:
+        match = session.scalar(select(CareerMatch))
+        assert match is not None
+        from app.models import Job
+
+        job = session.get(Job, match.job_id)
+        assert job is not None
+        job.last_seen_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+        session.commit()
+
+    second = client.post(f"/api/v1/career-v2/radar/watches/{watch_id}/run")
+    assert second.status_code == 200
+    assert second.json()["refresh"]["scheduled"] == 0
+    assert second.json()["refresh"]["rejudged"] == 0
+
+    with SessionLocal() as session:
+        runs = list(session.scalars(select(AIJobRun).where(AIJobRun.task_type == "AI_DEEP_MATCH")))
+        assert len(runs) == 1

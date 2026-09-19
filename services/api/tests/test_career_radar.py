@@ -447,3 +447,47 @@ def test_radar_watch_ignores_last_seen_only_change(client):
     with SessionLocal() as session:
         runs = list(session.scalars(select(AIJobRun).where(AIJobRun.task_type == "AI_DEEP_MATCH")))
         assert len(runs) == 1
+
+
+
+def test_radar_watch_claim_lease_prevents_duplicate_and_recovers_after_expiry(client):
+    seed_recent_jobs(count=1)
+    assert client.put("/api/v1/profile", json=profile_payload()).status_code == 200
+    created = client.post(
+        "/api/v1/career-v2/radar/watches",
+        json={
+            "name": "Lease radar",
+            "interval_minutes": 60,
+            "lookback_days": 14,
+            "max_jobs": 1,
+            "run_immediately": False,
+        },
+    )
+    watch_id = uuid.UUID(created.json()["id"])
+    now = datetime.now(timezone.utc)
+
+    with SessionLocal() as session:
+        watch = session.get(RadarWatch, watch_id)
+        assert watch is not None
+        watch.next_run_at = now - timedelta(minutes=1)
+        session.commit()
+
+    from app.workers.radar_watch import claim_due_watch
+
+    settings = Settings(task_queue_provider="memory", radar_watch_lease_seconds=60)
+    assert claim_due_watch(now, worker_id="worker-a", settings=settings) == watch_id
+    assert claim_due_watch(now, worker_id="worker-b", settings=settings) is None
+
+    with SessionLocal() as session:
+        watch = session.get(RadarWatch, watch_id)
+        assert watch is not None
+        assert watch.lease_owner == "worker-a"
+        assert watch.lease_expires_at is not None
+        watch.lease_expires_at = now - timedelta(seconds=1)
+        session.commit()
+
+    assert claim_due_watch(now, worker_id="worker-b", settings=settings) == watch_id
+    with SessionLocal() as session:
+        watch = session.get(RadarWatch, watch_id)
+        assert watch is not None
+        assert watch.lease_owner == "worker-b"

@@ -226,7 +226,7 @@ jobs:
             grep -F "python -m app.workers.radar_watch" /app/scripts/run_combined_worker.sh
           '
       - name: Verify Railway keeps combined worker command
-        run: grep -F "applyai-worker deploy.startCommand '\''/app/scripts/run_combined_worker.sh'\''" scripts/railway-bootstrap.sh
+        run: grep -F "railway environment edit --service-config applyai-worker deploy.startCommand '/app/scripts/run_combined_worker.sh'" scripts/railway-bootstrap.sh
 
   terraform-validate:
     name: Staging Terraform validation

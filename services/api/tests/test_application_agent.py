@@ -105,15 +105,39 @@ def test_application_agent_reuses_verified_answers_and_requires_confirmation(cli
     assert approved.status_code == 200
     assert approved.json()["state"] == "READY_FOR_EXECUTION"
 
+    settings = get_settings().model_copy(update={"internal_api_token": "application-agent-test-token"})
+    app.dependency_overrides[get_settings] = lambda: settings
+    headers = {"X-ApplyAI-Internal-Token": "application-agent-test-token"}
+
+    capabilities = client.get("/api/v1/application-agent/capabilities")
+    assert capabilities.status_code == 200
+    assert capabilities.json()["browser_automation_available"] is False
+    assert capabilities.json()["manual_handoff_available"] is True
+
+    unavailable = client.post(f"/api/v1/application-agent/executions/{payload['id']}/execute")
+    assert unavailable.status_code == 503
+    assert unavailable.json()["error"]["code"] == "BROWSER_WORKER_UNAVAILABLE"
+    assert unavailable.json()["error"]["target_url"]
+
+    heartbeat = client.post(
+        "/api/v1/internal/application-agent/browser-worker/heartbeat",
+        headers=headers,
+        json={"worker_id": "application-agent-test-worker", "version": "test-sha"},
+    )
+    assert heartbeat.status_code == 200
+    assert heartbeat.json()["status"] == "ok"
+
+    capabilities = client.get("/api/v1/application-agent/capabilities")
+    assert capabilities.status_code == 200
+    assert capabilities.json()["browser_automation_available"] is True
+    assert capabilities.json()["browser_worker_last_seen_at"]
+
     queued = client.post(f"/api/v1/application-agent/executions/{payload['id']}/execute")
     assert queued.status_code == 200
     assert queued.json()["state"] == "BROWSER_QUEUED"
     assert queued.json()["browser_handoff"]["captcha_policy"] == "HUMAN_ACTION_REQUIRED"
     assert queued.json()["browser_handoff"]["success_policy"] == "CONFIRMATION_REQUIRED"
 
-    settings = get_settings().model_copy(update={"internal_api_token": "application-agent-test-token"})
-    app.dependency_overrides[get_settings] = lambda: settings
-    headers = {"X-ApplyAI-Internal-Token": "application-agent-test-token"}
     claimed = client.get("/api/v1/internal/application-agent/executions/next", headers=headers)
     assert claimed.status_code == 200
     assert claimed.json()["execution"]["id"] == payload["id"]

@@ -1,10 +1,13 @@
 import { chromium } from "@playwright/test";
+import os from "node:os";
 
 const API_URL = (process.env.APPLYAI_API_URL || "http://localhost:8000").replace(/\/$/, "");
 const INTERNAL_TOKEN = process.env.APPLYAI_INTERNAL_TOKEN || "";
 const POLL_MS = Number(process.env.APPLYAI_APPLICATION_WORKER_POLL_MS || 3000);
 const HEADLESS = process.env.APPLYAI_APPLICATION_WORKER_HEADLESS !== "false";
 const ONCE = process.argv.includes("--once");
+const WORKER_ID = process.env.APPLYAI_APPLICATION_WORKER_ID || os.hostname();
+const WORKER_VERSION = process.env.RAILWAY_GIT_COMMIT_SHA || process.env.VERCEL_GIT_COMMIT_SHA || process.env.GIT_SHA || null;
 
 if (!INTERNAL_TOKEN) {
   console.error("APPLYAI_INTERNAL_TOKEN is required");
@@ -366,6 +369,10 @@ async function executeOne(browser, execution) {
 }
 
 async function work(browser) {
+  await api("/api/v1/internal/application-agent/browser-worker/heartbeat", {
+    method: "POST",
+    body: JSON.stringify({ worker_id: WORKER_ID, version: WORKER_VERSION }),
+  });
   const payload = await api("/api/v1/internal/application-agent/executions/next");
   const execution = payload?.execution;
   if (!execution) return false;

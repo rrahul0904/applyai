@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Literal
 
@@ -15,8 +15,10 @@ from sqlalchemy.orm import Session
 from app.application_agent_models import ApplicationExecution, ApplicationQuestionMemory
 from app.career_models import AIArtifact, ApplicationQuestionDraft, CoverLetter
 from app.core.auth import get_current_user
+from app.core.config import Settings, get_settings
 from app.core.database import get_session
 from app.core.internal_auth import require_internal_api
+from app.operations_models import OperationsCertification
 from app.models import (
     Application,
     ApplicationEvent,
@@ -38,6 +40,10 @@ internal_router = APIRouter(
 
 ApprovalMode = Literal["REVIEW_ALL", "SMART", "AUTONOMOUS"]
 FieldType = Literal["TEXT", "TEXTAREA", "SELECT", "RADIO", "CHECKBOX", "FILE", "UNKNOWN"]
+
+BROWSER_WORKER_CERTIFICATION_TYPE = "APPLICATION_BROWSER_WORKER_HEARTBEAT"
+BROWSER_WORKER_TTL_SECONDS = 30
+
 
 SENSITIVE_KEYS = {
     "salary_expectation",
@@ -80,6 +86,11 @@ class MemoryWrite(BaseModel):
     candidate_verified: bool = True
 
 
+class BrowserWorkerHeartbeatWrite(BaseModel):
+    worker_id: str = Field(min_length=1, max_length=160)
+    version: str | None = Field(default=None, max_length=128)
+
+
 class BrowserCompletionWrite(BaseModel):
     status: Literal["CONFIRMED", "SUBMITTED", "HUMAN_ACTION_REQUIRED", "FAILED"]
     field_results: list[dict[str, Any]] = Field(default_factory=list)
@@ -93,6 +104,37 @@ class BrowserCompletionWrite(BaseModel):
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _browser_worker_heartbeat(
+    session: Session,
+    *,
+    environment: str,
+) -> OperationsCertification | None:
+    return session.scalar(
+        select(OperationsCertification)
+        .where(
+            OperationsCertification.certification_type == BROWSER_WORKER_CERTIFICATION_TYPE,
+            OperationsCertification.status == "HEALTHY",
+            OperationsCertification.environment == environment,
+        )
+        .order_by(OperationsCertification.created_at.desc(), OperationsCertification.id.desc())
+        .limit(1)
+    )
+
+
+def _browser_worker_available(
+    session: Session,
+    *,
+    environment: str,
+) -> tuple[bool, datetime | None]:
+    heartbeat = _browser_worker_heartbeat(session, environment=environment)
+    if heartbeat is None:
+        return False, None
+    seen_at = heartbeat.created_at
+    if seen_at.tzinfo is None:
+        seen_at = seen_at.replace(tzinfo=timezone.utc)
+    return seen_at >= utcnow() - timedelta(seconds=BROWSER_WORKER_TTL_SECONDS), seen_at
 
 
 def _normalize(value: str) -> str:
@@ -398,6 +440,21 @@ def _execution_payload(row: ApplicationExecution) -> dict[str, Any]:
     }
 
 
+@router.get("/capabilities")
+def application_agent_capabilities(
+    _user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    available, seen_at = _browser_worker_available(session, environment=settings.app_env)
+    return {
+        "browser_automation_available": available,
+        "manual_handoff_available": True,
+        "browser_worker_last_seen_at": seen_at,
+        "browser_worker_ttl_seconds": BROWSER_WORKER_TTL_SECONDS,
+    }
+
+
 @router.get("/memory")
 def list_answer_memory(
     user: User = Depends(get_current_user),
@@ -691,12 +748,27 @@ def execute_application(
     execution_id: uuid.UUID,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     execution = _owned_execution(session, user, execution_id)
     if execution.state != "READY_FOR_EXECUTION" or execution.approved_at is None:
         raise HTTPException(status_code=409, detail="Candidate approval is required before browser execution")
     if not execution.target_url:
         raise HTTPException(status_code=422, detail="No employer application URL is available")
+    browser_available, last_seen_at = _browser_worker_available(
+        session,
+        environment=settings.app_env,
+    )
+    if not browser_available:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "BROWSER_WORKER_UNAVAILABLE",
+                "message": "Automated browser execution is temporarily unavailable. Continue on the employer site instead.",
+                "target_url": execution.target_url,
+                "browser_worker_last_seen_at": last_seen_at.isoformat() if last_seen_at else None,
+            },
+        )
     execution.state = "BROWSER_QUEUED"
     execution.browser_handoff = {
         "driver": execution.ats_provider,
@@ -710,6 +782,49 @@ def execute_application(
     session.commit()
     session.refresh(execution)
     return _execution_payload(execution)
+
+
+@internal_router.post("/browser-worker/heartbeat")
+def browser_worker_heartbeat(
+    body: BrowserWorkerHeartbeatWrite,
+    session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    now = utcnow()
+    row = _browser_worker_heartbeat(session, environment=settings.app_env)
+    evidence = {
+        "worker_id": body.worker_id,
+        "version": body.version,
+        "capabilities": ["application_browser_execution"],
+        "last_seen_at": now.isoformat(),
+    }
+    if row is None:
+        row = OperationsCertification(
+            certification_type=BROWSER_WORKER_CERTIFICATION_TYPE,
+            status="HEALTHY",
+            environment=settings.app_env,
+            git_sha=body.version if body.version and len(body.version) <= 64 else None,
+            evidence=evidence,
+            notes="Application browser worker runtime heartbeat.",
+            created_by=body.worker_id,
+            created_at=now,
+        )
+        session.add(row)
+    else:
+        row.status = "HEALTHY"
+        row.environment = settings.app_env
+        row.git_sha = body.version if body.version and len(body.version) <= 64 else row.git_sha
+        row.evidence = evidence
+        row.notes = "Application browser worker runtime heartbeat."
+        row.created_by = body.worker_id
+        row.created_at = now
+    session.commit()
+    return {
+        "status": "ok",
+        "worker_id": body.worker_id,
+        "seen_at": now,
+        "ttl_seconds": BROWSER_WORKER_TTL_SECONDS,
+    }
 
 
 @internal_router.get("/executions/next")

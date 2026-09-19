@@ -31,6 +31,13 @@ export type ApplicationDocumentMetadata = {
   reviewed_at?: string;
 };
 
+export type ApplicationAgentCapabilities = {
+  browser_automation_available: boolean;
+  manual_handoff_available: boolean;
+  browser_worker_last_seen_at: string | null;
+  browser_worker_ttl_seconds: number;
+};
+
 export type ApplicationExecution = {
   id: string;
   application_id: string;
@@ -89,6 +96,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export const applicationAgentApi = {
+  capabilities: (signal?: AbortSignal) =>
+    request<ApplicationAgentCapabilities>("/application-agent/capabilities", { signal }),
   prepare: (applicationId: string, approvalMode: ApplicationExecution["approval_mode"] = "SMART") =>
     request<ApplicationExecution>(`/application-agent/applications/${applicationId}/prepare`, {
       method: "POST",

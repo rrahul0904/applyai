@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
-from app.api.career_radar import refresh_radar
+from app.api.career_radar import refresh_radar_watch
 from app.core.config import Settings, get_settings
 from app.core.database import SessionLocal
 from app.models import User
@@ -50,7 +50,7 @@ def execute_watch(watch_id: uuid.UUID, settings: Settings) -> int:
             user = session.get(User, watch.user_id)
             if user is None:
                 raise RuntimeError("RADAR_WATCH_USER_NOT_FOUND")
-            result = refresh_radar(
+            result = refresh_radar_watch(
                 max_jobs=watch.max_jobs,
                 lookback_days=watch.lookback_days,
                 user=user,

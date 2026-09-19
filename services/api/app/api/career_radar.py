@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 import uuid
+import hashlib
+import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -10,6 +12,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.ai.runtime import execute_ai_run
+from app.ai.context import build_career_ai_context
 from app.api.career_intelligence_v2 import _queue_run
 from app.career_models import AIJobRun, CareerMatch
 from app.core.auth import get_current_user
@@ -307,16 +310,16 @@ def list_radar(
     }
 
 
-@router.post("/refresh")
-def refresh_radar(
-    max_jobs: int = Query(default=10, ge=1, le=25),
-    lookback_days: int = Query(default=14, ge=1, le=90),
-    user: User = Depends(get_current_user),
-    session: Session = Depends(get_session),
-    settings: Settings = Depends(get_settings),
+def _refresh_radar_impl(
+    *,
+    max_jobs: int,
+    effective_max_jobs: int,
+    lookback_days: int,
+    user: User,
+    session: Session,
+    settings: Settings,
 ) -> dict[str, Any]:
     cutoff = utcnow() - timedelta(days=lookback_days)
-    effective_max_jobs = _effective_refresh_limit(max_jobs, settings)
     match_join = and_(
         CareerMatch.job_id == Job.id,
         CareerMatch.user_id == user.id,
@@ -370,6 +373,121 @@ def refresh_radar(
         "lookback_days": lookback_days,
         "engine_version": ENGINE_VERSION,
     }
+
+
+def _material_context_hash(context: dict[str, Any]) -> str:
+    candidate = context.get("candidate") or {}
+    job = dict(context.get("job") or {})
+    # last_seen_at is a verification heartbeat, not a material job change. Ignoring it
+    # prevents a daily source refresh from forcing paid re-judgment of an unchanged role.
+    job.pop("last_seen_at", None)
+    payload = {"candidate": candidate, "job": job}
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _match_needs_rejudgment(
+    session: Session,
+    *,
+    user: User,
+    job: Job,
+    match: CareerMatch,
+) -> bool:
+    if match.model_run_id is None:
+        return True
+    previous = session.get(AIJobRun, match.model_run_id)
+    if previous is None or not previous.input_json:
+        return True
+    current = build_career_ai_context(session, user, job)
+    return _material_context_hash(current) != _material_context_hash(previous.input_json)
+
+
+def refresh_radar_watch(
+    *,
+    max_jobs: int,
+    lookback_days: int,
+    user: User,
+    session: Session,
+    settings: Settings,
+) -> dict[str, Any]:
+    # A background watch is not constrained by the request-triggered drain size. It still
+    # honors the candidate-configured max_jobs cap and the existing durable queue/runtime.
+    result = _refresh_radar_impl(
+        max_jobs=max_jobs,
+        effective_max_jobs=max_jobs,
+        lookback_days=lookback_days,
+        user=user,
+        session=session,
+        settings=settings,
+    )
+    remaining = max_jobs - int(result["scheduled"])
+    if remaining <= 0:
+        result["rejudged"] = 0
+        return result
+
+    cutoff = utcnow() - timedelta(days=lookback_days)
+    rows = list(
+        session.execute(
+            select(Job, CareerMatch)
+            .join(
+                CareerMatch,
+                and_(
+                    CareerMatch.job_id == Job.id,
+                    CareerMatch.user_id == user.id,
+                    CareerMatch.engine_version == ENGINE_VERSION,
+                ),
+            )
+            .where(Job.status == "ACTIVE", _freshness_filter(cutoff))
+            .order_by(CareerMatch.updated_at.asc(), Job.first_seen_at.desc(), Job.id)
+            .limit(max(100, remaining * 20))
+        )
+    )
+
+    rejudged = 0
+    for job, match in rows:
+        if rejudged >= remaining:
+            break
+        if not _match_needs_rejudgment(session, user=user, job=job, match=match):
+            continue
+        run = _queue_run(
+            task_type="AI_DEEP_MATCH",
+            job_id=job.id,
+            user=user,
+            session=session,
+            settings=settings,
+        )
+        if run.id == match.model_run_id and run.status == "COMPLETED":
+            continue
+        if run.status == "FAILED":
+            run = _retry_failed_run(run, session=session, settings=settings)
+        elif run.status == "QUEUED":
+            run = _recover_dead_postgres_run(run, session=session, settings=settings)
+        result["runs"].append(
+            {"run_id": str(run.id), "job_id": str(job.id), "status": run.status}
+        )
+        rejudged += 1
+
+    result["scheduled"] = len(result["runs"])
+    result["rejudged"] = rejudged
+    return result
+
+
+@router.post("/refresh")
+def refresh_radar(
+    max_jobs: int = Query(default=10, ge=1, le=25),
+    lookback_days: int = Query(default=14, ge=1, le=90),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    return _refresh_radar_impl(
+        max_jobs=max_jobs,
+        effective_max_jobs=_effective_refresh_limit(max_jobs, settings),
+        lookback_days=lookback_days,
+        user=user,
+        session=session,
+        settings=settings,
+    )
 
 
 class RadarWatchCreate(BaseModel):
@@ -495,7 +613,7 @@ def run_radar_watch_now(
     watch.next_run_at = now + timedelta(minutes=watch.interval_minutes)
     session.commit()
     try:
-        result = refresh_radar(
+        result = refresh_radar_watch(
             max_jobs=watch.max_jobs,
             lookback_days=watch.lookback_days,
             user=user,

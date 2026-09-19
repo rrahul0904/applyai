@@ -106,20 +106,29 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _browser_worker_heartbeat(session: Session) -> OperationsCertification | None:
+def _browser_worker_heartbeat(
+    session: Session,
+    *,
+    environment: str,
+) -> OperationsCertification | None:
     return session.scalar(
         select(OperationsCertification)
         .where(
             OperationsCertification.certification_type == BROWSER_WORKER_CERTIFICATION_TYPE,
             OperationsCertification.status == "HEALTHY",
+            OperationsCertification.environment == environment,
         )
         .order_by(OperationsCertification.created_at.desc(), OperationsCertification.id.desc())
         .limit(1)
     )
 
 
-def _browser_worker_available(session: Session) -> tuple[bool, datetime | None]:
-    heartbeat = _browser_worker_heartbeat(session)
+def _browser_worker_available(
+    session: Session,
+    *,
+    environment: str,
+) -> tuple[bool, datetime | None]:
+    heartbeat = _browser_worker_heartbeat(session, environment=environment)
     if heartbeat is None:
         return False, None
     seen_at = heartbeat.created_at
@@ -435,8 +444,9 @@ def _execution_payload(row: ApplicationExecution) -> dict[str, Any]:
 def application_agent_capabilities(
     _user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    available, seen_at = _browser_worker_available(session)
+    available, seen_at = _browser_worker_available(session, environment=settings.app_env)
     return {
         "browser_automation_available": available,
         "manual_handoff_available": True,
@@ -738,13 +748,17 @@ def execute_application(
     execution_id: uuid.UUID,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     execution = _owned_execution(session, user, execution_id)
     if execution.state != "READY_FOR_EXECUTION" or execution.approved_at is None:
         raise HTTPException(status_code=409, detail="Candidate approval is required before browser execution")
     if not execution.target_url:
         raise HTTPException(status_code=422, detail="No employer application URL is available")
-    browser_available, last_seen_at = _browser_worker_available(session)
+    browser_available, last_seen_at = _browser_worker_available(
+        session,
+        environment=settings.app_env,
+    )
     if not browser_available:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -777,7 +791,7 @@ def browser_worker_heartbeat(
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     now = utcnow()
-    row = _browser_worker_heartbeat(session)
+    row = _browser_worker_heartbeat(session, environment=settings.app_env)
     evidence = {
         "worker_id": body.worker_id,
         "version": body.version,

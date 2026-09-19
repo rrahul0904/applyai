@@ -589,6 +589,9 @@ def update_radar_watch(
     was_enabled = watch.enabled
     for key, value in values.items():
         setattr(watch, key, value)
+    if values.get("enabled") is False:
+        watch.lease_owner = None
+        watch.lease_expires_at = None
     if values.get("enabled") is True and not was_enabled:
         watch.next_run_at = utcnow()
     elif "interval_minutes" in values and watch.enabled:

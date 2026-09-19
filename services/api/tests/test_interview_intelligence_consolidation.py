@@ -247,3 +247,80 @@ def test_interview_intelligence_end_to_end_and_evidence_reversal(client, databas
         assert "Example Co" not in rejected_question["companies"]
     finally:
         app.dependency_overrides.pop(require_operator_or_internal, None)
+
+
+
+def test_company_question_bank_filters_and_per_question_progress(client, database_url) -> None:
+    job_id = _seed(database_url, client)
+
+    app.dependency_overrides[require_operator_or_internal] = lambda: None
+    try:
+        created = client.post(
+            "/api/v1/internal/interview-intelligence/questions",
+            json={
+                "title": "Design a bounded work queue",
+                "slug": "test-bounded-work-queue",
+                "track": "CODING",
+                "difficulty": "HARD",
+                "summary": "Clean-room coding practice for bounded work scheduling and explicit backpressure.",
+                "prompt": "Design a bounded work queue, explain concurrency trade-offs, and describe how you would verify correctness under load.",
+                "companies": ["Example Co"],
+                "stages": ["SCREENING", "ONSITE"],
+                "skills": ["concurrency", "backpressure"],
+                "patterns": ["queue", "worker pool"],
+                "hints": ["Start by defining capacity and producer behavior."],
+                "follow_ups": ["How would priorities change the design?"],
+                "solution_outline": ["Define invariants", "Bound capacity", "Coordinate workers", "Test overload"],
+                "frequency_score": 60,
+                "published": True,
+            },
+        )
+        assert created.status_code == 201, created.text
+        question = created.json()
+
+        catalog = client.get("/api/v1/internal/interview-intelligence-catalog/questions")
+        assert catalog.status_code == 200, catalog.text
+        catalog_item = next(item for item in catalog.json() if item["id"] == question["id"])
+        assert catalog_item["stages"] == ["SCREENING", "ONSITE"]
+    finally:
+        app.dependency_overrides.pop(require_operator_or_internal, None)
+
+    filtered = client.get(
+        "/api/v1/interview-intelligence/questions",
+        params={
+            "company": "example co",
+            "stage": "screening",
+            "track": "CODING",
+            "difficulty": "HARD",
+            "sort": "confidence",
+        },
+    )
+    assert filtered.status_code == 200, filtered.text
+    assert filtered.json()["total"] == 1
+    item = filtered.json()["items"][0]
+    assert item["id"] == question["id"]
+    assert item["stages"] == ["SCREENING", "ONSITE"]
+
+    recent_only = client.get(
+        "/api/v1/interview-intelligence/questions",
+        params={"company": "Example Co", "reported_within_days": 90},
+    )
+    assert recent_only.status_code == 200, recent_only.text
+    assert recent_only.json()["total"] == 0
+
+    attempt = client.post(
+        "/api/v1/interview-intelligence/attempts",
+        json={
+            "question_id": question["id"],
+            "job_id": job_id,
+            "answer_text": "I would bound queue capacity, define producer backpressure, coordinate a worker pool, test concurrency invariants, and verify overload behavior.",
+        },
+    )
+    assert attempt.status_code == 201, attempt.text
+
+    progress = client.get("/api/v1/interview-intelligence/progress")
+    assert progress.status_code == 200, progress.text
+    question_progress = progress.json()["by_question"][question["id"]]
+    assert question_progress["attempts"] == 1
+    assert question_progress["latest_score"] == attempt.json()["score"]
+    assert question_progress["best_score"] == attempt.json()["score"]

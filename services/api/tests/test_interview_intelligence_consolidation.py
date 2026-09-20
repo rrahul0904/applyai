@@ -311,6 +311,19 @@ def test_company_question_bank_filters_and_per_question_progress(client, databas
     assert recent_only.status_code == 200, recent_only.text
     assert recent_only.json()["total"] == 0
 
+    future_report = client.post(
+        "/api/v1/interview-intelligence/reports",
+        json={
+            "company": "Example Co",
+            "role": "Data Architect",
+            "interview_stage": "SCREENING",
+            "body": "A sufficiently detailed future-dated interview report that must not influence freshness ordering.",
+            "reported_at": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
+        },
+    )
+    assert future_report.status_code == 422, future_report.text
+    assert future_report.json()["detail"] == "reported_at cannot be in the future"
+
     app.dependency_overrides[require_operator_or_internal] = lambda: None
     try:
         older = client.post(

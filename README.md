@@ -110,7 +110,7 @@ Implemented candidate capabilities include:
 - candidate-approved application submission orchestration;
 - Career Memory;
 - evidence-locked resume/application/interview copilots;
-- company question bank with company/round/track/difficulty/freshness filters, progressive hints and per-question practice progress;
+- company question bank with company/round/track/difficulty/freshness filters, tabbed question workspaces, clean-room solution guidance, question discussions, submission history and progressive coaching;
 - interview practice history and feedback;
 - recruiter/referral contacts and follow-ups;
 - job alerts, interview reminders and notification inbox;

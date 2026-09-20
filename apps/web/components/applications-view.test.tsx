@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApplicationsView } from "@/components/applications-view";
-import { api } from "@/lib/api/client";
+import { api, type ApplicationBoardItem } from "@/lib/api/client";
 
 vi.mock("@/lib/api/client", () => ({
   api: {
@@ -47,7 +47,7 @@ const firstItem = {
     updated_at: "2026-07-28T00:00:00Z",
   },
   overdue: false,
-};
+} satisfies ApplicationBoardItem;
 
 describe("ApplicationsView", () => {
   beforeEach(() => {
@@ -100,7 +100,7 @@ describe("ApplicationsView", () => {
           },
           tracker: {
             ...firstItem.tracker,
-            priority: "MEDIUM",
+            priority: "MEDIUM" as const,
             offer_minimum: 180000,
             offer_maximum: 210000,
           },

@@ -147,6 +147,35 @@ describe("ApplicationDetailView", () => {
     expect(successMock).toHaveBeenCalledWith("Application status updated");
   });
 
+  it("round-trips stored UTC tracker times through the browser local wall clock", async () => {
+    const previousTz = process.env.TZ;
+    process.env.TZ = "America/New_York";
+    vi.mocked(api.applications.detail).mockResolvedValue({
+      ...application,
+      tracker: {
+        ...application.tracker!,
+        deadline_at: "2026-08-01T17:00:00Z",
+      },
+    });
+
+    try {
+      renderApplicationDetail();
+
+      const deadline = await screen.findByLabelText("Application deadline") as HTMLInputElement;
+      expect(deadline.value).toBe("2026-08-01T13:00");
+      fireEvent.click(screen.getByRole("button", { name: "Save opportunity details" }));
+
+      await waitFor(() =>
+        expect(api.applications.updateTracker).toHaveBeenCalledWith(
+          "application-1",
+          expect.objectContaining({ deadline_at: "2026-08-01T17:00:00.000Z" }),
+        ),
+      );
+    } finally {
+      process.env.TZ = previousTz;
+    }
+  });
+
   it("persists structured opportunity tracking details", async () => {
     renderApplicationDetail();
 

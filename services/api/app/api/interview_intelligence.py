@@ -763,9 +763,13 @@ def create_community_post(payload: CommunityPostWrite, user: User = Depends(get_
     return {
         "id": str(item.id),
         "question_id": str(item.question_id) if item.question_id else None,
+        "company": item.company_label,
+        "category": item.category,
         "title": item.title,
+        "body": item.body,
         "reaction_count": 0,
         "replies": [],
+        "created_at": item.created_at,
     }
 
 

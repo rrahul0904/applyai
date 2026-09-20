@@ -226,6 +226,8 @@ class ApplicationBoardResponse(BaseModel):
     items: list[ApplicationBoardItem] = Field(default_factory=list)
     counts: dict[str, int] = Field(default_factory=dict)
     total: int = 0
+    next_cursor: str | None = None
+    returned: int = 0
 
 
 class ApplicationNoteWrite(BaseModel):

@@ -376,7 +376,12 @@ def test_radar_watch_worker_accepts_sqs_provider(monkeypatch):
 
     monkeypatch.setattr(radar_watch_worker, "run_once", stop_loop)
     with pytest.raises(RuntimeError, match="stop-loop"):
-        radar_watch_worker.run_worker(\n            Settings(\n                task_queue_provider="sqs",\n                sqs_queue_url="https://sqs.us-east-1.amazonaws.com/123456789012/applyai-test",\n            )\n        )
+        radar_watch_worker.run_worker(
+            Settings(
+                task_queue_provider="sqs",
+                sqs_queue_url="https://sqs.us-east-1.amazonaws.com/123456789012/applyai-test",
+            )
+        )
 
 
 def test_radar_watch_rejudgment_scan_reaches_beyond_first_page(monkeypatch):

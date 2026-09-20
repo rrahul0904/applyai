@@ -1,7 +1,7 @@
 import base64
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, or_, select
@@ -20,6 +20,8 @@ from app.models import (
     User,
 )
 from app.schemas import (
+    ApplicationBoardItem,
+    ApplicationBoardResponse,
     ApplicationCreate,
     ApplicationEventResponse,
     ApplicationJobSummary,
@@ -29,6 +31,8 @@ from app.schemas import (
     ApplicationNoteWrite,
     ApplicationResponse,
     ApplicationStatusWrite,
+    ApplicationTrackerResponse,
+    ApplicationTrackerWrite,
 )
 
 
@@ -68,14 +72,69 @@ def decode_cursor(value: str | None) -> tuple[datetime | None, uuid.UUID | None]
         )
 
 
-def response_for(application: Application, session: Session) -> ApplicationResponse:
+TRACKER_EVENT_TYPE = "TRACKER_UPDATE"
+TERMINAL_STATUSES = {"REJECTED", "WITHDRAWN"}
+
+
+def _parse_tracker_datetime(value: object) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+
+
+def _tracker_from_event(event: ApplicationEvent | None) -> ApplicationTrackerResponse:
+    metadata = event.metadata_json if event is not None and isinstance(event.metadata_json, dict) else {}
+    tracker = metadata.get("tracker") if isinstance(metadata.get("tracker"), dict) else {}
+    return ApplicationTrackerResponse(
+        deadline_at=_parse_tracker_datetime(tracker.get("deadline_at")),
+        interview_at=_parse_tracker_datetime(tracker.get("interview_at")),
+        next_action_at=_parse_tracker_datetime(tracker.get("next_action_at")),
+        offer_minimum=tracker.get("offer_minimum"),
+        offer_maximum=tracker.get("offer_maximum"),
+        offer_currency=str(tracker.get("offer_currency") or "USD").upper(),
+        offer_notes=tracker.get("offer_notes"),
+        source_channel=tracker.get("source_channel"),
+        priority=str(tracker.get("priority") or "MEDIUM").upper(),
+        updated_at=event.created_at if event is not None else None,
+    )
+
+
+def tracker_for(application_id: uuid.UUID, session: Session) -> ApplicationTrackerResponse:
     events = list(
         session.scalars(
+            select(ApplicationEvent)
+            .where(ApplicationEvent.application_id == application_id)
+            .order_by(ApplicationEvent.created_at.desc(), ApplicationEvent.id.desc())
+        )
+    )
+    event = next(
+        (
+            row
+            for row in events
+            if isinstance(row.metadata_json, dict)
+            and row.metadata_json.get("event_type") == TRACKER_EVENT_TYPE
+        ),
+        None,
+    )
+    return _tracker_from_event(event)
+
+
+def response_for(application: Application, session: Session) -> ApplicationResponse:
+    events = [
+        event
+        for event in session.scalars(
             select(ApplicationEvent)
             .where(ApplicationEvent.application_id == application.id)
             .order_by(ApplicationEvent.created_at)
         )
-    )
+        if not (
+            isinstance(event.metadata_json, dict)
+            and event.metadata_json.get("event_type") == TRACKER_EVENT_TYPE
+        )
+    ]
     return ApplicationResponse(
         id=application.id,
         job_id=application.job_id,
@@ -91,6 +150,7 @@ def response_for(application: Application, session: Session) -> ApplicationRespo
             )
             for event in events
         ],
+        tracker=tracker_for(application.id, session),
         notes=[
             ApplicationNoteResponse(
                 id=note.id,
@@ -168,6 +228,79 @@ def list_applications(
         next_cursor=encode_cursor(rows[-1][0]) if has_more and rows else None,
         returned=len(items),
     )
+
+
+@router.get("/board", response_model=ApplicationBoardResponse)
+def get_application_board(
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> ApplicationBoardResponse:
+    first_location = (
+        select(JobLocation.location_text)
+        .where(JobLocation.job_id == Job.id)
+        .order_by(JobLocation.id)
+        .limit(1)
+        .scalar_subquery()
+    )
+    rows = list(
+        session.execute(
+            select(
+                Application,
+                Job.title,
+                Company.canonical_name,
+                first_location.label("location"),
+            )
+            .join(Job, Job.id == Application.job_id)
+            .join(Company, Company.id == Job.company_id)
+            .where(Application.user_id == user.id)
+            .order_by(Application.updated_at.desc(), Application.id.desc())
+            .limit(500)
+        )
+    )
+    application_ids = [row[0].id for row in rows]
+    tracker_events: dict[uuid.UUID, ApplicationEvent] = {}
+    if application_ids:
+        for event in session.scalars(
+            select(ApplicationEvent)
+            .where(ApplicationEvent.application_id.in_(application_ids))
+            .order_by(ApplicationEvent.created_at.desc(), ApplicationEvent.id.desc())
+        ):
+            if event.application_id in tracker_events:
+                continue
+            if isinstance(event.metadata_json, dict) and event.metadata_json.get("event_type") == TRACKER_EVENT_TYPE:
+                tracker_events[event.application_id] = event
+
+    now = datetime.now(timezone.utc)
+    items: list[ApplicationBoardItem] = []
+    counts: dict[str, int] = {}
+    for application, title, company_name, location in rows:
+        tracker = _tracker_from_event(tracker_events.get(application.id))
+        deadline = tracker.deadline_at
+        overdue = bool(
+            deadline
+            and deadline < now
+            and application.current_status not in TERMINAL_STATUSES
+            and application.current_status != "OFFER"
+        )
+        counts[application.current_status] = counts.get(application.current_status, 0) + 1
+        items.append(
+            ApplicationBoardItem(
+                id=application.id,
+                job_id=application.job_id,
+                current_status=application.current_status,
+                created_at=application.created_at,
+                updated_at=application.updated_at,
+                job=ApplicationJobSummary(
+                    id=application.job_id,
+                    title=title,
+                    company_name=company_name,
+                    location=location,
+                ),
+                tracker=tracker,
+                overdue=overdue,
+            )
+        )
+    return ApplicationBoardResponse(items=items, counts=counts, total=len(items))
 
 
 @router.get("/{application_id}", response_model=ApplicationResponse)
@@ -281,6 +414,53 @@ def owned_application(
     if application is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
     return application
+
+
+@router.patch("/{application_id}/tracker", response_model=ApplicationTrackerResponse)
+def update_application_tracker(
+    application_id: uuid.UUID,
+    payload: ApplicationTrackerWrite,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> ApplicationTrackerResponse:
+    application = owned_application(application_id, user, session)
+    current = tracker_for(application_id, session)
+    incoming = payload.model_dump(exclude_unset=True)
+    merged = current.model_dump(exclude={"updated_at"})
+    merged.update(incoming)
+
+    if merged.get("offer_minimum") is not None and merged.get("offer_maximum") is not None:
+        if int(merged["offer_minimum"]) > int(merged["offer_maximum"]):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Offer minimum cannot exceed offer maximum",
+            )
+    priority = str(merged.get("priority") or "MEDIUM").upper()
+    if priority not in {"LOW", "MEDIUM", "HIGH"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Priority must be LOW, MEDIUM, or HIGH",
+        )
+    merged["priority"] = priority
+    merged["offer_currency"] = str(merged.get("offer_currency") or "USD").upper()
+    for key in ("deadline_at", "interview_at", "next_action_at"):
+        value = merged.get(key)
+        if isinstance(value, datetime):
+            merged[key] = value.isoformat()
+
+    now = datetime.now(timezone.utc)
+    application.updated_at = now
+    session.add(
+        ApplicationEvent(
+            application_id=application.id,
+            actor_user_id=user.id,
+            from_status=application.current_status,
+            to_status=application.current_status,
+            metadata_json={"event_type": TRACKER_EVENT_TYPE, "tracker": merged},
+        )
+    )
+    session.commit()
+    return tracker_for(application_id, session)
 
 
 @router.post(

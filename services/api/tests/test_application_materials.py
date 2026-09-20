@@ -31,12 +31,26 @@ def _seed_application_kit(database_url: str, client) -> str:
                     proficiency="STRONG",
                     provenance="USER_VERIFIED",
                 ),
+                CandidateSkill(
+                    profile_id=profile.id,
+                    name="Rust",
+                    normalized_name="rust",
+                    proficiency="STRONG",
+                    provenance="AI_INFERRED",
+                ),
                 CandidateExperience(
                     profile_id=profile.id,
                     company_name="Evidence Corp",
                     title="Product Operations Manager",
                     description="Led a verified workflow modernization program for production operations.",
                     provenance="USER_VERIFIED",
+                ),
+                CandidateExperience(
+                    profile_id=profile.id,
+                    company_name="Imaginary Corp",
+                    title="Unverified Principal Engineer",
+                    description="This inferred role must never appear in application material.",
+                    provenance="AI_INFERRED",
                 ),
             ]
         )
@@ -72,6 +86,9 @@ def test_application_kit_is_evidence_safe_and_exports_real_pdfs(client, database
     assert all(check["passed"] for check in kit["content"]["review"]["checks"])
     assert "missing" not in kit["content"]["resume"]["summary"].lower()
     assert any(item["company"] == "Evidence Corp" for item in kit["content"]["resume"]["experience"])
+    assert all(item["company"] != "Imaginary Corp" for item in kit["content"]["resume"]["experience"])
+    assert "Imaginary Corp" not in kit["content"]["cover_letter"]
+    assert "Rust" not in kit["content"]["ats"]["matched_skills"]
 
     fetched = client.get(f"/api/v1/career-v2/jobs/{job_id}/application-kit")
     assert fetched.status_code == 200, fetched.text

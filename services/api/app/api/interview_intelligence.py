@@ -6,8 +6,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field, HttpUrl
-from sqlalchemy import func, or_, select
+from pydantic import BaseModel, Field, HttpUrl, field_validator
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -105,6 +105,16 @@ class ReportWrite(BaseModel):
     body: str = Field(min_length=20, max_length=50_000)
     reported_at: datetime | None = None
     source_reference: str | None = Field(default=None, max_length=320)
+
+    @field_validator("reported_at")
+    @classmethod
+    def reject_future_reported_at(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        normalized = value if value.tzinfo is not None and value.utcoffset() is not None else value.replace(tzinfo=timezone.utc)
+        if normalized > datetime.now(timezone.utc):
+            raise ValueError("reported_at cannot be in the future")
+        return normalized
 
 
 class CommunityPostWrite(BaseModel):
@@ -467,20 +477,33 @@ def list_questions(
     if q:
         pattern = f"%{q.strip()}%"
         statement = statement.where(or_(InterviewIntelligenceQuestion.title.ilike(pattern), InterviewIntelligenceQuestion.summary.ilike(pattern), InterviewIntelligenceQuestion.prompt.ilike(pattern)))
+    if company:
+        statement = statement.where(
+            text(
+                "EXISTS ("
+                "SELECT 1 FROM jsonb_array_elements_text(interview_intelligence_questions.company_labels) AS company_label(value) "
+                "WHERE lower(company_label.value) = :company_key"
+                ")"
+            )
+        ).params(company_key=company.strip().lower())
+    if stage:
+        statement = statement.where(
+            text(
+                "EXISTS ("
+                "SELECT 1 FROM jsonb_array_elements_text(interview_intelligence_questions.stages) AS stage_label(value) "
+                "WHERE lower(stage_label.value) = :stage_key"
+                ")"
+            )
+        ).params(stage_key=stage.strip().lower())
+    total = int(session.scalar(select(func.count()).select_from(statement.subquery())) or 0)
     if sort == "recent":
         ordering = (InterviewIntelligenceQuestion.last_reported_at.desc().nulls_last(), InterviewIntelligenceQuestion.frequency_score.desc())
     elif sort == "confidence":
         ordering = (InterviewIntelligenceQuestion.confidence.desc(), InterviewIntelligenceQuestion.frequency_score.desc())
     else:
         ordering = (InterviewIntelligenceQuestion.frequency_score.desc(), InterviewIntelligenceQuestion.confidence.desc())
-    items = list(session.scalars(statement.order_by(*ordering).limit(1000)))
-    if company:
-        key = company.strip().lower()
-        items = [item for item in items if any(label.lower() == key for label in (item.company_labels or []))]
-    if stage:
-        stage_key = stage.strip().lower()
-        items = [item for item in items if any(label.lower() == stage_key for label in (item.stages or []))]
-    return {"items": [_serialize_question(item) for item in items[:limit]], "total": len(items)}
+    items = list(session.scalars(statement.order_by(*ordering).limit(limit)))
+    return {"items": [_serialize_question(item) for item in items], "total": total}
 
 
 @router.get("/questions/{slug}")
@@ -523,30 +546,72 @@ def create_attempt(payload: AttemptWrite, user: User = Depends(get_current_user)
 
 @router.get("/progress")
 def progress(user: User = Depends(get_current_user), session: Session = Depends(get_session)) -> dict[str, Any]:
-    attempts = list(session.scalars(select(InterviewQuestionAttempt).where(InterviewQuestionAttempt.user_id == user.id).order_by(InterviewQuestionAttempt.created_at.desc()).limit(1000)))
-    question_ids = {item.question_id for item in attempts}
-    questions = {item.id: item for item in session.scalars(select(InterviewIntelligenceQuestion).where(InterviewIntelligenceQuestion.id.in_(question_ids)))} if question_ids else {}
-    by_track: dict[str, dict[str, int]] = {}
-    by_question: dict[str, dict[str, int | None]] = {}
-    for attempt in attempts:
-        track = questions.get(attempt.question_id).track if questions.get(attempt.question_id) else "UNKNOWN"
-        stats = by_track.setdefault(track, {"attempts": 0, "score_total": 0, "scored": 0})
-        stats["attempts"] += 1
-        question_key = str(attempt.question_id)
-        question_stats = by_question.setdefault(question_key, {"attempts": 0, "best_score": None, "latest_score": None})
-        question_stats["attempts"] = int(question_stats["attempts"] or 0) + 1
-        if question_stats["latest_score"] is None and attempt.score is not None:
-            question_stats["latest_score"] = attempt.score
-        if attempt.score is not None:
-            stats["score_total"] += attempt.score
-            stats["scored"] += 1
-            current_best = question_stats["best_score"]
-            question_stats["best_score"] = attempt.score if current_best is None else max(int(current_best), attempt.score)
-    for stats in by_track.values():
-        stats["average_score"] = round(stats["score_total"] / stats["scored"]) if stats["scored"] else 0
-        del stats["score_total"]
-        del stats["scored"]
-    return {"total_attempts": len(attempts), "by_track": by_track, "by_question": by_question}
+    question_rows = session.execute(
+        select(
+            InterviewQuestionAttempt.question_id,
+            func.count(InterviewQuestionAttempt.id).label("attempts"),
+            func.max(InterviewQuestionAttempt.score).label("best_score"),
+        )
+        .where(InterviewQuestionAttempt.user_id == user.id)
+        .group_by(InterviewQuestionAttempt.question_id)
+    ).all()
+
+    latest_ranked = (
+        select(
+            InterviewQuestionAttempt.question_id.label("question_id"),
+            InterviewQuestionAttempt.score.label("score"),
+            func.row_number()
+            .over(
+                partition_by=InterviewQuestionAttempt.question_id,
+                order_by=(InterviewQuestionAttempt.created_at.desc(), InterviewQuestionAttempt.id.desc()),
+            )
+            .label("row_number"),
+        )
+        .where(
+            InterviewQuestionAttempt.user_id == user.id,
+            InterviewQuestionAttempt.score.is_not(None),
+        )
+        .subquery()
+    )
+    latest_scores = {
+        row.question_id: row.score
+        for row in session.execute(
+            select(latest_ranked.c.question_id, latest_ranked.c.score).where(latest_ranked.c.row_number == 1)
+        )
+    }
+
+    track_rows = session.execute(
+        select(
+            InterviewIntelligenceQuestion.track,
+            func.count(InterviewQuestionAttempt.id).label("attempts"),
+            func.coalesce(func.sum(InterviewQuestionAttempt.score), 0).label("score_total"),
+            func.count(InterviewQuestionAttempt.score).label("scored"),
+        )
+        .join(
+            InterviewIntelligenceQuestion,
+            InterviewIntelligenceQuestion.id == InterviewQuestionAttempt.question_id,
+        )
+        .where(InterviewQuestionAttempt.user_id == user.id)
+        .group_by(InterviewIntelligenceQuestion.track)
+    ).all()
+
+    by_question = {
+        str(row.question_id): {
+            "attempts": int(row.attempts),
+            "best_score": int(row.best_score) if row.best_score is not None else None,
+            "latest_score": int(latest_scores[row.question_id]) if latest_scores.get(row.question_id) is not None else None,
+        }
+        for row in question_rows
+    }
+    by_track = {
+        row.track: {
+            "attempts": int(row.attempts),
+            "average_score": round(int(row.score_total) / int(row.scored)) if row.scored else 0,
+        }
+        for row in track_rows
+    }
+    total_attempts = sum(item["attempts"] for item in by_question.values())
+    return {"total_attempts": total_attempts, "by_track": by_track, "by_question": by_question}
 
 
 @router.post("/coach")

@@ -6,7 +6,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.core.operator_auth import require_operator_or_internal
-from app.interview_intelligence_models import InterviewIntelligenceQuestion
+from app.interview_intelligence_models import InterviewIntelligenceQuestion, InterviewQuestionAttempt
 from app.interview_intelligence_service import build_lifecycle, report_fingerprint, skill_is_present
 from app.main import app
 from app.models import CandidateProfile, CandidateSkill, JobSkill, User
@@ -415,3 +415,125 @@ def test_company_question_bank_filters_and_per_question_progress(client, databas
     assert refreshed["attempts"] == 2
     assert refreshed["latest_score"] == second_attempt.json()["score"]
     assert refreshed["best_score"] == max(attempt.json()["score"], second_attempt.json()["score"])
+
+
+
+def test_question_bank_filters_before_catalog_cap_and_progress_uses_full_history(client, database_url) -> None:
+    _seed(database_url, client)
+
+    app.dependency_overrides[require_operator_or_internal] = lambda: None
+    try:
+        created = client.post(
+            "/api/v1/internal/interview-intelligence/questions",
+            json={
+                "title": "Low-ranked target question",
+                "slug": "review-gap-target-question",
+                "track": "CODING",
+                "difficulty": "HARD",
+                "summary": "Clean-room target question used to prove filtering happens before catalog truncation.",
+                "prompt": "Explain how you would design and verify a bounded worker queue under sustained overload.",
+                "companies": ["Example Co"],
+                "stages": ["SCREENING"],
+                "skills": ["concurrency"],
+                "patterns": ["queue"],
+                "frequency_score": 0,
+                "published": True,
+            },
+        )
+        assert created.status_code == 201, created.text
+        question_id = created.json()["id"]
+    finally:
+        app.dependency_overrides.pop(require_operator_or_internal, None)
+
+    engine = create_engine(database_url)
+    now = datetime.now(timezone.utc)
+    with Session(engine) as session:
+        user = session.scalar(select(User).where(User.email == "a@example.com"))
+        question = session.get(InterviewIntelligenceQuestion, question_id)
+        assert user is not None and question is not None
+
+        session.add_all(
+            [
+                InterviewIntelligenceQuestion(
+                    slug=f"review-gap-distractor-{index}",
+                    title=f"High-ranked distractor {index}",
+                    track="CODING",
+                    difficulty="HARD",
+                    summary="Clean-room distractor that must not hide the target from a filtered query.",
+                    prompt="Describe a generic coding problem that is not part of the requested company or stage.",
+                    baseline_company_labels=["Other Co"],
+                    company_labels=["Other Co"],
+                    stages=["PHONE"],
+                    skills=[],
+                    patterns=[],
+                    hints=[],
+                    follow_ups=[],
+                    solution_outline=[],
+                    baseline_frequency_score=100,
+                    frequency_score=100,
+                    confidence=100,
+                    report_count=0,
+                    published=True,
+                )
+                for index in range(1001)
+            ]
+        )
+
+        attempts = []
+        for index in range(1001):
+            attempts.append(
+                InterviewQuestionAttempt(
+                    user_id=user.id,
+                    question_id=question.id,
+                    answer_text="historical practice",
+                    status="COMPLETED",
+                    score=100 if index == 0 else 10,
+                    feedback_json={},
+                    created_at=now - timedelta(seconds=1001 - index),
+                    updated_at=now - timedelta(seconds=1001 - index),
+                )
+            )
+        session.add_all(attempts)
+        session.commit()
+    engine.dispose()
+
+    filtered = client.get(
+        "/api/v1/interview-intelligence/questions",
+        params={
+            "company": "example co",
+            "stage": "screening",
+            "track": "CODING",
+            "difficulty": "HARD",
+            "limit": 10,
+        },
+    )
+    assert filtered.status_code == 200, filtered.text
+    assert filtered.json()["total"] == 1
+    assert [item["id"] for item in filtered.json()["items"]] == [question_id]
+
+    progress = client.get("/api/v1/interview-intelligence/progress")
+    assert progress.status_code == 200, progress.text
+    question_progress = progress.json()["by_question"][question_id]
+    assert progress.json()["total_attempts"] == 1001
+    assert question_progress == {
+        "attempts": 1001,
+        "best_score": 100,
+        "latest_score": 10,
+    }
+
+
+def test_future_reported_at_is_rejected_before_it_can_skew_freshness(client, database_url) -> None:
+    _seed(database_url, client)
+    response = client.post(
+        "/api/v1/interview-intelligence/reports",
+        json={
+            "company": "Example Co",
+            "role": "Data Architect",
+            "interview_stage": "SCREENING",
+            "title": "Future-dated report",
+            "body": "This report is intentionally future dated and must never influence freshness evidence.",
+            "reported_at": (datetime.now(timezone.utc) + timedelta(days=2)).isoformat(),
+        },
+    )
+    assert response.status_code == 422, response.text
+    assert "reported_at cannot be in the future" in response.text

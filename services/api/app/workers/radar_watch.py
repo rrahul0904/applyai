@@ -115,8 +115,8 @@ def run_once(settings: Settings, *, worker_id: str | None = None) -> bool:
 
 def run_worker(settings: Settings | None = None) -> None:
     settings = settings or get_settings()
-    if settings.task_queue_provider != "postgres":
-        raise RuntimeError("Radar watch worker requires TASK_QUEUE_PROVIDER=postgres")
+    if settings.task_queue_provider not in {"postgres", "sqs"}:
+        raise RuntimeError("Radar watch worker requires TASK_QUEUE_PROVIDER=postgres or sqs")
     worker_id = f"{socket.gethostname()}:{uuid.uuid4()}"
     logger.info("radar_watch_worker_started", extra={"worker_id": worker_id})
     while True:

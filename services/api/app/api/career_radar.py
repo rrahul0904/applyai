@@ -426,29 +426,44 @@ def refresh_radar_watch(
         return result
 
     cutoff = utcnow() - timedelta(days=lookback_days)
-    rows = list(
-        session.execute(
-            select(Job, CareerMatch)
-            .join(
-                CareerMatch,
-                and_(
-                    CareerMatch.job_id == Job.id,
-                    CareerMatch.user_id == user.id,
-                    CareerMatch.engine_version == ENGINE_VERSION,
-                ),
-            )
-            .where(Job.status == "ACTIVE", _freshness_filter(cutoff))
-            .order_by(CareerMatch.updated_at.asc(), Job.first_seen_at.desc(), Job.id)
-            .limit(max(100, remaining * 20))
+    scan_batch_size = max(100, remaining * 20)
+    scan_offset = 0
+    candidates: list[tuple[Job, CareerMatch]] = []
+    base_statement = (
+        select(Job, CareerMatch)
+        .join(
+            CareerMatch,
+            and_(
+                CareerMatch.job_id == Job.id,
+                CareerMatch.user_id == user.id,
+                CareerMatch.engine_version == ENGINE_VERSION,
+            ),
         )
+        .where(Job.status == "ACTIVE", _freshness_filter(cutoff))
+        .order_by(CareerMatch.updated_at.asc(), Job.first_seen_at.desc(), Job.id)
     )
 
-    rejudged = 0
-    for job, match in rows:
-        if rejudged >= remaining:
+    # Scan in stable pages before mutating any match. This prevents unchanged rows in the
+    # first page from starving materially changed jobs that sort later in a large Radar.
+    while len(candidates) < remaining:
+        rows = list(
+            session.execute(
+                base_statement.offset(scan_offset).limit(scan_batch_size)
+            )
+        )
+        if not rows:
             break
-        if not _match_needs_rejudgment(session, user=user, job=job, match=match):
-            continue
+        for job, match in rows:
+            if _match_needs_rejudgment(session, user=user, job=job, match=match):
+                candidates.append((job, match))
+                if len(candidates) >= remaining:
+                    break
+        scan_offset += len(rows)
+        if len(rows) < scan_batch_size:
+            break
+
+    rejudged = 0
+    for job, match in candidates:
         previous_model_run_id = match.model_run_id
         run = _queue_run(
             task_type="AI_DEEP_MATCH",

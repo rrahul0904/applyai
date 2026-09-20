@@ -2,7 +2,11 @@ from datetime import datetime, timedelta, timezone
 import uuid
 from types import SimpleNamespace
 
+import pytest
 from sqlalchemy import select
+
+import app.api.career_radar as career_radar
+import app.workers.radar_watch as radar_watch_worker
 
 from app.api.career_radar import (
     _bucket,
@@ -364,6 +368,73 @@ def test_due_radar_watch_runs_without_candidate_request(client):
         assert watch.last_scheduled_jobs == 1
         assert watch.next_run_at > datetime.now(timezone.utc)
         assert session.scalar(select(CareerMatch)) is not None
+
+
+def test_radar_watch_worker_accepts_sqs_provider(monkeypatch):
+    def stop_loop(*args, **kwargs):
+        raise RuntimeError("stop-loop")
+
+    monkeypatch.setattr(radar_watch_worker, "run_once", stop_loop)
+    with pytest.raises(RuntimeError, match="stop-loop"):
+        radar_watch_worker.run_worker(
+            Settings(
+                task_queue_provider="sqs",
+                sqs_queue_url="https://sqs.us-east-1.amazonaws.com/123456789012/applyai-test",
+            )
+        )
+
+
+def test_radar_watch_rejudgment_scan_reaches_beyond_first_page(monkeypatch):
+    jobs = [SimpleNamespace(id=uuid.uuid4()) for _ in range(101)]
+    matches = [SimpleNamespace(model_run_id=uuid.uuid4()) for _ in jobs]
+    changed_job_id = jobs[-1].id
+
+    class FakeSession:
+        def __init__(self):
+            self.calls = 0
+
+        def execute(self, statement):
+            self.calls += 1
+            if self.calls == 1:
+                return list(zip(jobs[:100], matches[:100]))
+            if self.calls == 2:
+                return [(jobs[-1], matches[-1])]
+            return []
+
+    fake_session = FakeSession()
+    monkeypatch.setattr(
+        career_radar,
+        "_refresh_radar_impl",
+        lambda **kwargs: {
+            "requested": 1,
+            "scheduled": 0,
+            "effective_max_jobs": 1,
+            "queue_limited": False,
+            "runs": [],
+            "lookback_days": 14,
+            "engine_version": career_radar.ENGINE_VERSION,
+        },
+    )
+    monkeypatch.setattr(
+        career_radar,
+        "_match_needs_rejudgment",
+        lambda session, *, user, job, match: job.id == changed_job_id,
+    )
+    queued_run = SimpleNamespace(id=uuid.uuid4(), status="COMPLETED")
+    monkeypatch.setattr(career_radar, "_queue_run", lambda **kwargs: queued_run)
+
+    result = career_radar.refresh_radar_watch(
+        max_jobs=1,
+        lookback_days=14,
+        user=SimpleNamespace(id=uuid.uuid4()),
+        session=fake_session,
+        settings=Settings(task_queue_provider="memory"),
+    )
+
+    assert fake_session.calls == 2
+    assert result["scheduled"] == 1
+    assert result["rejudged"] == 1
+    assert result["runs"][0]["job_id"] == str(changed_job_id)
 
 
 def test_radar_watch_rejudges_material_candidate_change(client):

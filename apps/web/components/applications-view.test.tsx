@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApplicationsView } from "@/components/applications-view";
 import { api, type ApplicationBoardItem } from "@/lib/api/client";
@@ -55,6 +55,8 @@ describe("ApplicationsView", () => {
       items: [firstItem],
       counts: { APPLIED: 1 },
       total: 1,
+      next_cursor: null,
+      returned: 1,
     });
   });
 
@@ -76,11 +78,49 @@ describe("ApplicationsView", () => {
       items: [],
       counts: {},
       total: 0,
+      next_cursor: null,
+      returned: 0,
     });
     renderApplications();
 
     expect(await screen.findByText("No active opportunities yet")).toBeDefined();
     expect(screen.getByRole("link", { name: "Explore jobs" }).getAttribute("href")).toBe("/jobs");
+  });
+
+  it("loads older opportunity-board pages using the returned cursor", async () => {
+    vi.mocked(api.applications.board)
+      .mockResolvedValueOnce({
+        items: [firstItem],
+        counts: { APPLIED: 2 },
+        total: 2,
+        next_cursor: "cursor-2",
+        returned: 1,
+      })
+      .mockResolvedValueOnce({
+        items: [{
+          ...firstItem,
+          id: "application-2",
+          job_id: "job-2",
+          job: {
+            id: "job-2",
+            title: "Data Platform Manager",
+            company_name: "Example Labs",
+            location: null,
+          },
+        }],
+        counts: { APPLIED: 2 },
+        total: 2,
+        next_cursor: null,
+        returned: 1,
+      });
+
+    renderApplications();
+    fireEvent.click(await screen.findByRole("button", { name: "Show more applications" }));
+
+    expect(await screen.findByText("Data Platform Manager")).toBeDefined();
+    await waitFor(() =>
+      expect(api.applications.board).toHaveBeenLastCalledWith(expect.anything(), "cursor-2"),
+    );
   });
 
   it("surfaces overdue opportunities and offers in the board summary", async () => {
@@ -108,6 +148,8 @@ describe("ApplicationsView", () => {
       ],
       counts: { APPLIED: 1, OFFER: 1 },
       total: 2,
+      next_cursor: null,
+      returned: 2,
     });
 
     renderApplications();

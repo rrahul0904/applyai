@@ -1,10 +1,10 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { ArrowRight, BriefcaseBusiness, CalendarDays } from "lucide-react";
 import Link from "next/link";
 import { ApplicationWorkspaceTabs } from "@/components/candidate-workspace-tabs";
-import { Badge, EmptyState, ErrorState, PageHeader, Skeleton } from "@/components/ui";
+import { Badge, Button, EmptyState, ErrorState, PageHeader, Skeleton } from "@/components/ui";
 import { api, type ApplicationBoardItem } from "@/lib/api/client";
 import { formatDate, titleCase } from "@/lib/utils";
 
@@ -31,12 +31,16 @@ function trackerLine(item: ApplicationBoardItem) {
 }
 
 export function ApplicationsView() {
-  const board = useQuery({
+  const board = useInfiniteQuery({
     queryKey: ["applications", "board"],
-    queryFn: ({ signal }) => api.applications.board(signal),
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ signal, pageParam }) => api.applications.board(signal, pageParam),
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
   });
 
-  const items = board.data?.items ?? [];
+  const pages = board.data?.pages ?? [];
+  const summary = pages[0];
+  const items = pages.flatMap((page) => page.items);
   const grouped = stageOrder
     .map((stage) => [stage, items.filter((item) => item.current_status === stage)] as const)
     .filter(([, rows]) => rows.length > 0);
@@ -59,9 +63,9 @@ export function ApplicationsView() {
       ) : items.length ? (
         <div className="list-stack" aria-label="Opportunity pipeline board">
           <div className="cx-application-status-strip">
-            <span>{board.data?.total ?? 0} opportunities</span>
+            <span>{summary?.total ?? 0} opportunities</span>
             <span>{items.filter((item) => item.overdue).length} overdue deadlines</span>
-            <span>{board.data?.counts.OFFER ?? 0} offers</span>
+            <span>{summary?.counts.OFFER ?? 0} offers</span>
           </div>
           {grouped.map(([stage, rows]) => (
             <section className="ui-card" key={stage}>
@@ -103,6 +107,18 @@ export function ApplicationsView() {
               </div>
             </section>
           ))}
+          {board.hasNextPage ? (
+            <div className="button-row">
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={board.isFetchingNextPage}
+                onClick={() => board.fetchNextPage()}
+              >
+                {board.isFetchingNextPage ? "Loading…" : "Show more applications"}
+              </Button>
+            </div>
+          ) : null}
         </div>
       ) : (
         <div className="ui-card">

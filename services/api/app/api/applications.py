@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -232,9 +232,12 @@ def list_applications(
 
 @router.get("/board", response_model=ApplicationBoardResponse)
 def get_application_board(
+    cursor: str | None = Query(default=None, max_length=500),
+    limit: int = Query(default=100, ge=1, le=100),
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> ApplicationBoardResponse:
+    cursor_at, cursor_id = decode_cursor(cursor)
     first_location = (
         select(JobLocation.location_text)
         .where(JobLocation.job_id == Job.id)
@@ -242,21 +245,32 @@ def get_application_board(
         .limit(1)
         .scalar_subquery()
     )
+    statement = (
+        select(
+            Application,
+            Job.title,
+            Company.canonical_name,
+            first_location.label("location"),
+        )
+        .join(Job, Job.id == Application.job_id)
+        .join(Company, Company.id == Job.company_id)
+        .where(Application.user_id == user.id)
+    )
+    if cursor_at and cursor_id:
+        statement = statement.where(
+            or_(
+                Application.updated_at < cursor_at,
+                and_(Application.updated_at == cursor_at, Application.id < cursor_id),
+            )
+        )
     rows = list(
         session.execute(
-            select(
-                Application,
-                Job.title,
-                Company.canonical_name,
-                first_location.label("location"),
-            )
-            .join(Job, Job.id == Application.job_id)
-            .join(Company, Company.id == Job.company_id)
-            .where(Application.user_id == user.id)
-            .order_by(Application.updated_at.desc(), Application.id.desc())
-            .limit(500)
+            statement.order_by(Application.updated_at.desc(), Application.id.desc()).limit(limit + 1)
         )
     )
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+
     application_ids = [row[0].id for row in rows]
     tracker_events: dict[uuid.UUID, ApplicationEvent] = {}
     if application_ids:
@@ -270,9 +284,17 @@ def get_application_board(
             if isinstance(event.metadata_json, dict) and event.metadata_json.get("event_type") == TRACKER_EVENT_TYPE:
                 tracker_events[event.application_id] = event
 
+    counts = {
+        str(stage): int(count)
+        for stage, count in session.execute(
+            select(Application.current_status, func.count(Application.id))
+            .where(Application.user_id == user.id)
+            .group_by(Application.current_status)
+        )
+    }
+    total = sum(counts.values())
     now = datetime.now(timezone.utc)
     items: list[ApplicationBoardItem] = []
-    counts: dict[str, int] = {}
     for application, title, company_name, location in rows:
         tracker = _tracker_from_event(tracker_events.get(application.id))
         deadline = tracker.deadline_at
@@ -282,7 +304,6 @@ def get_application_board(
             and application.current_status not in TERMINAL_STATUSES
             and application.current_status != "OFFER"
         )
-        counts[application.current_status] = counts.get(application.current_status, 0) + 1
         items.append(
             ApplicationBoardItem(
                 id=application.id,
@@ -300,7 +321,13 @@ def get_application_board(
                 overdue=overdue,
             )
         )
-    return ApplicationBoardResponse(items=items, counts=counts, total=len(items))
+    return ApplicationBoardResponse(
+        items=items,
+        counts=counts,
+        total=total,
+        next_cursor=encode_cursor(rows[-1][0]) if has_more and rows else None,
+        returned=len(items),
+    )
 
 
 @router.get("/{application_id}", response_model=ApplicationResponse)

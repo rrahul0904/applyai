@@ -118,6 +118,7 @@ class ReportWrite(BaseModel):
 
 
 class CommunityPostWrite(BaseModel):
+    question_id: uuid.UUID | None = None
     company: str | None = Field(default=None, max_length=240)
     category: Literal["INTERVIEW_EXPERIENCE", "COMPENSATION", "CAREER_DEVELOPMENT", "COMPANY_CULTURE", "OTHER"] = "INTERVIEW_EXPERIENCE"
     title: str = Field(min_length=5, max_length=320)
@@ -514,6 +515,81 @@ def get_question(slug: str, _user: User = Depends(get_current_user), session: Se
     return _serialize_question(item)
 
 
+@router.get("/questions/{slug}/submissions")
+def question_submissions(
+    slug: str,
+    limit: int = Query(default=25, ge=1, le=100),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    question = session.scalar(
+        select(InterviewIntelligenceQuestion).where(
+            InterviewIntelligenceQuestion.slug == slug,
+            InterviewIntelligenceQuestion.published.is_(True),
+        )
+    )
+    if question is None:
+        raise HTTPException(status_code=404, detail="Interview question not found")
+
+    attempt_filter = (
+        InterviewQuestionAttempt.user_id == user.id,
+        InterviewQuestionAttempt.question_id == question.id,
+    )
+    total = int(
+        session.scalar(
+            select(func.count()).select_from(InterviewQuestionAttempt).where(*attempt_filter)
+        )
+        or 0
+    )
+    scored = int(
+        session.scalar(
+            select(func.count(InterviewQuestionAttempt.score)).where(*attempt_filter)
+        )
+        or 0
+    )
+    average_score = session.scalar(
+        select(func.avg(InterviewQuestionAttempt.score)).where(*attempt_filter)
+    )
+    strong_attempts = int(
+        session.scalar(
+            select(func.count())
+            .select_from(InterviewQuestionAttempt)
+            .where(*attempt_filter, InterviewQuestionAttempt.score >= 80)
+        )
+        or 0
+    )
+    attempts = list(
+        session.scalars(
+            select(InterviewQuestionAttempt)
+            .where(*attempt_filter)
+            .order_by(
+                InterviewQuestionAttempt.created_at.desc(),
+                InterviewQuestionAttempt.id.desc(),
+            )
+            .limit(limit)
+        )
+    )
+    return {
+        "question_id": str(question.id),
+        "slug": question.slug,
+        "total": total,
+        "scored": scored,
+        "average_score": round(float(average_score), 1) if average_score is not None else None,
+        "strong_attempts": strong_attempts,
+        "items": [
+            {
+                "id": str(item.id),
+                "status": item.status,
+                "score": item.score,
+                "answer_excerpt": ((item.answer_text or item.code_text or "")[:500] or None),
+                "feedback": item.feedback_json,
+                "created_at": item.created_at,
+            }
+            for item in attempts
+        ],
+    }
+
+
 @router.get("/companies")
 def company_collections(_user: User = Depends(get_current_user), session: Session = Depends(get_session)) -> list[dict[str, Any]]:
     items = list(session.scalars(select(InterviewIntelligenceQuestion).where(InterviewIntelligenceQuestion.published.is_(True)).limit(2000)))
@@ -639,6 +715,7 @@ def submit_report(payload: ReportWrite, user: User = Depends(get_current_user), 
 def list_community(
     company: str | None = None,
     category: str | None = None,
+    question_id: uuid.UUID | None = Query(default=None),
     _user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> list[dict[str, Any]]:
@@ -647,17 +724,49 @@ def list_community(
         statement = statement.where(InterviewCommunityPost.company_label.ilike(company))
     if category:
         statement = statement.where(InterviewCommunityPost.category == category)
+    if question_id:
+        statement = statement.where(InterviewCommunityPost.question_id == question_id)
     items = list(session.scalars(statement.order_by(InterviewCommunityPost.created_at.desc()).limit(100)))
-    return [{"id": str(item.id), "company": item.company_label, "category": item.category, "title": item.title, "body": item.body, "replies": item.replies_json, "reaction_count": len(item.reaction_user_ids or []), "created_at": item.created_at} for item in items]
+    return [
+        {
+            "id": str(item.id),
+            "question_id": str(item.question_id) if item.question_id else None,
+            "company": item.company_label,
+            "category": item.category,
+            "title": item.title,
+            "body": item.body,
+            "replies": item.replies_json,
+            "reaction_count": len(item.reaction_user_ids or []),
+            "created_at": item.created_at,
+        }
+        for item in items
+    ]
 
 
 @router.post("/community", status_code=status.HTTP_201_CREATED)
 def create_community_post(payload: CommunityPostWrite, user: User = Depends(get_current_user), session: Session = Depends(get_session)) -> dict[str, Any]:
-    item = InterviewCommunityPost(user_id=user.id, company_label=payload.company, category=payload.category, title=payload.title, body=payload.body)
+    if payload.question_id is not None:
+        question = session.get(InterviewIntelligenceQuestion, payload.question_id)
+        if question is None or not question.published:
+            raise HTTPException(status_code=404, detail="Interview question not found")
+    item = InterviewCommunityPost(
+        user_id=user.id,
+        question_id=payload.question_id,
+        company_label=payload.company,
+        category=payload.category,
+        title=payload.title,
+        body=payload.body,
+    )
     session.add(item)
     session.commit()
     session.refresh(item)
-    return {"id": str(item.id), "title": item.title, "reaction_count": 0, "replies": []}
+    return {
+        "id": str(item.id),
+        "question_id": str(item.question_id) if item.question_id else None,
+        "title": item.title,
+        "reaction_count": 0,
+        "replies": [],
+    }
 
 
 @router.post("/community/{post_id}/replies", status_code=status.HTTP_201_CREATED)

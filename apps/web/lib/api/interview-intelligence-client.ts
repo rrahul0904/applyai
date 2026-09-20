@@ -25,6 +25,35 @@ export type InterviewProgress = {
   by_question: Record<string, { attempts: number; best_score: number | null; latest_score: number | null }>;
 };
 
+export type InterviewSubmissionHistory = {
+  question_id: string;
+  slug: string;
+  total: number;
+  scored: number;
+  average_score: number | null;
+  strong_attempts: number;
+  items: Array<{
+    id: string;
+    status: string;
+    score: number | null;
+    answer_excerpt: string | null;
+    feedback: Record<string, unknown>;
+    created_at: string;
+  }>;
+};
+
+export type InterviewCommunityPost = {
+  id: string;
+  question_id: string | null;
+  company: string | null;
+  category: string;
+  title: string;
+  body: string;
+  replies: Array<{ id: string; user_id: string; body: string; created_at: string }>;
+  reaction_count: number;
+  created_at: string;
+};
+
 export type InterviewLifecyclePhase = {
   phase_number: number;
   phase_type: string;
@@ -81,11 +110,15 @@ export const interviewIntelligenceApi = {
   createStory: (payload: Record<string, unknown>) => request<Record<string, unknown>>("/stories", { method: "POST", body: JSON.stringify(payload) }),
   questions: (params = "", signal?: AbortSignal) => request<{ items: InterviewQuestion[]; total: number }>(`/questions${params ? `?${params}` : ""}`, { signal }),
   question: (slug: string, signal?: AbortSignal) => request<InterviewQuestion>(`/questions/${encodeURIComponent(slug)}`, { signal }),
+  submissions: (slug: string, signal?: AbortSignal) => request<InterviewSubmissionHistory>(`/questions/${encodeURIComponent(slug)}/submissions`, { signal }),
   companies: (signal?: AbortSignal) => request<Array<{ name: string; slug: string; question_count: number; report_count: number; tracks: Record<string, number>; stages: Record<string, number> }>>("/companies", { signal }),
   progress: (signal?: AbortSignal) => request<InterviewProgress>("/progress", { signal }),
   attempt: (payload: Record<string, unknown>) => request<{ id: string; status: string; score: number; feedback: Record<string, unknown> }>("/attempts", { method: "POST", body: JSON.stringify(payload) }),
   coach: (questionId: string, answer: string, hintLevel: number) => request<{ level: number; hint: string; next_level: number }>("/coach", { method: "POST", body: JSON.stringify({ question_id: questionId, answer, hint_level: hintLevel }) }),
   submitReport: (payload: Record<string, unknown>) => request<Record<string, unknown>>("/reports", { method: "POST", body: JSON.stringify(payload) }),
-  community: (signal?: AbortSignal) => request<Array<Record<string, unknown>>>("/community", { signal }),
-  createCommunity: (payload: Record<string, unknown>) => request<Record<string, unknown>>("/community", { method: "POST", body: JSON.stringify(payload) }),
+  community: (questionId?: string, signal?: AbortSignal) => {
+    const params = questionId ? `?question_id=${encodeURIComponent(questionId)}` : "";
+    return request<InterviewCommunityPost[]>(`/community${params}`, { signal });
+  },
+  createCommunity: (payload: Record<string, unknown>) => request<InterviewCommunityPost>("/community", { method: "POST", body: JSON.stringify(payload) }),
 };

@@ -69,10 +69,47 @@ export type ResumeUploadIntent = components["schemas"]["ResumeUploadIntentRespon
 export type Job = components["schemas"]["JobSummary"];
 export type JobDetail = components["schemas"]["JobDetail"];
 export type JobPage = components["schemas"]["JobSearchPage"];
-export type Application = components["schemas"]["ApplicationResponse"];
+export type ApplicationTracker = {
+  deadline_at: string | null;
+  interview_at: string | null;
+  next_action_at: string | null;
+  offer_minimum: number | null;
+  offer_maximum: number | null;
+  offer_currency: string;
+  offer_notes: string | null;
+  source_channel: string | null;
+  priority: "LOW" | "MEDIUM" | "HIGH";
+  updated_at: string | null;
+};
+export type Application = components["schemas"]["ApplicationResponse"] & {
+  tracker?: ApplicationTracker;
+};
 export type ApplicationNote = components["schemas"]["ApplicationNoteResponse"];
 export type ApplicationListItem = components["schemas"]["ApplicationListItem"];
 export type ApplicationListPage = components["schemas"]["ApplicationListPage"];
+export type ApplicationBoardItem = ApplicationListItem & {
+  tracker: ApplicationTracker;
+  overdue: boolean;
+};
+export type ApplicationBoardResponse = {
+  items: ApplicationBoardItem[];
+  counts: Record<string, number>;
+  total: number;
+};
+export type ApplicationTrackerWrite = Partial<
+  Pick<
+    ApplicationTracker,
+    | "deadline_at"
+    | "interview_at"
+    | "next_action_at"
+    | "offer_minimum"
+    | "offer_maximum"
+    | "offer_currency"
+    | "offer_notes"
+    | "source_channel"
+    | "priority"
+  >
+>;
 
 export type CareerTaskPath =
   | "deep-match"
@@ -345,6 +382,8 @@ export const api = {
       const suffix = params.size ? `?${params.toString()}` : "";
       return request<ApplicationListPage>(`/applications${suffix}`, { signal });
     },
+    board: (signal?: AbortSignal) =>
+      request<ApplicationBoardResponse>("/applications/board", { signal }),
     detail: (id: string, signal?: AbortSignal) =>
       request<Application>(`/applications/${id}`, { signal }),
     create: (jobId: string) =>
@@ -370,6 +409,11 @@ export const api = {
     deleteNote: (id: string, noteId: string) =>
       request<void>(`/applications/${id}/notes/${noteId}`, {
         method: "DELETE",
+      }),
+    updateTracker: (id: string, payload: ApplicationTrackerWrite) =>
+      request<ApplicationTracker>(`/applications/${id}/tracker`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
       }),
   },
   careerV2: {

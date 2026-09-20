@@ -473,14 +473,25 @@ def list_questions(
         ordering = (InterviewIntelligenceQuestion.confidence.desc(), InterviewIntelligenceQuestion.frequency_score.desc())
     else:
         ordering = (InterviewIntelligenceQuestion.frequency_score.desc(), InterviewIntelligenceQuestion.confidence.desc())
-    items = list(session.scalars(statement.order_by(*ordering).limit(1000)))
     if company:
-        key = company.strip().lower()
-        items = [item for item in items if any(label.lower() == key for label in (item.company_labels or []))]
+        statement = statement.where(
+            func.jsonb_path_exists(
+                InterviewIntelligenceQuestion.company_labels,
+                '$[*] ? (@.type() == "string" && @ like_regex $value flag "i")',
+                func.jsonb_build_object("value", f"^{company.strip()}$"),
+            )
+        )
     if stage:
-        stage_key = stage.strip().lower()
-        items = [item for item in items if any(label.lower() == stage_key for label in (item.stages or []))]
-    return {"items": [_serialize_question(item) for item in items[:limit]], "total": len(items)}
+        statement = statement.where(
+            func.jsonb_path_exists(
+                InterviewIntelligenceQuestion.stages,
+                '$[*] ? (@.type() == "string" && @ like_regex $value flag "i")',
+                func.jsonb_build_object("value", f"^{stage.strip()}$"),
+            )
+        )
+    total = int(session.scalar(select(func.count()).select_from(statement.subquery())) or 0)
+    items = list(session.scalars(statement.order_by(*ordering).limit(limit)))
+    return {"items": [_serialize_question(item) for item in items], "total": total}
 
 
 @router.get("/questions/{slug}")
@@ -523,7 +534,7 @@ def create_attempt(payload: AttemptWrite, user: User = Depends(get_current_user)
 
 @router.get("/progress")
 def progress(user: User = Depends(get_current_user), session: Session = Depends(get_session)) -> dict[str, Any]:
-    attempts = list(session.scalars(select(InterviewQuestionAttempt).where(InterviewQuestionAttempt.user_id == user.id).order_by(InterviewQuestionAttempt.created_at.desc()).limit(1000)))
+    attempts = list(session.scalars(select(InterviewQuestionAttempt).where(InterviewQuestionAttempt.user_id == user.id).order_by(InterviewQuestionAttempt.created_at.desc())))
     question_ids = {item.question_id for item in attempts}
     questions = {item.id: item for item in session.scalars(select(InterviewIntelligenceQuestion).where(InterviewIntelligenceQuestion.id.in_(question_ids)))} if question_ids else {}
     by_track: dict[str, dict[str, int]] = {}
@@ -559,6 +570,12 @@ def coach(payload: CoachWrite, _user: User = Depends(get_current_user), session:
 
 @router.post("/reports", status_code=status.HTTP_201_CREATED)
 def submit_report(payload: ReportWrite, user: User = Depends(get_current_user), session: Session = Depends(get_session)) -> dict[str, Any]:
+    if payload.reported_at is not None:
+        reported_at = payload.reported_at
+        if reported_at.tzinfo is None:
+            reported_at = reported_at.replace(tzinfo=timezone.utc)
+        if reported_at > datetime.now(timezone.utc) + timedelta(minutes=5):
+            raise HTTPException(status_code=422, detail="reported_at cannot be in the future")
     fingerprint = report_fingerprint(company=payload.company, role=payload.role, stage=payload.interview_stage, body=payload.body)
     existing = session.scalar(select(InterviewIntelligenceReport).where(InterviewIntelligenceReport.fingerprint == fingerprint))
     if existing is not None:

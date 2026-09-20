@@ -23,6 +23,7 @@ vi.mock("@/lib/api/client", () => ({
       updateStatus: vi.fn(),
       addNote: vi.fn(),
       deleteNote: vi.fn(),
+      updateTracker: vi.fn(),
     },
     jobs: { detail: vi.fn() },
   },
@@ -48,6 +49,18 @@ const application = {
       created_at: "2026-07-21T00:00:00Z",
     },
   ],
+  tracker: {
+    deadline_at: null,
+    interview_at: null,
+    next_action_at: null,
+    offer_minimum: null,
+    offer_maximum: null,
+    offer_currency: "USD",
+    offer_notes: null,
+    source_channel: null,
+    priority: "MEDIUM",
+    updated_at: null,
+  },
   notes: [
     {
       id: "note-1",
@@ -109,6 +122,11 @@ describe("ApplicationDetailView", () => {
       updated_at: "2026-07-28T00:00:00Z",
     });
     vi.mocked(api.applications.deleteNote).mockResolvedValue(undefined);
+    vi.mocked(api.applications.updateTracker).mockResolvedValue({
+      ...application.tracker!,
+      priority: "HIGH",
+      source_channel: "Referral",
+    });
   });
 
   it("renders timeline and persisted notes", async () => {
@@ -127,6 +145,22 @@ describe("ApplicationDetailView", () => {
 
     await waitFor(() => expect(api.applications.updateStatus).toHaveBeenCalledWith("application-1", "INTERVIEW"));
     expect(successMock).toHaveBeenCalledWith("Application status updated");
+  });
+
+  it("persists structured opportunity tracking details", async () => {
+    renderApplicationDetail();
+
+    fireEvent.change(await screen.findByLabelText("Priority"), { target: { value: "HIGH" } });
+    fireEvent.change(screen.getByLabelText("Source"), { target: { value: "Referral" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save opportunity details" }));
+
+    await waitFor(() =>
+      expect(api.applications.updateTracker).toHaveBeenCalledWith(
+        "application-1",
+        expect.objectContaining({ priority: "HIGH", source_channel: "Referral" }),
+      ),
+    );
+    expect(successMock).toHaveBeenCalledWith("Opportunity details updated");
   });
 
   it("adds and deletes private notes through application mutations", async () => {

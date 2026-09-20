@@ -90,6 +90,8 @@ class Settings(BaseSettings):
     postgres_task_max_attempts: int = Field(default=5, ge=1, le=100)
     postgres_task_retry_base_seconds: int = Field(default=5, ge=1, le=300)
     postgres_worker_poll_seconds: float = Field(default=1.0, ge=0.1, le=30.0)
+    radar_watch_poll_seconds: float = Field(default=30.0, ge=1.0, le=300.0)
+    radar_watch_lease_seconds: int = Field(default=300, ge=60, le=3600)
     request_triggered_tasks_enabled: bool = False
     request_triggered_task_limit: int = Field(default=1, ge=1, le=5)
     worker_drain_secret: str | None = None

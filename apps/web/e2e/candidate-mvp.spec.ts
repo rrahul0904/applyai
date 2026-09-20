@@ -78,6 +78,25 @@ test("candidate MVP persists resume, profile, saved job, application, status, an
   await expect(page.getByRole("heading", { name: "Opportunities worth inspecting" })).toBeVisible();
   await captureDemo(page, "08-dashboard");
 
+  await page.goto("/matches");
+  await expect(page.getByText("ApplyAI Job Radar", { exact: true })).toBeVisible();
+  const watchButton = page.getByRole("button", { name: /Enable daily watch|Pause daily watch/ });
+  await expect(watchButton).toBeVisible();
+  if ((await watchButton.textContent())?.includes("Enable")) {
+    await watchButton.click();
+    await expect(page.getByRole("button", { name: "Pause daily watch" })).toBeVisible();
+    await expect(page.getByText("Daily watch on", { exact: true })).toBeVisible();
+  }
+  await page.getByRole("button", { name: "Pause daily watch" }).click();
+  await expect(page.getByRole("button", { name: "Enable daily watch" })).toBeVisible();
+  await expect(page.getByText("Daily watch paused", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Enable daily watch" }).click();
+  await expect(page.getByRole("button", { name: "Pause daily watch" })).toBeVisible();
+  await expect(page.getByText("Daily watch on", { exact: true })).toBeVisible();
+
+  await page.goto("/dashboard");
+
   await page.goto("/jobs");
   await page.getByLabel("Search jobs").fill("Data Analyst");
   await page.waitForURL(

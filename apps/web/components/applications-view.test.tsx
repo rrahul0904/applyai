@@ -1,12 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApplicationsView } from "@/components/applications-view";
 import { api } from "@/lib/api/client";
 
 vi.mock("@/lib/api/client", () => ({
   api: {
-    applications: { list: vi.fn() },
+    applications: { board: vi.fn() },
     jobs: { detail: vi.fn() },
   },
 }));
@@ -34,33 +34,48 @@ const firstItem = {
     company_name: "Northstar Health",
     location: "Boston, MA",
   },
+  tracker: {
+    deadline_at: "2026-08-01T17:00:00Z",
+    interview_at: null,
+    next_action_at: "2026-07-29T13:00:00Z",
+    offer_minimum: null,
+    offer_maximum: null,
+    offer_currency: "USD",
+    offer_notes: null,
+    source_channel: "Referral",
+    priority: "HIGH",
+    updated_at: "2026-07-28T00:00:00Z",
+  },
+  overdue: false,
 };
 
 describe("ApplicationsView", () => {
   beforeEach(() => {
-    vi.mocked(api.applications.list).mockResolvedValue({
+    vi.mocked(api.applications.board).mockResolvedValue({
       items: [firstItem],
-      next_cursor: null,
-      returned: 1,
+      counts: { APPLIED: 1 },
+      total: 1,
     });
   });
 
-  it("renders list-summary data without fetching each job detail", async () => {
+  it("renders the stage-first opportunity board without fetching each job detail", async () => {
     renderApplications();
 
     expect(await screen.findByText("Product Operations Manager")).toBeDefined();
     expect(screen.getByText("Northstar Health · Boston, MA")).toBeDefined();
-    expect(screen.getByText("Applied")).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Applied" })).toBeDefined();
+    expect(screen.getByText("High")).toBeDefined();
+    expect(screen.getByText(/Referral/)).toBeDefined();
 
-    await waitFor(() => expect(api.applications.list).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.applications.board).toHaveBeenCalledTimes(1));
     expect(api.jobs.detail).not.toHaveBeenCalled();
   });
 
   it("renders the persisted opportunity empty state when no active pursuits exist", async () => {
-    vi.mocked(api.applications.list).mockResolvedValue({
+    vi.mocked(api.applications.board).mockResolvedValue({
       items: [],
-      next_cursor: null,
-      returned: 0,
+      counts: {},
+      total: 0,
     });
     renderApplications();
 
@@ -68,31 +83,38 @@ describe("ApplicationsView", () => {
     expect(screen.getByRole("link", { name: "Explore jobs" }).getAttribute("href")).toBe("/jobs");
   });
 
-  it("loads the next bounded page using the returned cursor", async () => {
-    vi.mocked(api.applications.list)
-      .mockResolvedValueOnce({ items: [firstItem], next_cursor: "cursor-2", returned: 1 })
-      .mockResolvedValueOnce({
-        items: [{
+  it("surfaces overdue opportunities and offers in the board summary", async () => {
+    vi.mocked(api.applications.board).mockResolvedValue({
+      items: [
+        { ...firstItem, overdue: true },
+        {
           ...firstItem,
           id: "application-2",
           job_id: "job-2",
-          current_status: "INTERVIEW",
+          current_status: "OFFER",
           job: {
             id: "job-2",
             title: "Data Platform Manager",
             company_name: "Example Labs",
             location: null,
           },
-        }],
-        next_cursor: null,
-        returned: 1,
-      });
+          tracker: {
+            ...firstItem.tracker,
+            priority: "MEDIUM",
+            offer_minimum: 180000,
+            offer_maximum: 210000,
+          },
+        },
+      ],
+      counts: { APPLIED: 1, OFFER: 1 },
+      total: 2,
+    });
 
     renderApplications();
-    fireEvent.click(await screen.findByRole("button", { name: "Show more applications" }));
 
-    expect(await screen.findByText("Data Platform Manager")).toBeDefined();
-    await waitFor(() => expect(api.applications.list).toHaveBeenLastCalledWith(expect.anything(), "cursor-2"));
-    expect(api.jobs.detail).not.toHaveBeenCalled();
+    expect(await screen.findByText("2 opportunities")).toBeDefined();
+    expect(screen.getByText("1 overdue deadlines")).toBeDefined();
+    expect(screen.getByText("1 offers")).toBeDefined();
+    expect(screen.getByText("Data Platform Manager")).toBeDefined();
   });
 });

@@ -537,3 +537,111 @@ def test_future_reported_at_is_rejected_before_it_can_skew_freshness(client, dat
     )
     assert response.status_code == 422, response.text
     assert "reported_at cannot be in the future" in response.text
+
+
+
+def test_question_workspace_submission_history_and_discussion(client, database_url) -> None:
+    _seed(database_url, client)
+
+    app.dependency_overrides[require_operator_or_internal] = lambda: None
+    try:
+        created = client.post(
+            "/api/v1/internal/interview-intelligence/questions",
+            json={
+                "title": "Design a resilient iterator service",
+                "slug": "test-question-workspace",
+                "track": "CODING",
+                "difficulty": "MEDIUM",
+                "summary": "Clean-room workspace question used to certify submissions and discussion.",
+                "prompt": "Design an iterator-like service and explain correctness, complexity, edge cases, and verification.",
+                "companies": ["Example Co"],
+                "stages": ["SCREENING"],
+                "skills": ["complexity", "testing"],
+                "patterns": ["iterator"],
+                "hints": ["Define the state and invariants first."],
+                "follow_ups": ["How would you make the iterator restartable?"],
+                "solution_outline": ["Define state", "Establish invariants", "Analyze complexity", "Test boundaries"],
+                "frequency_score": 25,
+                "published": True,
+            },
+        )
+        assert created.status_code == 201, created.text
+        question = created.json()
+    finally:
+        app.dependency_overrides.pop(require_operator_or_internal, None)
+
+    first = client.post(
+        "/api/v1/interview-intelligence/attempts",
+        json={
+            "question_id": question["id"],
+            "answer_text": "Define iterator state, preserve invariants, handle edge cases, test boundaries, and analyze complexity.",
+        },
+    )
+    assert first.status_code == 201, first.text
+
+    second = client.post(
+        "/api/v1/interview-intelligence/attempts",
+        json={
+            "question_id": question["id"],
+            "answer_text": "iterator state",
+        },
+    )
+    assert second.status_code == 201, second.text
+
+    submissions = client.get(
+        f"/api/v1/interview-intelligence/questions/{question['slug']}/submissions",
+        params={"limit": 1},
+    )
+    assert submissions.status_code == 200, submissions.text
+    submission_payload = submissions.json()
+    assert submission_payload["question_id"] == question["id"]
+    assert submission_payload["total"] == 2
+    assert submission_payload["scored"] == 2
+    assert submission_payload["average_score"] is not None
+    assert submission_payload["strong_attempts"] in {0, 1, 2}
+    assert len(submission_payload["items"]) == 1
+    assert submission_payload["items"][0]["score"] == second.json()["score"]
+    assert submission_payload["items"][0]["answer_excerpt"] == "iterator state"
+
+    general_post = client.post(
+        "/api/v1/interview-intelligence/community",
+        json={
+            "company": "Example Co",
+            "category": "INTERVIEW_EXPERIENCE",
+            "title": "General interview note",
+            "body": "This is a general candidate community post and is not scoped to a single question.",
+        },
+    )
+    assert general_post.status_code == 201, general_post.text
+    assert general_post.json()["question_id"] is None
+
+    discussion_post = client.post(
+        "/api/v1/interview-intelligence/community",
+        json={
+            "question_id": question["id"],
+            "company": "Example Co",
+            "category": "INTERVIEW_EXPERIENCE",
+            "title": "Iterator edge-case discussion",
+            "body": "I would explicitly test exhaustion, boundary transitions, and complexity before optimizing the implementation.",
+        },
+    )
+    assert discussion_post.status_code == 201, discussion_post.text
+    assert discussion_post.json()["question_id"] == question["id"]
+
+    discussion = client.get(
+        "/api/v1/interview-intelligence/community",
+        params={"question_id": question["id"]},
+    )
+    assert discussion.status_code == 200, discussion.text
+    assert [item["id"] for item in discussion.json()] == [discussion_post.json()["id"]]
+    assert discussion.json()[0]["question_id"] == question["id"]
+
+    missing_question = client.post(
+        "/api/v1/interview-intelligence/community",
+        json={
+            "question_id": "00000000-0000-0000-0000-000000000001",
+            "title": "Missing question",
+            "body": "This post must be rejected because the referenced interview question does not exist.",
+        },
+    )
+    assert missing_question.status_code == 404, missing_question.text

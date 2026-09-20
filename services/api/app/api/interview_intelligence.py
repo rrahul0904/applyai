@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -136,6 +136,7 @@ class QuestionAdminWrite(BaseModel):
     summary: str = Field(min_length=20, max_length=10_000)
     prompt: str = Field(min_length=20, max_length=30_000)
     companies: list[str] = Field(default_factory=list, max_length=50)
+    stages: list[str] = Field(default_factory=list, max_length=20)
     skills: list[str] = Field(default_factory=list, max_length=50)
     patterns: list[str] = Field(default_factory=list, max_length=50)
     hints: list[str] = Field(default_factory=list, max_length=20)
@@ -211,6 +212,7 @@ def _serialize_question(item: InterviewIntelligenceQuestion) -> dict[str, Any]:
         "summary": item.summary,
         "prompt": item.prompt,
         "companies": item.company_labels or [],
+        "stages": item.stages or [],
         "skills": item.skills or [],
         "patterns": item.patterns or [],
         "hints": item.hints or [],
@@ -273,6 +275,10 @@ def capabilities() -> dict[str, Any]:
             "question_bank": True,
             "company_collections": True,
             "recency_confidence": True,
+            "company_question_bank_filters": True,
+            "interview_stage_filter": True,
+            "freshness_sort": True,
+            "per_question_progress": True,
             "durable_attempts": True,
             "staged_coaching": True,
             "candidate_reports": True,
@@ -436,6 +442,9 @@ def list_questions(
     company: str | None = Query(default=None, max_length=240),
     track: str | None = None,
     difficulty: str | None = None,
+    stage: str | None = Query(default=None, max_length=120),
+    reported_within_days: int | None = Query(default=None, ge=1, le=730),
+    sort: Literal["frequency", "recent", "confidence"] = "frequency",
     min_confidence: int = Query(default=0, ge=0, le=100),
     limit: int = Query(default=50, ge=1, le=100),
     _user: User = Depends(get_current_user),
@@ -452,13 +461,25 @@ def list_questions(
         statement = statement.where(InterviewIntelligenceQuestion.difficulty == difficulty)
     if min_confidence:
         statement = statement.where(InterviewIntelligenceQuestion.confidence >= min_confidence)
+    if reported_within_days:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=reported_within_days)
+        statement = statement.where(InterviewIntelligenceQuestion.last_reported_at >= cutoff)
     if q:
         pattern = f"%{q.strip()}%"
         statement = statement.where(or_(InterviewIntelligenceQuestion.title.ilike(pattern), InterviewIntelligenceQuestion.summary.ilike(pattern), InterviewIntelligenceQuestion.prompt.ilike(pattern)))
-    items = list(session.scalars(statement.order_by(InterviewIntelligenceQuestion.frequency_score.desc(), InterviewIntelligenceQuestion.confidence.desc()).limit(1000)))
+    if sort == "recent":
+        ordering = (InterviewIntelligenceQuestion.last_reported_at.desc().nulls_last(), InterviewIntelligenceQuestion.frequency_score.desc())
+    elif sort == "confidence":
+        ordering = (InterviewIntelligenceQuestion.confidence.desc(), InterviewIntelligenceQuestion.frequency_score.desc())
+    else:
+        ordering = (InterviewIntelligenceQuestion.frequency_score.desc(), InterviewIntelligenceQuestion.confidence.desc())
+    items = list(session.scalars(statement.order_by(*ordering).limit(1000)))
     if company:
         key = company.strip().lower()
         items = [item for item in items if any(label.lower() == key for label in (item.company_labels or []))]
+    if stage:
+        stage_key = stage.strip().lower()
+        items = [item for item in items if any(label.lower() == stage_key for label in (item.stages or []))]
     return {"items": [_serialize_question(item) for item in items[:limit]], "total": len(items)}
 
 
@@ -476,11 +497,13 @@ def company_collections(_user: User = Depends(get_current_user), session: Sessio
     stats: dict[str, dict[str, Any]] = {}
     for item in items:
         for company in item.company_labels or []:
-            entry = stats.setdefault(company, {"name": company, "slug": slugify(company), "question_count": 0, "report_count": 0, "tracks": Counter()})
+            entry = stats.setdefault(company, {"name": company, "slug": slugify(company), "question_count": 0, "report_count": 0, "tracks": Counter(), "stages": Counter()})
             entry["question_count"] += 1
             entry["report_count"] += item.report_count
             entry["tracks"][item.track] += 1
-    return sorted(({**entry, "tracks": dict(entry["tracks"])} for entry in stats.values()), key=lambda item: (item["question_count"], item["report_count"]), reverse=True)
+            for stage in item.stages or []:
+                entry["stages"][stage] += 1
+    return sorted(({**entry, "tracks": dict(entry["tracks"]), "stages": dict(entry["stages"])} for entry in stats.values()), key=lambda item: (item["question_count"], item["report_count"]), reverse=True)
 
 
 @router.post("/attempts", status_code=status.HTTP_201_CREATED)
@@ -504,18 +527,26 @@ def progress(user: User = Depends(get_current_user), session: Session = Depends(
     question_ids = {item.question_id for item in attempts}
     questions = {item.id: item for item in session.scalars(select(InterviewIntelligenceQuestion).where(InterviewIntelligenceQuestion.id.in_(question_ids)))} if question_ids else {}
     by_track: dict[str, dict[str, int]] = {}
+    by_question: dict[str, dict[str, int | None]] = {}
     for attempt in attempts:
         track = questions.get(attempt.question_id).track if questions.get(attempt.question_id) else "UNKNOWN"
         stats = by_track.setdefault(track, {"attempts": 0, "score_total": 0, "scored": 0})
         stats["attempts"] += 1
+        question_key = str(attempt.question_id)
+        question_stats = by_question.setdefault(question_key, {"attempts": 0, "best_score": None, "latest_score": None})
+        question_stats["attempts"] = int(question_stats["attempts"] or 0) + 1
+        if question_stats["latest_score"] is None and attempt.score is not None:
+            question_stats["latest_score"] = attempt.score
         if attempt.score is not None:
             stats["score_total"] += attempt.score
             stats["scored"] += 1
+            current_best = question_stats["best_score"]
+            question_stats["best_score"] = attempt.score if current_best is None else max(int(current_best), attempt.score)
     for stats in by_track.values():
         stats["average_score"] = round(stats["score_total"] / stats["scored"]) if stats["scored"] else 0
         del stats["score_total"]
         del stats["scored"]
-    return {"total_attempts": len(attempts), "by_track": by_track}
+    return {"total_attempts": len(attempts), "by_track": by_track, "by_question": by_question}
 
 
 @router.post("/coach")
@@ -693,6 +724,7 @@ def create_question(payload: QuestionAdminWrite, session: Session = Depends(get_
         prompt=payload.prompt,
         baseline_company_labels=labels,
         company_labels=labels,
+        stages=list(dict.fromkeys(payload.stages)),
         skills=payload.skills,
         patterns=payload.patterns,
         hints=payload.hints,

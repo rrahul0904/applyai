@@ -45,6 +45,7 @@ def list_questions(
             "confidence": row.confidence,
             "report_count": row.report_count,
             "companies": row.company_labels or [],
+            "stages": row.stages or [],
         }
         for row in rows
     ]

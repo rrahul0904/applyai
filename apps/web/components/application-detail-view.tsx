@@ -15,7 +15,21 @@ import { formatDate, titleCase } from "@/lib/utils";
 const statuses = ["PREPARING", "READY", "APPLIED", "RECRUITER_SCREEN", "ASSESSMENT", "INTERVIEW", "FINAL_INTERVIEW", "OFFER", "REJECTED", "WITHDRAWN"];
 
 function localDateTimeValue(value?: string | null) {
-  return value ? value.slice(0, 16) : "";
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return [
+    date.getFullYear(),
+    "-",
+    pad(date.getMonth() + 1),
+    "-",
+    pad(date.getDate()),
+    "T",
+    pad(date.getHours()),
+    ":",
+    pad(date.getMinutes()),
+  ].join("");
 }
 
 function toIsoOrNull(value: FormDataEntryValue | null) {

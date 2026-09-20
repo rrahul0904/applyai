@@ -71,6 +71,7 @@ def _build_content(session: Session, user: User, job_id: uuid.UUID) -> dict:
     context = candidate_context(session, user)
     profile = context["profile"]
     verified_skill_rows = [skill for skill in context["skills"] if skill.provenance == "USER_VERIFIED"]
+    verified_experiences = [row for row in context["experiences"] if row.provenance == "USER_VERIFIED"]
     verified_skills = {skill.normalized_name for skill in verified_skill_rows}
     matched, missing_required, preferred = _skill_sets(session, job.id, verified_skills)
     score = _ats_score(session, job.id, verified_skills)
@@ -100,7 +101,7 @@ def _build_content(session: Session, user: User, job_id: uuid.UUID) -> dict:
     tailored_summary = " ".join(summary_parts)
 
     experience_rows = []
-    for item in [row for row in context["experiences"] if row.provenance == "USER_VERIFIED"][:8]:
+    for item in verified_experiences[:8]:
         experience_rows.append(
             {
                 "company": item.company_name,
@@ -121,7 +122,7 @@ def _build_content(session: Session, user: User, job_id: uuid.UUID) -> dict:
             "end": _date_label(item.end_date),
             "provenance": item.provenance,
         }
-        for item in education[:6]
+        for item in [row for row in education if row.provenance == "USER_VERIFIED"][:6]
     ]
 
     all_verified_skills = [skill.name for skill in verified_skill_rows]
@@ -133,8 +134,8 @@ def _build_content(session: Session, user: User, job_id: uuid.UUID) -> dict:
         else "My background is adjacent to this role, and I would welcome the chance to discuss the transferable experience I can substantiate."
     )
     experience_sentence = ""
-    if context["experiences"]:
-        lead = context["experiences"][0]
+    if verified_experiences:
+        lead = verified_experiences[0]
         experience_sentence = f" Most recently, I worked as {lead.title} at {lead.company_name}."
 
     cover_letter = (

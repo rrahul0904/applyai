@@ -15,6 +15,7 @@ from app.ai.provider import (
     get_ai_provider,
 )
 from app.ai.schemas import OUTPUT_MODELS
+from app.radar_watch_service import record_radar_bucket_transition
 from app.career_models import (
     AIArtifact,
     AIJobRun,
@@ -177,6 +178,7 @@ def _materialize_deep_match(
             CareerMatch.engine_version == engine_version,
         )
     )
+    previous_decision = match.decision if match is not None else None
     if match is None:
         match = CareerMatch(
             user_id=run.user_id,
@@ -203,6 +205,13 @@ def _materialize_deep_match(
         "ai_summary": output.get("summary"),
         "ai_priority": output.get("priority"),
     }
+    session.flush()
+    record_radar_bucket_transition(
+        session,
+        match=match,
+        previous_decision=previous_decision,
+        model_run_id=run.id,
+    )
 
 
 def _materialize_resume_tailoring(

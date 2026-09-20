@@ -109,6 +109,17 @@ def test_application_list_limit_is_bounded(client):
 
 
 
+def test_application_board_rejects_invalid_cursor_and_unbounded_limit(client):
+    invalid_cursor = client.get(
+        "/api/v1/applications/board",
+        params={"cursor": "not-a-valid-cursor"},
+    )
+    assert invalid_cursor.status_code == 422
+    assert invalid_cursor.json()["error"]["code"] == "INVALID_CURSOR"
+    assert client.get("/api/v1/applications/board", params={"limit": 101}).status_code == 422
+    assert client.get("/api/v1/applications/board", params={"limit": 0}).status_code == 422
+
+
 def test_application_board_tracks_deadlines_interviews_and_offer_details(client, database_url):
     job_id = seed_job(database_url)
     created = client.post("/api/v1/applications", json={"job_id": str(job_id)})
@@ -138,6 +149,8 @@ def test_application_board_tracks_deadlines_interviews_and_offer_details(client,
     assert board.status_code == 200, board.text
     payload = board.json()
     assert payload["total"] == 1
+    assert payload["returned"] == 1
+    assert payload["next_cursor"] is None
     assert payload["counts"]["PREPARING"] == 1
     assert payload["items"][0]["tracker"]["priority"] == "HIGH"
     assert payload["items"][0]["overdue"] is False

@@ -106,3 +106,72 @@ def test_application_list_rejects_invalid_cursor(client):
 def test_application_list_limit_is_bounded(client):
     assert client.get("/api/v1/applications", params={"limit": 51}).status_code == 422
     assert client.get("/api/v1/applications", params={"limit": 0}).status_code == 422
+
+
+
+def test_application_board_tracks_deadlines_interviews_and_offer_details(client, database_url):
+    job_id = seed_job(database_url)
+    created = client.post("/api/v1/applications", json={"job_id": str(job_id)})
+    assert created.status_code == 201
+    application_id = created.json()["id"]
+
+    tracked = client.patch(
+        f"/api/v1/applications/{application_id}/tracker",
+        json={
+            "deadline_at": "2030-06-01T17:00:00+00:00",
+            "interview_at": "2030-05-20T14:00:00+00:00",
+            "next_action_at": "2030-05-10T13:00:00+00:00",
+            "source_channel": "Referral",
+            "priority": "HIGH",
+        },
+    )
+    assert tracked.status_code == 200, tracked.text
+    assert tracked.json()["priority"] == "HIGH"
+    assert tracked.json()["source_channel"] == "Referral"
+
+    detail = client.get(f"/api/v1/applications/{application_id}")
+    assert detail.status_code == 200
+    assert detail.json()["tracker"]["interview_at"].startswith("2030-05-20")
+    assert [event["to_status"] for event in detail.json()["events"]] == ["PREPARING"]
+
+    board = client.get("/api/v1/applications/board")
+    assert board.status_code == 200, board.text
+    payload = board.json()
+    assert payload["total"] == 1
+    assert payload["counts"]["PREPARING"] == 1
+    assert payload["items"][0]["tracker"]["priority"] == "HIGH"
+    assert payload["items"][0]["overdue"] is False
+
+    assert client.patch(
+        f"/api/v1/applications/{application_id}/status",
+        json={"status": "OFFER"},
+    ).status_code == 200
+    offered = client.patch(
+        f"/api/v1/applications/{application_id}/tracker",
+        json={
+            "offer_minimum": 150000,
+            "offer_maximum": 175000,
+            "offer_currency": "usd",
+            "offer_notes": "Base salary range shared by recruiter.",
+        },
+    )
+    assert offered.status_code == 200
+    assert offered.json()["offer_currency"] == "USD"
+    assert offered.json()["offer_minimum"] == 150000
+
+
+def test_application_tracker_rejects_invalid_offer_range_and_priority(client, database_url):
+    job_id = seed_job(database_url)
+    application_id = client.post("/api/v1/applications", json={"job_id": str(job_id)}).json()["id"]
+
+    invalid_range = client.patch(
+        f"/api/v1/applications/{application_id}/tracker",
+        json={"offer_minimum": 200000, "offer_maximum": 150000},
+    )
+    assert invalid_range.status_code == 422
+
+    invalid_priority = client.patch(
+        f"/api/v1/applications/{application_id}/tracker",
+        json={"priority": "URGENT"},
+    )
+    assert invalid_priority.status_code == 422

@@ -159,6 +159,31 @@ class ApplicationEventResponse(BaseModel):
     created_at: datetime
 
 
+class ApplicationTrackerWrite(BaseModel):
+    deadline_at: datetime | None = None
+    interview_at: datetime | None = None
+    next_action_at: datetime | None = None
+    offer_minimum: int | None = Field(default=None, ge=0)
+    offer_maximum: int | None = Field(default=None, ge=0)
+    offer_currency: str | None = Field(default=None, min_length=3, max_length=3)
+    offer_notes: str | None = Field(default=None, max_length=3000)
+    source_channel: str | None = Field(default=None, max_length=120)
+    priority: str | None = Field(default=None, max_length=16)
+
+
+class ApplicationTrackerResponse(BaseModel):
+    deadline_at: datetime | None = None
+    interview_at: datetime | None = None
+    next_action_at: datetime | None = None
+    offer_minimum: int | None = None
+    offer_maximum: int | None = None
+    offer_currency: str = "USD"
+    offer_notes: str | None = None
+    source_channel: str | None = None
+    priority: str = "MEDIUM"
+    updated_at: datetime | None = None
+
+
 class ApplicationResponse(BaseModel):
     id: uuid.UUID
     job_id: uuid.UUID
@@ -167,6 +192,7 @@ class ApplicationResponse(BaseModel):
     updated_at: datetime
     events: list[ApplicationEventResponse] = Field(default_factory=list)
     notes: list["ApplicationNoteResponse"] = Field(default_factory=list)
+    tracker: ApplicationTrackerResponse = Field(default_factory=ApplicationTrackerResponse)
 
 
 class ApplicationJobSummary(BaseModel):
@@ -189,6 +215,17 @@ class ApplicationListPage(BaseModel):
     items: list[ApplicationListItem]
     next_cursor: str | None
     returned: int
+
+
+class ApplicationBoardItem(ApplicationListItem):
+    tracker: ApplicationTrackerResponse
+    overdue: bool = False
+
+
+class ApplicationBoardResponse(BaseModel):
+    items: list[ApplicationBoardItem] = Field(default_factory=list)
+    counts: dict[str, int] = Field(default_factory=dict)
+    total: int = 0
 
 
 class ApplicationNoteWrite(BaseModel):

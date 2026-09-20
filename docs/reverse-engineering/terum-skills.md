@@ -4,7 +4,7 @@ fit_scope: PARTIAL
 destination: platform-infrastructure
 ---
 
-# Terum Skills / Claude Skills Evaluation
+# Camouflet Skills / Terum Skills / Claude Skills Evaluation
 
 Date reviewed: 2026-09-17
 
@@ -20,7 +20,7 @@ This summary records publicly observable behavior and open-source architectural 
 
 **PARTIAL — APPLYAI INFRASTRUCTURE**
 
-Terum is not a candidate-facing ApplyAI feature by itself. Its evaluation and certification mechanics qualify because they can measure whether ApplyAI agents, prompts, skills, and career workflows improve rather than regress.
+The Camouflet Skills thread maps to the public Terum Skills evaluation work. It is not a candidate-facing ApplyAI feature by itself. Its evaluation and certification mechanics qualify because they can measure whether ApplyAI agents, prompts, skills, and career workflows improve rather than regress.
 
 ## Why this qualifies
 
@@ -48,7 +48,7 @@ The relevant behavior is controlled baseline-versus-candidate evaluation with re
 - Generic Claude skill marketplace.
 - Generic desktop skill library.
 - General-purpose team skill distribution.
-- Terum-specific branding and UI.
+- Camouflet/Terum-specific branding and generic skill-library UI.
 - Any behavior that does not improve ApplyAI's candidate journey or platform quality.
 
 ## Implementation destination

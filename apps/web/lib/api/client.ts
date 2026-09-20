@@ -69,10 +69,47 @@ export type ResumeUploadIntent = components["schemas"]["ResumeUploadIntentRespon
 export type Job = components["schemas"]["JobSummary"];
 export type JobDetail = components["schemas"]["JobDetail"];
 export type JobPage = components["schemas"]["JobSearchPage"];
-export type Application = components["schemas"]["ApplicationResponse"];
+export type ApplicationTracker = {
+  deadline_at: string | null;
+  interview_at: string | null;
+  next_action_at: string | null;
+  offer_minimum: number | null;
+  offer_maximum: number | null;
+  offer_currency: string;
+  offer_notes: string | null;
+  source_channel: string | null;
+  priority: "LOW" | "MEDIUM" | "HIGH";
+  updated_at: string | null;
+};
+export type Application = components["schemas"]["ApplicationResponse"] & {
+  tracker?: ApplicationTracker;
+};
 export type ApplicationNote = components["schemas"]["ApplicationNoteResponse"];
 export type ApplicationListItem = components["schemas"]["ApplicationListItem"];
 export type ApplicationListPage = components["schemas"]["ApplicationListPage"];
+export type ApplicationBoardItem = ApplicationListItem & {
+  tracker: ApplicationTracker;
+  overdue: boolean;
+};
+export type ApplicationBoardResponse = {
+  items: ApplicationBoardItem[];
+  counts: Record<string, number>;
+  total: number;
+};
+export type ApplicationTrackerWrite = Partial<
+  Pick<
+    ApplicationTracker,
+    | "deadline_at"
+    | "interview_at"
+    | "next_action_at"
+    | "offer_minimum"
+    | "offer_maximum"
+    | "offer_currency"
+    | "offer_notes"
+    | "source_channel"
+    | "priority"
+  >
+>;
 
 export type CareerTaskPath =
   | "deep-match"
@@ -172,6 +209,35 @@ export type CareerRadarRefreshResponse = {
   runs: Array<{ run_id: string; job_id: string; status: string }>;
   lookback_days: number;
   engine_version: string;
+};
+
+export type CareerRadarWatch = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  interval_minutes: number;
+  lookback_days: number;
+  max_jobs: number;
+  next_run_at: string;
+  last_run_at: string | null;
+  last_run_status: string | null;
+  last_scheduled_jobs: number;
+  last_error: string | null;
+  created_at: string | null;
+};
+
+export type CareerRadarTransition = {
+  id: string;
+  job_id: string;
+  from_bucket: CareerRadarBucket;
+  to_bucket: CareerRadarBucket;
+  from_decision: string | null;
+  to_decision: string | null;
+  engine_version: string;
+  model_run_id: string;
+  entered_top_match: boolean;
+  left_top_match: boolean;
+  created_at: string;
 };
 
 export type CareerFactCategory =
@@ -316,6 +382,8 @@ export const api = {
       const suffix = params.size ? `?${params.toString()}` : "";
       return request<ApplicationListPage>(`/applications${suffix}`, { signal });
     },
+    board: (signal?: AbortSignal) =>
+      request<ApplicationBoardResponse>("/applications/board", { signal }),
     detail: (id: string, signal?: AbortSignal) =>
       request<Application>(`/applications/${id}`, { signal }),
     create: (jobId: string) =>
@@ -341,6 +409,11 @@ export const api = {
     deleteNote: (id: string, noteId: string) =>
       request<void>(`/applications/${id}/notes/${noteId}`, {
         method: "DELETE",
+      }),
+    updateTracker: (id: string, payload: ApplicationTrackerWrite) =>
+      request<ApplicationTracker>(`/applications/${id}/tracker`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
       }),
   },
   careerV2: {
@@ -368,6 +441,31 @@ export const api = {
       request<CareerRadarRefreshResponse>("/career-v2/radar/refresh", {
         method: "POST",
       }),
+    radarWatches: (signal?: AbortSignal) =>
+      request<{ items: CareerRadarWatch[] }>("/career-v2/radar/watches", { signal }),
+    createRadarWatch: (payload: {
+      name?: string;
+      interval_minutes?: number;
+      lookback_days?: number;
+      max_jobs?: number;
+      run_immediately?: boolean;
+    }) =>
+      request<CareerRadarWatch>("/career-v2/radar/watches", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    updateRadarWatch: (watchId: string, payload: Partial<Pick<CareerRadarWatch, "name" | "enabled" | "interval_minutes" | "lookback_days" | "max_jobs">>) =>
+      request<CareerRadarWatch>(`/career-v2/radar/watches/${watchId}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      }),
+    runRadarWatch: (watchId: string) =>
+      request<{ watch: CareerRadarWatch; refresh: CareerRadarRefreshResponse }>(
+        `/career-v2/radar/watches/${watchId}/run`,
+        { method: "POST" },
+      ),
+    radarHistory: (signal?: AbortSignal) =>
+      request<{ items: CareerRadarTransition[] }>("/career-v2/radar/history", { signal }),
     feedback: (artifactId: string, action: string) =>
       request<{ id: string; artifact_id: string; action: string }>(
         `/career-v2/artifacts/${artifactId}/feedback`,

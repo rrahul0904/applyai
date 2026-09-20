@@ -70,7 +70,9 @@ def _build_content(session: Session, user: User, job_id: uuid.UUID) -> dict:
     company = session.get(Company, job.company_id)
     context = candidate_context(session, user)
     profile = context["profile"]
-    verified_skills = {skill.normalized_name for skill in context["skills"]}
+    verified_skill_rows = [skill for skill in context["skills"] if skill.provenance == "USER_VERIFIED"]
+    verified_experiences = [row for row in context["experiences"] if row.provenance == "USER_VERIFIED"]
+    verified_skills = {skill.normalized_name for skill in verified_skill_rows}
     matched, missing_required, preferred = _skill_sets(session, job.id, verified_skills)
     score = _ats_score(session, job.id, verified_skills)
 
@@ -99,7 +101,7 @@ def _build_content(session: Session, user: User, job_id: uuid.UUID) -> dict:
     tailored_summary = " ".join(summary_parts)
 
     experience_rows = []
-    for item in context["experiences"][:8]:
+    for item in verified_experiences[:8]:
         experience_rows.append(
             {
                 "company": item.company_name,
@@ -120,10 +122,10 @@ def _build_content(session: Session, user: User, job_id: uuid.UUID) -> dict:
             "end": _date_label(item.end_date),
             "provenance": item.provenance,
         }
-        for item in education[:6]
+        for item in [row for row in education if row.provenance == "USER_VERIFIED"][:6]
     ]
 
-    all_verified_skills = [skill.name for skill in context["skills"]]
+    all_verified_skills = [skill.name for skill in verified_skill_rows]
     ordered_skills = matched + [skill for skill in all_verified_skills if skill not in matched]
 
     evidence_sentence = (
@@ -132,8 +134,8 @@ def _build_content(session: Session, user: User, job_id: uuid.UUID) -> dict:
         else "My background is adjacent to this role, and I would welcome the chance to discuss the transferable experience I can substantiate."
     )
     experience_sentence = ""
-    if context["experiences"]:
-        lead = context["experiences"][0]
+    if verified_experiences:
+        lead = verified_experiences[0]
         experience_sentence = f" Most recently, I worked as {lead.title} at {lead.company_name}."
 
     cover_letter = (
@@ -166,6 +168,63 @@ def _build_content(session: Session, user: User, job_id: uuid.UUID) -> dict:
             "policy": "Only user-verified profile evidence is presented as candidate experience. Missing skills remain explicit gaps.",
         },
         "evidence_refs": [f"candidate:{user.id}", f"job:{job.id}"],
+    }
+
+
+def _review_application_kit(content: dict) -> dict:
+    resume = content.get("resume") if isinstance(content.get("resume"), dict) else {}
+    ats = content.get("ats") if isinstance(content.get("ats"), dict) else {}
+    experiences = resume.get("experience") if isinstance(resume.get("experience"), list) else []
+    missing_required = ats.get("missing_required_skills") if isinstance(ats.get("missing_required_skills"), list) else []
+
+    unsupported_experience = [
+        item
+        for item in experiences
+        if not isinstance(item, dict) or item.get("provenance") != "USER_VERIFIED"
+    ]
+    cover_letter = str(content.get("cover_letter") or "")
+    gap_disclosure_ok = not missing_required or (
+        "learning or development areas" in cover_letter
+        and all(str(skill) in cover_letter for skill in missing_required[:4])
+    )
+    evidence_refs = content.get("evidence_refs") if isinstance(content.get("evidence_refs"), list) else []
+    traceable = len(evidence_refs) >= 2 and not unsupported_experience
+
+    issues: list[str] = []
+    if unsupported_experience:
+        issues.append("Application materials contain experience without USER_VERIFIED provenance.")
+    if not gap_disclosure_ok:
+        issues.append("Missing required skills are not disclosed consistently in the cover letter.")
+    if not traceable:
+        issues.append("Application material evidence references are incomplete.")
+
+    checks = [
+        {
+            "key": "verified_experience_only",
+            "passed": not unsupported_experience,
+            "detail": "Resume experience is limited to candidate-verified evidence.",
+        },
+        {
+            "key": "requirements_gap_disclosure",
+            "passed": gap_disclosure_ok,
+            "detail": "Required-skill gaps stay explicit rather than being rewritten as experience.",
+        },
+        {
+            "key": "evidence_traceability",
+            "passed": traceable,
+            "detail": "Candidate and job evidence references remain attached to the application kit.",
+        },
+    ]
+    return {
+        "reviewer": "applyai-evidence-review-v1",
+        "verdict": "PASS" if not issues else "NEEDS_REVIEW",
+        "checks": checks,
+        "issues": issues,
+        "revisions_applied": [
+            "Excluded non-USER_VERIFIED experience from the tailored resume.",
+            "Excluded non-USER_VERIFIED skills from ATS matched-skill claims.",
+            "Preserved missing required skills as explicit development areas.",
+        ],
     }
 
 
@@ -284,16 +343,24 @@ def _cover_letter_pdf(content: dict) -> bytes:
 def create_application_kit(job_id: uuid.UUID, user: User = Depends(get_current_user), session: Session = Depends(get_session)) -> dict:
     job = get_owned_job(job_id, session)
     content = _build_content(session, user, job.id)
+    review = _review_application_kit(content)
+    content["pipeline"] = {
+        "stages": ["DRAFT", "REVIEW", "FINAL"],
+        "draft_engine": "applyai-application-kit-v1",
+        "review_engine": review["reviewer"],
+    }
+    content["review"] = review
+    final_status = "REVIEWED" if review["verdict"] == "PASS" else "NEEDS_REVIEW"
     existing = _latest_kit(session, user, job.id)
     company_name = content["job"]["company"]
     title = f"{company_name} — {job.title} application kit"
     if existing is None:
-        existing = ResumeStudioDocument(user_id=user.id, job_id=job.id, title=title, content=content, status="REVIEWED", version=1)
+        existing = ResumeStudioDocument(user_id=user.id, job_id=job.id, title=title, content=content, status=final_status, version=1)
         session.add(existing)
     else:
         existing.title = title
         existing.content = content
-        existing.status = "REVIEWED"
+        existing.status = final_status
         existing.version += 1
     session.commit()
     session.refresh(existing)
@@ -306,6 +373,36 @@ def get_application_kit(job_id: uuid.UUID, user: User = Depends(get_current_user
     row = _latest_kit(session, user, job_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Application kit not generated")
+    return _payload(row)
+
+
+@router.post("/jobs/{job_id}/application-kit/review")
+def review_application_kit(
+    job_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> dict:
+    get_owned_job(job_id, session)
+    row = _latest_kit(session, user, job_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Application kit not generated")
+    content = dict(row.content or {})
+    review = _review_application_kit(content)
+    content["review"] = review
+    pipeline = dict(content.get("pipeline") or {})
+    pipeline.update(
+        {
+            "stages": ["DRAFT", "REVIEW", "FINAL"],
+            "draft_engine": pipeline.get("draft_engine") or "applyai-application-kit-v1",
+            "review_engine": review["reviewer"],
+        }
+    )
+    content["pipeline"] = pipeline
+    row.content = content
+    row.status = "REVIEWED" if review["verdict"] == "PASS" else "NEEDS_REVIEW"
+    row.version += 1
+    session.commit()
+    session.refresh(row)
     return _payload(row)
 
 

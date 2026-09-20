@@ -31,12 +31,26 @@ def _seed_application_kit(database_url: str, client) -> str:
                     proficiency="STRONG",
                     provenance="USER_VERIFIED",
                 ),
+                CandidateSkill(
+                    profile_id=profile.id,
+                    name="Rust",
+                    normalized_name="rust",
+                    proficiency="STRONG",
+                    provenance="AI_INFERRED",
+                ),
                 CandidateExperience(
                     profile_id=profile.id,
                     company_name="Evidence Corp",
                     title="Product Operations Manager",
                     description="Led a verified workflow modernization program for production operations.",
                     provenance="USER_VERIFIED",
+                ),
+                CandidateExperience(
+                    profile_id=profile.id,
+                    company_name="Imaginary Corp",
+                    title="Unverified Principal Engineer",
+                    description="This inferred role must never appear in application material.",
+                    provenance="AI_INFERRED",
                 ),
             ]
         )
@@ -66,8 +80,15 @@ def test_application_kit_is_evidence_safe_and_exports_real_pdfs(client, database
     assert "Operations" in kit["content"]["ats"]["matched_skills"]
     assert "Kubernetes" in kit["content"]["ats"]["missing_required_skills"]
     assert "Evidence Corp" in kit["content"]["cover_letter"]
+    assert kit["content"]["pipeline"]["stages"] == ["DRAFT", "REVIEW", "FINAL"]
+    assert kit["content"]["review"]["reviewer"] == "applyai-evidence-review-v1"
+    assert kit["content"]["review"]["verdict"] == "PASS"
+    assert all(check["passed"] for check in kit["content"]["review"]["checks"])
     assert "missing" not in kit["content"]["resume"]["summary"].lower()
     assert any(item["company"] == "Evidence Corp" for item in kit["content"]["resume"]["experience"])
+    assert all(item["company"] != "Imaginary Corp" for item in kit["content"]["resume"]["experience"])
+    assert "Imaginary Corp" not in kit["content"]["cover_letter"]
+    assert "Rust" not in kit["content"]["ats"]["matched_skills"]
 
     fetched = client.get(f"/api/v1/career-v2/jobs/{job_id}/application-kit")
     assert fetched.status_code == 200, fetched.text
@@ -89,3 +110,21 @@ def test_application_kit_is_evidence_safe_and_exports_real_pdfs(client, database
     assert regenerated.status_code == 200
     assert regenerated.json()["id"] == kit["id"]
     assert regenerated.json()["version"] == kit["version"] + 1
+
+
+
+def test_application_kit_explicit_review_is_versioned_and_evidence_safe(client, database_url):
+    job_id = _seed_application_kit(database_url, client)
+    generated = client.post(f"/api/v1/career-v2/jobs/{job_id}/application-kit")
+    assert generated.status_code == 200
+    first = generated.json()
+
+    reviewed = client.post(f"/api/v1/career-v2/jobs/{job_id}/application-kit/review")
+    assert reviewed.status_code == 200, reviewed.text
+    payload = reviewed.json()
+    assert payload["id"] == first["id"]
+    assert payload["version"] == first["version"] + 1
+    assert payload["status"] == "REVIEWED"
+    assert payload["content"]["review"]["verdict"] == "PASS"
+    assert payload["content"]["ats"]["missing_required_skills"] == ["Kubernetes"]
+    assert "Kubernetes" in payload["content"]["cover_letter"]

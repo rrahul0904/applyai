@@ -90,6 +90,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/applications/board": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Application Board */
+        get: operations["get_application_board_api_v1_applications_board_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/applications/{application_id}": {
         parameters: {
             query?: never;
@@ -157,6 +174,23 @@ export interface paths {
         head?: never;
         /** Update Application Status */
         patch: operations["update_application_status_api_v1_applications__application_id__status_patch"];
+        trace?: never;
+    };
+    "/api/v1/applications/{application_id}/tracker": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Application Tracker */
+        patch: operations["update_application_tracker_api_v1_applications__application_id__tracker_patch"];
         trace?: never;
     };
     "/api/v1/billing/checkout": {
@@ -1406,6 +1440,52 @@ export interface components {
             /** Stage */
             stage?: ("NEW" | "SCREEN" | "INTERVIEW" | "FINAL" | "OFFER" | "HIRED" | "REJECTED") | null;
         };
+        /** ApplicationBoardItem */
+        ApplicationBoardItem: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Current Status */
+            current_status: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            job: components["schemas"]["ApplicationJobSummary"];
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /**
+             * Overdue
+             * @default false
+             */
+            overdue: boolean;
+            tracker: components["schemas"]["ApplicationTrackerResponse"];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** ApplicationBoardResponse */
+        ApplicationBoardResponse: {
+            /** Counts */
+            counts?: {
+                [key: string]: number;
+            };
+            /** Items */
+            items?: components["schemas"]["ApplicationBoardItem"][];
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+        };
         /** ApplicationCreate */
         ApplicationCreate: {
             /**
@@ -1528,6 +1608,7 @@ export interface components {
             job_id: string;
             /** Notes */
             notes?: components["schemas"]["ApplicationNoteResponse"][];
+            tracker?: components["schemas"]["ApplicationTrackerResponse"];
             /**
              * Updated At
              * Format: date-time
@@ -1538,6 +1619,56 @@ export interface components {
         ApplicationStatusWrite: {
             /** Status */
             status: string;
+        };
+        /** ApplicationTrackerResponse */
+        ApplicationTrackerResponse: {
+            /** Deadline At */
+            deadline_at?: string | null;
+            /** Interview At */
+            interview_at?: string | null;
+            /** Next Action At */
+            next_action_at?: string | null;
+            /**
+             * Offer Currency
+             * @default USD
+             */
+            offer_currency: string;
+            /** Offer Maximum */
+            offer_maximum?: number | null;
+            /** Offer Minimum */
+            offer_minimum?: number | null;
+            /** Offer Notes */
+            offer_notes?: string | null;
+            /**
+             * Priority
+             * @default MEDIUM
+             */
+            priority: string;
+            /** Source Channel */
+            source_channel?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /** ApplicationTrackerWrite */
+        ApplicationTrackerWrite: {
+            /** Deadline At */
+            deadline_at?: string | null;
+            /** Interview At */
+            interview_at?: string | null;
+            /** Next Action At */
+            next_action_at?: string | null;
+            /** Offer Currency */
+            offer_currency?: string | null;
+            /** Offer Maximum */
+            offer_maximum?: number | null;
+            /** Offer Minimum */
+            offer_minimum?: number | null;
+            /** Offer Notes */
+            offer_notes?: string | null;
+            /** Priority */
+            priority?: string | null;
+            /** Source Channel */
+            source_channel?: string | null;
         };
         /** ArtifactFeedbackResponse */
         ArtifactFeedbackResponse: {
@@ -2804,6 +2935,26 @@ export interface operations {
             };
         };
     };
+    get_application_board_api_v1_applications_board_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationBoardResponse"];
+                };
+            };
+        };
+    };
     get_application_api_v1_applications__application_id__get: {
         parameters: {
             query?: never;
@@ -2958,6 +3109,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApplicationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_application_tracker_api_v1_applications__application_id__tracker_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplicationTrackerWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationTrackerResponse"];
                 };
             };
             /** @description Validation Error */

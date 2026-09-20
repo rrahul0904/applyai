@@ -176,6 +176,22 @@ resource "aws_ecs_task_definition" "worker" {
           awslogs-stream-prefix = "worker"
         }
       }
+    },
+    {
+      name        = "radar-scheduler"
+      image       = local.image_uri
+      essential   = true
+      command     = ["python", "-m", "app.workers.radar_watch"]
+      environment = local.common_environment
+      secrets     = local.database_secrets
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.runtime["worker"].name
+          awslogs-region        = var.aws_region
+          awslogs-stream-prefix = "radar-scheduler"
+        }
+      }
     }
   ])
 }

@@ -75,9 +75,14 @@ jobs:
           if [ -z "${VERCEL_TOKEN:-}" ] || [ -z "${APPLYAI_API_URL:-}" ]; then
             echo "ready=false" >> "$GITHUB_OUTPUT"
             echo "provider=none" >> "$GITHUB_OUTPUT"
-            if [ "$EVENT_NAME" = "workflow_dispatch" ] || [ "$REF_NAME" = "main" ] || [ "$DEPLOY_TARGET" = "production" ]; then
-              echo "::error::VERCEL_TOKEN and APPLYAI_VERCEL_API_URL are required"
+            if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+              echo "::error::VERCEL_TOKEN and APPLYAI_VERCEL_API_URL are required for explicit CLI deployment"
               exit 1
+            fi
+            if [ "$REF_NAME" = "main" ] && [ "$DEPLOY_TARGET" = "production" ]; then
+              echo "mode=native-git" >> "$GITHUB_OUTPUT"
+              echo "::warning::Skipping duplicate CLI production deploy; native Vercel Git integration owns push-to-main deployment evidence"
+              exit 0
             fi
             echo "::warning::Skipping automatic preview because Vercel/API credentials are unavailable"
             exit 0
@@ -109,6 +114,17 @@ jobs:
           echo "ready=false" >> "$GITHUB_OUTPUT"
           echo "provider=none" >> "$GITHUB_OUTPUT"
           echo "::warning::Skipping preview because no identity-provider credentials are configured"
+
+      - name: Record native Vercel Git deployment handoff
+        if: ${{ steps.preflight.outputs.mode == 'native-git' }}
+        run: |
+          {
+            echo '### ApplyAI Vercel deployment'
+            echo '- Custom CLI deployment: skipped on push to main'
+            echo '- Deployment owner: native Vercel Git integration'
+            echo "- Git SHA: \`$GITHUB_SHA\`"
+            echo '- Verification boundary: the separate Vercel deployment status must be READY before production is considered deployed'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Install workspace dependencies
         if: ${{ steps.preflight.outputs.ready == 'true' }}

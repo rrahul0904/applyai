@@ -25,6 +25,7 @@ from app import (  # noqa: F401
     preparation_models,
     privacy_models,
     radar_watch_models,
+    rate_limit_models,
     resume_share_models,
     reverse_engineering_models,
     zero_cost_models,

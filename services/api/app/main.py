@@ -20,6 +20,7 @@ from app.core.clerk_instance import clerk_instance_fingerprint
 from app.core.config import get_settings
 from app.core.supabase_instance import supabase_instance_fingerprint
 from app.core.database import engine
+from app.core.rate_limit import enforce_rate_limit, request_rate_limit_buckets
 from app.core.pulseatlas import dispatch_request_event
 from app.workers.postgres import drain_bounded
 
@@ -49,6 +50,54 @@ async def request_triggered_tasks(request: Request, call_next):
     if settings.request_triggered_tasks_enabled and settings.task_queue_provider == "postgres" and request.method not in {"GET", "HEAD", "OPTIONS"} and response.status_code < 500:
         await anyio.to_thread.run_sync(lambda: drain_bounded(settings, maximum_tasks=settings.request_triggered_task_limit))
     return response
+
+@app.middleware("http")
+async def distributed_rate_limit(request: Request, call_next):
+    buckets = request_rate_limit_buckets(request, settings)
+    decision = None
+    if buckets:
+        try:
+            decision = await anyio.to_thread.run_sync(
+                lambda: enforce_rate_limit(
+                    engine,
+                    buckets,
+                    window_seconds=settings.rate_limit_window_seconds,
+                )
+            )
+        except SQLAlchemyError:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "error": {
+                        "code": "RATE_LIMIT_BACKEND_UNAVAILABLE",
+                        "message": "A required service is unavailable",
+                    }
+                },
+            )
+        if decision is not None and not decision.allowed:
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "error": {
+                        "code": "RATE_LIMITED",
+                        "message": "Too many requests. Please try again shortly.",
+                    }
+                },
+                headers={
+                    "Retry-After": str(decision.reset_seconds),
+                    "RateLimit-Limit": str(decision.limit),
+                    "RateLimit-Remaining": "0",
+                    "RateLimit-Reset": str(decision.reset_seconds),
+                },
+            )
+
+    response = await call_next(request)
+    if decision is not None:
+        response.headers["RateLimit-Limit"] = str(decision.limit)
+        response.headers["RateLimit-Remaining"] = str(decision.remaining)
+        response.headers["RateLimit-Reset"] = str(decision.reset_seconds)
+    return response
+
 
 @app.exception_handler(HTTPException)
 async def http_error(_request: Request, exc: HTTPException) -> JSONResponse:

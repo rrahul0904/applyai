@@ -3,7 +3,7 @@ from datetime import timedelta
 from sqlalchemy import select
 
 from app.application_agent_models import ApplicationExecution, ApplicationQuestionMemory
-from app.certification_models import OperationsCertification
+from app.operations_models import OperationsCertification
 from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.jobs.seed import seed_development_jobs

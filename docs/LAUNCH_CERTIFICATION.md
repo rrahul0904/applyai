@@ -15,6 +15,7 @@ ApplyAI is launch-ready only when every required gate below has evidence for the
 - Run Staging Verification V2 and retain the workflow artifact.
 - Confirm API health/readiness, target health, runtime image consistency, private networking, queue/worker availability, and the essential SQS-backed Radar scheduler sidecar.
 - Run `ApplyAI Authorized Staging DAST` in `baseline` mode first. Resolve or explicitly risk-accept findings before running `full` active mode.
+- Run `ApplyAI Authorized Staging Performance Smoke` against the exact candidate deployment; require zero failed public-surface requests and p95 <= 2500 ms under its bounded five-worker smoke.
 - Run the `full` DAST scan only against the allow-listed ApplyAI-owned staging/preview deployment. Never point it at third-party job boards or external applicant-tracking systems.
 
 ## Candidate acceptance / user testing

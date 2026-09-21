@@ -5,7 +5,9 @@ import io
 import json
 from datetime import datetime, timezone
 from typing import Any
-from xml.etree import ElementTree
+from xml.etree.ElementTree import Element
+
+from defusedxml import ElementTree as DefusedElementTree
 
 from app.jobs.connectors import ConnectorHealth, JobSourceConnector, NormalizedJob
 from app.jobs.contracts import (
@@ -52,7 +54,7 @@ def _local_name(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
 
-def _xml_item(element: ElementTree.Element) -> dict[str, Any]:
+def _xml_item(element: Element) -> dict[str, Any]:
     item: dict[str, Any] = {}
     for child in element.iter():
         if child is element:
@@ -175,7 +177,7 @@ class PartnerFeedConnector(JobSourceConnector):
                 dict(row)
                 for row in csv.DictReader(io.StringIO(content.decode("utf-8-sig")))
             ]
-        root = ElementTree.fromstring(content)
+        root = DefusedElementTree.fromstring(content)
         entries = [
             element
             for element in root.iter()

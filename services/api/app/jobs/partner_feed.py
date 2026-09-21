@@ -5,9 +5,10 @@ import io
 import json
 from datetime import datetime, timezone
 from typing import Any
-from xml.etree.ElementTree import Element
+from xml.etree.ElementTree import Element, ParseError
 
 from defusedxml import ElementTree as DefusedElementTree
+from defusedxml.common import DefusedXmlException
 
 from app.jobs.connectors import ConnectorHealth, JobSourceConnector, NormalizedJob
 from app.jobs.contracts import (
@@ -177,7 +178,10 @@ class PartnerFeedConnector(JobSourceConnector):
                 dict(row)
                 for row in csv.DictReader(io.StringIO(content.decode("utf-8-sig")))
             ]
-        root = DefusedElementTree.fromstring(content)
+        try:
+            root = DefusedElementTree.fromstring(content)
+        except (DefusedXmlException, ParseError) as exc:
+            raise ValueError("Partner feed XML is unsafe or malformed") from exc
         entries = [
             element
             for element in root.iter()

@@ -100,3 +100,16 @@ test("mobile candidate shell remains keyboard reachable without horizontal overf
     await expect(link).toHaveAccessibleName(/.+/);
   }
 });
+
+
+test("public web responses retain launch security headers", async ({ request }) => {
+  const response = await request.get("/");
+  expect(response.ok()).toBeTruthy();
+  const headers = response.headers();
+  expect(headers["x-content-type-options"]).toBe("nosniff");
+  expect(headers["x-frame-options"]).toBe("DENY");
+  expect(headers["referrer-policy"]).toBe("strict-origin-when-cross-origin");
+  expect(headers["permissions-policy"]).toContain("camera=()");
+  expect(headers["permissions-policy"]).toContain("microphone=()");
+  expect(headers["x-powered-by"]).toBeUndefined();
+});

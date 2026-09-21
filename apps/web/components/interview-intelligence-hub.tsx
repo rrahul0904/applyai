@@ -73,6 +73,7 @@ function QuestionPractice({
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<"description" | "solution" | "discussion" | "submissions" | "coach">("description");
   const [answer, setAnswer] = useState("");
+  const [code, setCode] = useState('print("ApplyAI interview sandbox")');
   const [hintLevel, setHintLevel] = useState(0);
   const [hint, setHint] = useState<string | null>(null);
   const [result, setResult] = useState<{ score: number; feedback: Record<string, unknown> } | null>(null);
@@ -95,7 +96,11 @@ function QuestionPractice({
     },
   });
   const attempt = useMutation({
-    mutationFn: () => interviewIntelligenceApi.attempt({ question_id: question.id, answer_text: answer }),
+    mutationFn: () => interviewIntelligenceApi.attempt({
+      question_id: question.id,
+      answer_text: answer.trim() || null,
+      code_text: question.track === "CODING" ? (code.trim() || null) : null,
+    }),
     onSuccess: async (data) => {
       setResult({ score: data.score, feedback: data.feedback });
       await Promise.all([
@@ -115,7 +120,10 @@ function QuestionPractice({
     }),
     onSuccess: async () => {
       setDiscussionDraft({ title: "", body: "" });
-      await queryClient.invalidateQueries({ queryKey: ["interview-intelligence-community", "question", question.id] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["interview-intelligence-community"] }),
+        queryClient.invalidateQueries({ queryKey: ["interview-intelligence-community", "question", question.id] }),
+      ]);
       toast.success("Question discussion published");
     },
   });
@@ -185,7 +193,7 @@ function QuestionPractice({
         <ul>{questionGuidance(question.track).map((item) => <li key={item}>{item}</li>)}</ul>
       </Card>
 
-      {question.track === "CODING" ? <InterviewCodeRunner /> : null}
+      {question.track === "CODING" ? <InterviewCodeRunner code={code} onCodeChange={setCode} /> : null}
 
       <Field label="Your answer" htmlFor={`answer-${question.id}`}>
         <Textarea
@@ -195,7 +203,7 @@ function QuestionPractice({
           onChange={(event) => setAnswer(event.target.value)}
         />
       </Field>
-      <Button onClick={() => attempt.mutate()} disabled={!answer.trim() || attempt.isPending}>
+      <Button onClick={() => attempt.mutate()} disabled={(!answer.trim() && !(question.track === "CODING" && code.trim())) || attempt.isPending}>
         <Target size={15}/>Score and save submission
       </Button>
 

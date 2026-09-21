@@ -5,6 +5,7 @@ on:
     branches:
       - test/launch-security-certification
     paths:
+      - package.json
       - apps/web/package.json
       - services/api/pyproject.toml
 

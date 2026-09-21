@@ -583,7 +583,7 @@ def test_question_workspace_submission_history_and_discussion(client, database_u
         "/api/v1/interview-intelligence/attempts",
         json={
             "question_id": question["id"],
-            "answer_text": "iterator state",
+            "code_text": "def next_item(items, index):\n    return items[index] if index < len(items) else None",
         },
     )
     assert second.status_code == 201, second.text
@@ -601,7 +601,7 @@ def test_question_workspace_submission_history_and_discussion(client, database_u
     assert submission_payload["strong_attempts"] in {0, 1, 2}
     assert len(submission_payload["items"]) == 1
     assert submission_payload["items"][0]["score"] == second.json()["score"]
-    assert submission_payload["items"][0]["answer_excerpt"] == "iterator state"
+    assert submission_payload["items"][0]["answer_excerpt"].startswith("def next_item")
 
     general_post = client.post(
         "/api/v1/interview-intelligence/community",

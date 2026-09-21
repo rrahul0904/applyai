@@ -207,6 +207,32 @@ jobs:
               applyai-staging-worker \
               applyai-staging-outbox
 
+      - name: Verify deployed Radar scheduler sidecar
+        shell: bash
+        env:
+          CLUSTER: ${{ steps.release.outputs.cluster }}
+        run: |
+          set -euo pipefail
+          worker_service="$(terraform -chdir=infra/staging output -raw worker_service_name)"
+          worker_task_definition="$(aws ecs describe-services \
+            --cluster "$CLUSTER" \
+            --services "$worker_service" \
+            --query 'services[0].taskDefinition' \
+            --output text)"
+          test -n "$worker_task_definition" && test "$worker_task_definition" != "None"
+          aws ecs describe-task-definition \
+            --task-definition "$worker_task_definition" \
+            --output json >/tmp/worker-task-definition.json
+          jq -e '
+            .taskDefinition.containerDefinitions
+            | any(
+                .name == "radar-scheduler"
+                and .essential == true
+                and .command == ["python", "-m", "app.workers.radar_watch"]
+                and (.environment | any(.name == "TASK_QUEUE_PROVIDER" and .value == "sqs"))
+              )
+          ' /tmp/worker-task-definition.json >/dev/null
+
       - name: Verify API health and database readiness
         shell: bash
         run: |
@@ -227,6 +253,7 @@ jobs:
             echo "- Image: \`${IMAGE_URI}\`"
             echo '- Alembic migration gate: passed'
             echo '- ECS services: stable'
+            echo '- Radar scheduler sidecar: present, essential and SQS-backed'
             echo '- /health: passed'
             echo '- /ready: passed'
             echo "- Greenhouse schedule enabled: ${{ inputs.enable_ingestion }}"

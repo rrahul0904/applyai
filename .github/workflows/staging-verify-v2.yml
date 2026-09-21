@@ -139,6 +139,19 @@ jobs:
             fi
           done
 
+          worker_service="$(terraform -chdir=infra/staging output -raw worker_service_name)"
+          worker_task_definition="$(aws ecs describe-services --cluster "$cluster" --services "$worker_service" --query 'services[0].taskDefinition' --output text)"
+          aws ecs describe-task-definition --task-definition "$worker_task_definition" --output json >/tmp/worker-task-definition.json
+          jq -e '
+            .taskDefinition.containerDefinitions
+            | any(
+                .name == "radar-scheduler"
+                and .essential == true
+                and .command == ["python", "-m", "app.workers.radar_watch"]
+                and (.environment | any(.name == "TASK_QUEUE_PROVIDER" and .value == "sqs"))
+              )
+          ' /tmp/worker-task-definition.json >/dev/null
+
           : > /tmp/runtime-images.txt
           jq -r '.services[] | select(.desiredCount > 0) | .serviceName' /tmp/services.json >/tmp/enabled-services.txt
           while IFS= read -r service; do
@@ -290,6 +303,7 @@ jobs:
             echo
             echo "- API health/readiness and ALB target health: passed"
             echo "- Candidate and source runtimes: nonzero and stable"
+            echo "- Radar watch scheduler sidecar: present, essential, SQS-backed and using the governed worker command"
             echo "- Career Intelligence runtime expected enabled: \`${EXPECT_AI_RUNTIME}\`"
             echo "- Runtime image consistency: \`${image}\`"
             echo "- ECS tasks: private application subnets with no public IP"

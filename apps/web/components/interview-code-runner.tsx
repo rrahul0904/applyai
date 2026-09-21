@@ -36,10 +36,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export function InterviewCodeRunner() {
+export function InterviewCodeRunner({ code, onCodeChange }: { code: string; onCodeChange: (code: string) => void }) {
   const [capability, setCapability] = useState<Capability | null>(null);
   const [language, setLanguage] = useState("python");
-  const [code, setCode] = useState("print(\"ApplyAI interview sandbox\")");
   const [stdin, setStdin] = useState("");
   const [result, setResult] = useState<RunResult | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -95,7 +94,7 @@ export function InterviewCodeRunner() {
     </div>
 
     <Field label="Code" htmlFor="interview-run-code">
-      <Textarea id="interview-run-code" rows={14} value={code} onChange={(event) => setCode(event.target.value)} />
+      <Textarea id="interview-run-code" rows={14} value={code} onChange={(event) => onCodeChange(event.target.value)} />
     </Field>
 
     <Button onClick={run} disabled={!capability?.configured || !code.trim() || running}>

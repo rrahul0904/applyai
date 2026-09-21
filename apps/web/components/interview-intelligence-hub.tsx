@@ -7,7 +7,7 @@ import { toast } from "sonner";
 
 import { Badge, Button, Card, EmptyState, Field, NativeSelect, PageHeader, Skeleton, Textarea } from "@/components/ui";
 import { InterviewCodeRunner } from "@/components/interview-code-runner";
-import { interviewIntelligenceApi, type InterviewProgress, type InterviewQuestion } from "@/lib/api/interview-intelligence-client";
+import { interviewIntelligenceApi, type InterviewCommunityPost, type InterviewProgress, type InterviewQuestion } from "@/lib/api/interview-intelligence-client";
 
 const TRACKS = ["", "CODING", "SQL", "SYSTEM_DESIGN", "ML_SYSTEM_DESIGN", "OOD", "BEHAVIORAL"];
 const DIFFICULTIES = ["", "EASY", "MEDIUM", "HARD"];
@@ -27,6 +27,42 @@ function recencyLabel(value: string | null) {
   return `Reported ${days} days ago`;
 }
 
+function questionGuidance(track: string) {
+  if (track === "CODING") {
+    return [
+      "Explain correctness and edge cases before optimizing.",
+      "State time and space complexity explicitly.",
+      "Discuss code quality, failure behavior, and test coverage.",
+    ];
+  }
+  if (track === "SQL") {
+    return [
+      "State schema and data-grain assumptions.",
+      "Explain correctness for nulls, duplicates, and boundary cases.",
+      "Discuss query-plan, indexing, and scale implications.",
+    ];
+  }
+  if (track === "SYSTEM_DESIGN" || track === "ML_SYSTEM_DESIGN") {
+    return [
+      "Clarify functional and non-functional requirements.",
+      "Make data model, API, reliability, and scaling trade-offs explicit.",
+      "Call out bottlenecks, failure modes, observability, and verification.",
+    ];
+  }
+  if (track === "OOD") {
+    return [
+      "Name responsibilities and boundaries before classes.",
+      "Explain interfaces, extensibility, invariants, and failure behavior.",
+      "Use patterns only where they simplify change and testing.",
+    ];
+  }
+  return [
+    "Answer with a concrete situation and your personal contribution.",
+    "Use measurable outcomes where you have verified evidence.",
+    "Explain trade-offs, learning, and what you would do differently.",
+  ];
+}
+
 function QuestionPractice({
   question,
   progress,
@@ -35,10 +71,23 @@ function QuestionPractice({
   progress?: InterviewProgress["by_question"][string];
 }) {
   const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState<"description" | "solution" | "discussion" | "submissions" | "coach">("description");
   const [answer, setAnswer] = useState("");
+  const [code, setCode] = useState('print("ApplyAI interview sandbox")');
   const [hintLevel, setHintLevel] = useState(0);
   const [hint, setHint] = useState<string | null>(null);
   const [result, setResult] = useState<{ score: number; feedback: Record<string, unknown> } | null>(null);
+  const [discussionDraft, setDiscussionDraft] = useState({ title: "", body: "" });
+
+  const submissions = useQuery({
+    queryKey: ["interview-intelligence-submissions", question.slug],
+    queryFn: ({ signal }) => interviewIntelligenceApi.submissions(question.slug, signal),
+  });
+  const discussion = useQuery({
+    queryKey: ["interview-intelligence-community", "question", question.id],
+    queryFn: ({ signal }) => interviewIntelligenceApi.community(question.id, signal),
+  });
+
   const coach = useMutation({
     mutationFn: () => interviewIntelligenceApi.coach(question.id, answer, hintLevel),
     onSuccess: (data) => {
@@ -47,13 +96,45 @@ function QuestionPractice({
     },
   });
   const attempt = useMutation({
-    mutationFn: () => interviewIntelligenceApi.attempt({ question_id: question.id, answer_text: answer }),
+    mutationFn: () => interviewIntelligenceApi.attempt({
+      question_id: question.id,
+      answer_text: answer.trim() || null,
+      code_text: question.track === "CODING" ? (code.trim() || null) : null,
+    }),
     onSuccess: async (data) => {
       setResult({ score: data.score, feedback: data.feedback });
-      await queryClient.invalidateQueries({ queryKey: ["interview-intelligence-progress"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["interview-intelligence-progress"] }),
+        queryClient.invalidateQueries({ queryKey: ["interview-intelligence-submissions", question.slug] }),
+      ]);
       toast.success("Practice attempt saved");
     },
   });
+  const createDiscussion = useMutation({
+    mutationFn: () => interviewIntelligenceApi.createCommunity({
+      question_id: question.id,
+      company: question.companies[0] ?? null,
+      category: "INTERVIEW_EXPERIENCE",
+      title: discussionDraft.title,
+      body: discussionDraft.body,
+    }),
+    onSuccess: async () => {
+      setDiscussionDraft({ title: "", body: "" });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["interview-intelligence-community"] }),
+        queryClient.invalidateQueries({ queryKey: ["interview-intelligence-community", "question", question.id] }),
+      ]);
+      toast.success("Question discussion published");
+    },
+  });
+
+  const tabs = [
+    ["description", "Description"],
+    ["solution", "Solution"],
+    ["discussion", "Discussion"],
+    ["submissions", "Submissions"],
+    ["coach", "Coach"],
+  ] as const;
 
   return <Card className="detail-section">
     <div className="section-header">
@@ -77,53 +158,150 @@ function QuestionPractice({
       </Badge> : null}
     </div>
 
-    <p style={{ fontSize: 18 }}><strong>{question.prompt}</strong></p>
-
-    {question.skills.length || question.patterns.length ? <Card>
-      <p className="eyebrow">What this tests</p>
-      {question.skills.length ? <p>{question.skills.join(" · ")}</p> : null}
-      {question.patterns.length ? <p className="muted">Common patterns: {question.patterns.join(" · ")}</p> : null}
-    </Card> : null}
-
-    <Field label="Your answer" htmlFor={`answer-${question.id}`}>
-      <Textarea
-        id={`answer-${question.id}`}
-        rows={9}
-        value={answer}
-        onChange={(event) => setAnswer(event.target.value)}
-      />
-    </Field>
-    <div className="button-row">
-      <Button onClick={() => attempt.mutate()} disabled={!answer.trim() || attempt.isPending}>
-        <Target size={15}/>Score attempt
-      </Button>
-      <Button variant="secondary" onClick={() => coach.mutate()} disabled={coach.isPending}>
-        <Sparkles size={15}/>Ask ApplyAI coach
-      </Button>
+    <div className="button-row" role="tablist" aria-label="Question workspace">
+      {tabs.map(([value, label]) => <button
+        key={value}
+        type="button"
+        role="tab"
+        aria-selected={activeTab === value}
+        onClick={() => setActiveTab(value)}
+        style={{
+          border: "1px solid var(--border)",
+          borderRadius: 999,
+          padding: "8px 12px",
+          background: activeTab === value ? "var(--surface-raised)" : "transparent",
+          color: "inherit",
+          cursor: "pointer",
+          fontWeight: activeTab === value ? 700 : 500,
+        }}
+      >
+        {label}
+      </button>)}
     </div>
 
-    {hint ? <Card style={{ marginTop: 14 }}>
-      <p className="eyebrow">Progressive hint {hintLevel}</p>
-      <p>{hint}</p>
-    </Card> : null}
+    {activeTab === "description" ? <>
+      <p style={{ fontSize: 18 }}><strong>{question.prompt}</strong></p>
 
-    {result ? <Card style={{ marginTop: 14 }}>
-      <div className="section-header">
-        <h3>Practice result</h3>
-        <Badge tone={scoreTone(result.score)}>{result.score}%</Badge>
+      {question.skills.length || question.patterns.length ? <Card>
+        <p className="eyebrow">What this tests</p>
+        {question.skills.length ? <p>{question.skills.join(" · ")}</p> : null}
+        {question.patterns.length ? <p className="muted">Common patterns: {question.patterns.join(" · ")}</p> : null}
+      </Card> : null}
+
+      <Card>
+        <p className="eyebrow">Interview evaluation checklist</p>
+        <ul>{questionGuidance(question.track).map((item) => <li key={item}>{item}</li>)}</ul>
+      </Card>
+
+      {question.track === "CODING" ? <InterviewCodeRunner code={code} onCodeChange={setCode} /> : null}
+
+      <Field label="Your answer" htmlFor={`answer-${question.id}`}>
+        <Textarea
+          id={`answer-${question.id}`}
+          rows={9}
+          value={answer}
+          onChange={(event) => setAnswer(event.target.value)}
+        />
+      </Field>
+      <Button onClick={() => attempt.mutate()} disabled={(!answer.trim() && !(question.track === "CODING" && code.trim())) || attempt.isPending}>
+        <Target size={15}/>Score and save submission
+      </Button>
+
+      {result ? <Card style={{ marginTop: 14 }}>
+        <div className="section-header">
+          <h3>Practice result</h3>
+          <Badge tone={scoreTone(result.score)}>{result.score}%</Badge>
+        </div>
+        <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit" }}>{JSON.stringify(result.feedback, null, 2)}</pre>
+      </Card> : null}
+    </> : null}
+
+    {activeTab === "solution" ? <>
+      <Card>
+        <p className="eyebrow">Clean-room solution framework</p>
+        <p className="muted">This outline is authored inside ApplyAI. It does not reproduce third-party solutions.</p>
+        {question.solution_outline.length ? <ol>{question.solution_outline.map((item) => <li key={item}>{item}</li>)}</ol> : <p>No solution outline has been authored for this prompt yet.</p>}
+      </Card>
+      {question.follow_ups.length ? <Card>
+        <p className="eyebrow">Interviewer follow-ups</p>
+        <ol>{question.follow_ups.map((item) => <li key={item}>{item}</li>)}</ol>
+      </Card> : null}
+    </> : null}
+
+    {activeTab === "discussion" ? <>
+      <p className="muted">Question discussion is candidate community content and never changes canonical question evidence.</p>
+      <Field label="Discussion title" htmlFor={`discussion-title-${question.id}`}>
+        <input
+          id={`discussion-title-${question.id}`}
+          value={discussionDraft.title}
+          onChange={(event) => setDiscussionDraft((value) => ({ ...value, title: event.target.value }))}
+        />
+      </Field>
+      <Field label="Post" htmlFor={`discussion-body-${question.id}`}>
+        <Textarea
+          id={`discussion-body-${question.id}`}
+          rows={5}
+          value={discussionDraft.body}
+          onChange={(event) => setDiscussionDraft((value) => ({ ...value, body: event.target.value }))}
+        />
+      </Field>
+      <Button
+        onClick={() => createDiscussion.mutate()}
+        disabled={discussionDraft.title.trim().length < 5 || discussionDraft.body.trim().length < 20 || createDiscussion.isPending}
+      >
+        <MessageSquareText size={15}/>Publish discussion
+      </Button>
+      <div className="list-stack" style={{ marginTop: 18 }}>
+        {(discussion.data ?? []).map((item: InterviewCommunityPost) => <div key={item.id} style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+          <strong>{item.title}</strong>
+          <p className="muted">{item.reaction_count} reactions · {item.replies.length} replies · {new Date(item.created_at).toLocaleString()}</p>
+          <p>{item.body}</p>
+        </div>)}
+        {!discussion.isLoading && !(discussion.data ?? []).length ? <EmptyState title="No discussion yet" description="Start a question-specific discussion without altering the evidence-backed question bank." /> : null}
       </div>
-      <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit" }}>{JSON.stringify(result.feedback, null, 2)}</pre>
-    </Card> : null}
+    </> : null}
 
-    {question.follow_ups.length ? <details style={{ marginTop: 16 }}>
-      <summary>Interview follow-up questions</summary>
-      <ol>{question.follow_ups.map((item) => <li key={item}>{item}</li>)}</ol>
-    </details> : null}
+    {activeTab === "submissions" ? <>
+      {submissions.isLoading ? <Skeleton className="page-skeleton" /> : <>
+        <div className="dashboard-grid">
+          <Card><p className="eyebrow">Your submissions</p><h3>{submissions.data?.total ?? 0}</h3></Card>
+          <Card><p className="eyebrow">Average score</p><h3>{submissions.data?.average_score ?? "—"}</h3></Card>
+          <Card><p className="eyebrow">Strong attempts</p><h3>{submissions.data?.strong_attempts ?? 0}</h3><p className="muted">Score 80% or higher</p></Card>
+        </div>
+        <div className="list-stack">
+          {(submissions.data?.items ?? []).map((item) => <Card key={item.id}>
+            <div className="section-header">
+              <div>
+                <strong>{new Date(item.created_at).toLocaleString()}</strong>
+                <p className="muted">{item.status}</p>
+              </div>
+              {item.score != null ? <Badge tone={scoreTone(item.score)}>{item.score}%</Badge> : <Badge>Unscored</Badge>}
+            </div>
+            {item.answer_excerpt ? <p>{item.answer_excerpt}</p> : <p className="muted">No text answer stored for this attempt.</p>}
+          </Card>)}
+          {!submissions.data?.items.length ? <EmptyState title="No submissions yet" description="Score your first answer from the Description tab and it will appear here." /> : null}
+        </div>
+      </>}
+    </> : null}
 
-    {question.solution_outline.length ? <details style={{ marginTop: 16 }}>
-      <summary>Review solution outline</summary>
-      <ol>{question.solution_outline.map((item) => <li key={item}>{item}</li>)}</ol>
-    </details> : null}
+    {activeTab === "coach" ? <>
+      <p className="muted">ApplyAI coaching uses staged hints from clean-room question metadata. It does not reveal or copy third-party solutions.</p>
+      <Field label="Your current thinking" htmlFor={`coach-answer-${question.id}`}>
+        <Textarea
+          id={`coach-answer-${question.id}`}
+          rows={7}
+          value={answer}
+          onChange={(event) => setAnswer(event.target.value)}
+        />
+      </Field>
+      <Button variant="secondary" onClick={() => coach.mutate()} disabled={coach.isPending}>
+        <Sparkles size={15}/>Get next staged hint
+      </Button>
+      {hint ? <Card style={{ marginTop: 14 }}>
+        <p className="eyebrow">Progressive hint {hintLevel}</p>
+        <p>{hint}</p>
+      </Card> : null}
+    </> : null}
   </Card>;
 }
 
@@ -168,7 +346,7 @@ export function InterviewIntelligenceHub() {
   });
   const communityFeed = useQuery({
     queryKey: ["interview-intelligence-community"],
-    queryFn: ({ signal }) => interviewIntelligenceApi.community(signal),
+    queryFn: ({ signal }) => interviewIntelligenceApi.community(undefined, signal),
   });
 
   const availableStages = useMemo(() => {
@@ -367,8 +545,7 @@ export function InterviewIntelligenceHub() {
           </div>
         </Card>
 
-        {selected ? <QuestionPractice question={selected} progress={progress.data?.by_question?.[selected.id]} /> : null}
-        {selected?.track === "CODING" ? <InterviewCodeRunner /> : null}
+        {selected ? <QuestionPractice key={selected.id} question={selected} progress={progress.data?.by_question?.[selected.id]} /> : null}
 
         <Card className="detail-section">
           <div className="section-header">
@@ -398,14 +575,11 @@ export function InterviewIntelligenceHub() {
           <Field label="Post" htmlFor="community-body"><Textarea id="community-body" rows={5} value={community.body} onChange={(event) => setCommunity((value) => ({ ...value, body: event.target.value }))} /></Field>
           <Button onClick={() => createCommunity.mutate()} disabled={community.title.trim().length < 5 || community.body.trim().length < 20 || createCommunity.isPending}>Publish post</Button>
           <div className="list-stack" style={{ marginTop: 18 }}>
-            {(communityFeed.data ?? []).map((raw) => {
-              const item = raw as { id: string; title: string; body: string; company?: string | null; reaction_count?: number };
-              return <div key={item.id} style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
-                <strong>{item.title}</strong>
-                <p className="muted">{item.company || "General"} · {item.reaction_count ?? 0} reactions</p>
-                <p>{item.body}</p>
-              </div>;
-            })}
+            {(communityFeed.data ?? []).map((item) => <div key={item.id} style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+              <strong>{item.title}</strong>
+              <p className="muted">{item.company || "General"} · {item.reaction_count} reactions</p>
+              <p>{item.body}</p>
+            </div>)}
           </div>
         </Card>
       </div>

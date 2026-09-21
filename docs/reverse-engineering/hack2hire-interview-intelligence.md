@@ -6,7 +6,7 @@ destination: prepare
 
 # Hack2Hire-style interview intelligence
 
-Source reviewed: https://www.hack2hire.com/question-bank/companies/openai/coding-questions (2026-09-19)
+Source reviewed: https://www.hack2hire.com/question-bank/companies/openai/coding-questions (2026-09-20)
 
 ## ApplyAI Fit
 
@@ -31,6 +31,10 @@ Candidates benefit from evidence-backed company collections, recurring question 
 - frequency, freshness and confidence sorting/filtering without importing proprietary question text
 - durable question attempts plus per-question best/latest progress
 - explicit “what this tests”, common patterns, staged coaching/hints and follow-up prompts
+- unified per-question workspace with Description, Solution, Discussion, Submissions and Coach views
+- candidate-owned submission history with score summaries; no third-party acceptance counts are imported
+- question-scoped candidate discussion that remains separate from canonical question evidence
+- track-aware evaluation guidance, including explicit time/space complexity expectations for coding practice
 - candidate interview-experience reports with fingerprinting, moderation and provenance
 - operator moderation using the existing operator-or-internal authorization boundary
 - evidence links that recompute aggregates from remaining evidence so unlinking is reversible
@@ -50,4 +54,4 @@ Add an Interview Intelligence layer alongside ApplyAI Prepare, reuse the existin
 
 ## Implementation status
 
-**INTEGRATED — COMPANY QUESTION BANK EXTENDED.** The original clean-room Interview Intelligence implementation remains canonical. The 2026-09-19 review of the public Hack2Hire OpenAI coding-question collection added the missing company-bank interaction patterns: interview-stage metadata, company/stage/difficulty/track filtering, freshness windows, frequency/recency/confidence sorting, richer “what this tests”/pattern/follow-up presentation, and per-question practice progress. No Hack2Hire proprietary question text, solutions, acceptance counts, or private data are copied into ApplyAI.
+**INTEGRATED — QUESTION WORKSPACE EXTENDED.** The original clean-room Interview Intelligence implementation remains canonical. The 2026-09-19 company-bank review added interview-stage metadata, company/stage/difficulty/track filtering, freshness windows, frequency/recency/confidence sorting, richer “what this tests”/pattern/follow-up presentation, and per-question practice progress. The 2026-09-20 follow-up review added the missing practice-workspace mechanics using ApplyAI-owned data: tabbed Description/Solution/Discussion/Submissions/Coach views, question-scoped community discussion, candidate-owned submission history, and track-aware evaluation guidance. No Hack2Hire proprietary question text, solutions, acceptance counts, reported totals, or private data are copied into ApplyAI.

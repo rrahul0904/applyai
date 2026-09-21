@@ -228,7 +228,7 @@ def test_application_agent_fails_closed_when_browser_worker_heartbeat_expires(cl
         certification = session.scalar(
             select(OperationsCertification)
             .where(
-                OperationsCertification.certification_type == "APPLICATION_BROWSER_WORKER",
+                OperationsCertification.certification_type == BROWSER_WORKER_CERTIFICATION_TYPE,
                 OperationsCertification.environment == settings.app_env,
             )
             .order_by(OperationsCertification.created_at.desc())

@@ -1,0 +1,149 @@
+name: ApplyAI Launch Security
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: applyai-launch-security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api-security-regressions:
+    name: API security regressions
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: applyai
+          POSTGRES_PASSWORD: applyai
+          POSTGRES_DB: applyai_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U applyai -d applyai_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+psycopg://applyai:applyai@127.0.0.1:5432/applyai_test
+      TEST_DATABASE_URL: postgresql+psycopg://applyai:applyai@127.0.0.1:5432/applyai_test
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12.11"
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          enable-cache: true
+      - name: Install API dependencies
+        run: uv sync --project services/api --group dev --locked
+      - name: Apply migrations
+        run: cd services/api && uv run alembic upgrade head
+      - name: Run focused security regressions
+        run: >-
+          cd services/api && uv run pytest
+          tests/test_agent_security.py
+          tests/test_job_discovery_security.py
+          tests/test_resume_parser_security.py
+          tests/test_provider_dependency_audit.py
+          tests/test_internal_operations.py
+
+  python-sast:
+    name: Python SAST
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12.11"
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+      - name: Run Bandit high-confidence gate
+        run: uv run --with bandit bandit -q -r services/api/app -x services/api/tests -ll -ii
+
+  python-dependency-audit:
+    name: Python dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12.11"
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+      - name: Install locked API environment
+        run: uv sync --project services/api --group dev --locked
+      - name: Audit installed Python packages
+        run: uv run --project services/api --with pip-audit pip-audit
+
+  web-dependency-audit:
+    name: Web dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.13.1
+          run_install: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.13.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install locked web dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Fail on high or critical production dependency findings
+        run: pnpm audit --prod --audit-level high
+
+  high-confidence-secret-patterns:
+    name: High-confidence secret pattern gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12.11"
+      - name: Scan tracked text files for credential patterns
+        shell: bash
+        run: |
+          python - <<'PY'
+          import pathlib, re, subprocess, sys
+
+          patterns = {
+              "aws_access_key": re.compile(r"AKIA[0-9A-Z]{16}"),
+              "private_key": re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
+              "github_token": re.compile(r"gh[pousr]_[A-Za-z0-9]{36,255}"),
+              "openai_key": re.compile(r"sk-(?:proj-)?[A-Za-z0-9_-]{20,}"),
+              "stripe_live_key": re.compile(r"sk_live_[A-Za-z0-9]{20,}"),
+          }
+          excluded_suffixes = {".png", ".jpg", ".jpeg", ".gif", ".pdf", ".zip", ".woff", ".woff2"}
+          files = subprocess.check_output(["git", "ls-files", "-z"]).decode().split("\0")
+          findings = []
+          for name in files:
+              if not name:
+                  continue
+              path = pathlib.Path(name)
+              if path.suffix.lower() in excluded_suffixes:
+                  continue
+              try:
+                  text = path.read_text(encoding="utf-8")
+              except (UnicodeDecodeError, OSError):
+                  continue
+              for label, pattern in patterns.items():
+                  for match in pattern.finditer(text):
+                      line = text.count("\n", 0, match.start()) + 1
+                      findings.append(f"{name}:{line}: {label}")
+          if findings:
+              print("Potential committed credentials detected:")
+              print("\n".join(findings))
+              sys.exit(1)
+          print("No high-confidence committed credential patterns detected.")
+          PY

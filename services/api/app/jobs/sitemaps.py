@@ -3,7 +3,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from urllib.parse import urljoin, urlsplit, urlunsplit
-from xml.etree import ElementTree
+from xml.etree.ElementTree import ParseError
+
+from defusedxml import ElementTree as DefusedElementTree
+from defusedxml.common import DefusedXmlException
 
 from app.jobs.web_security import CrawlBudgetExceeded, SafeHttpFetcher, validate_public_http_url
 
@@ -35,9 +38,9 @@ def sitemap_urls_from_robots(robots_text: str, base_url: str) -> list[str]:
 
 def _parse_locs(xml_text: str) -> tuple[str, list[str]]:
     try:
-        root = ElementTree.fromstring(xml_text)
-    except ElementTree.ParseError as exc:
-        raise ValueError("Sitemap XML is malformed") from exc
+        root = DefusedElementTree.fromstring(xml_text)
+    except (DefusedXmlException, ParseError) as exc:
+        raise ValueError("Sitemap XML is unsafe or malformed") from exc
     tag = root.tag.rsplit("}", 1)[-1].casefold()
     locations: list[str] = []
     for element in root.iter():

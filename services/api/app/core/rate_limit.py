@@ -47,11 +47,20 @@ def _hash_key(value: str) -> str:
 
 
 def _remote_ip(request: Request) -> str:
-    # Railway's public proxy injects X-Real-IP with the remote client address.
-    # Fall back to the ASGI peer for local/dev runners and other deployments.
-    forwarded = request.headers.get("x-real-ip", "").strip()
-    if forwarded:
-        return forwarded
+    # Railway's public edge supplies the canonical remote address in X-Real-IP.
+    railway_ip = request.headers.get("x-real-ip", "").strip()
+    if railway_ip:
+        return railway_ip
+
+    # AWS ALB appends the connected client address to X-Forwarded-For. Because
+    # client-supplied values may already exist on the left, use the right-most
+    # non-empty address rather than trusting a spoofable left-most value.
+    forwarded_for = request.headers.get("x-forwarded-for", "")
+    if forwarded_for:
+        chain = [part.strip() for part in forwarded_for.split(",") if part.strip()]
+        if chain:
+            return chain[-1]
+
     return request.client.host if request.client is not None else "unknown"
 
 

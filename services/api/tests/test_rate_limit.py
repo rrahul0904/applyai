@@ -59,6 +59,64 @@ def test_api_rate_limit_returns_429_and_isolated_by_remote_ip(
     assert other_client.status_code == 200
 
 
+def test_api_rate_limit_uses_alb_appended_client_ip_not_spoofed_prefix(
+    client,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(main_module.settings, "rate_limit_enabled", True)
+    monkeypatch.setattr(main_module.settings, "rate_limit_network_requests", 100)
+    monkeypatch.setattr(main_module.settings, "rate_limit_read_requests", 2)
+
+    first = client.get(
+        "/api/v1/me",
+        headers={"X-Forwarded-For": "198.51.100.25, 203.0.113.20"},
+    )
+    second = client.get(
+        "/api/v1/me",
+        headers={"X-Forwarded-For": "192.0.2.99, 203.0.113.20"},
+    )
+    limited = client.get(
+        "/api/v1/me",
+        headers={"X-Forwarded-For": "198.51.100.77, 203.0.113.20"},
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert limited.status_code == 429
+    assert limited.json()["error"]["code"] == "RATE_LIMITED"
+
+    different_alb_client = client.get(
+        "/api/v1/me",
+        headers={"X-Forwarded-For": "198.51.100.25, 203.0.113.21"},
+    )
+    assert different_alb_client.status_code == 200
+
+
+def test_railway_x_real_ip_takes_precedence_over_x_forwarded_for(
+    client,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(main_module.settings, "rate_limit_enabled", True)
+    monkeypatch.setattr(main_module.settings, "rate_limit_network_requests", 100)
+    monkeypatch.setattr(main_module.settings, "rate_limit_read_requests", 2)
+
+    headers = {
+        "X-Real-IP": "203.0.113.30",
+        "X-Forwarded-For": "198.51.100.1, 203.0.113.31",
+    }
+    assert client.get("/api/v1/me", headers=headers).status_code == 200
+    assert client.get("/api/v1/me", headers=headers).status_code == 200
+    assert client.get("/api/v1/me", headers=headers).status_code == 429
+
+    assert client.get(
+        "/api/v1/me",
+        headers={
+            "X-Real-IP": "203.0.113.31",
+            "X-Forwarded-For": "198.51.100.1, 203.0.113.30",
+        },
+    ).status_code == 200
+
+
 def test_health_and_readiness_are_not_rate_limited(client, monkeypatch) -> None:
     monkeypatch.setattr(main_module.settings, "rate_limit_enabled", True)
     monkeypatch.setattr(main_module.settings, "rate_limit_network_requests", 10)

@@ -11,7 +11,10 @@ const securityHeaders = [
 ] as const;
 
 const nextConfig: NextConfig = {
-  output: "standalone",
+  // Vercel does not consume Next standalone output, and Next 16.3 has a
+  // Vercel adapter regression that can fail on missing root trace files.
+  // Keep standalone enabled for Railway/Docker packaging only.
+  output: process.env.VERCEL ? undefined : "standalone",
   reactStrictMode: true,
   poweredByHeader: false,
   async headers() {

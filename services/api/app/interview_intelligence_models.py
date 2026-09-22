@@ -158,10 +158,12 @@ class InterviewCommunityPost(Base):
     __table_args__ = (
         Index("ix_interview_community_posts_created", "created_at"),
         Index("ix_interview_community_posts_company_category", "company_label", "category"),
+        Index("ix_interview_community_posts_question_created", "question_id", "created_at"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    question_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("interview_intelligence_questions.id", ondelete="SET NULL"), index=True)
     company_label: Mapped[str | None] = mapped_column(String(240))
     category: Mapped[str] = mapped_column(String(48), nullable=False, default="INTERVIEW_EXPERIENCE")
     title: Mapped[str] = mapped_column(String(320), nullable=False)

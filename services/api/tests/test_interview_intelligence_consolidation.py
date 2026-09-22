@@ -6,7 +6,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.core.operator_auth import require_operator_or_internal
-from app.interview_intelligence_models import InterviewIntelligenceQuestion
+from app.interview_intelligence_models import InterviewIntelligenceQuestion, InterviewQuestionAttempt
 from app.interview_intelligence_service import build_lifecycle, report_fingerprint, skill_is_present
 from app.main import app
 from app.models import CandidateProfile, CandidateSkill, JobSkill, User
@@ -415,3 +415,233 @@ def test_company_question_bank_filters_and_per_question_progress(client, databas
     assert refreshed["attempts"] == 2
     assert refreshed["latest_score"] == second_attempt.json()["score"]
     assert refreshed["best_score"] == max(attempt.json()["score"], second_attempt.json()["score"])
+
+
+
+def test_question_bank_filters_before_catalog_cap_and_progress_uses_full_history(client, database_url) -> None:
+    _seed(database_url, client)
+
+    app.dependency_overrides[require_operator_or_internal] = lambda: None
+    try:
+        created = client.post(
+            "/api/v1/internal/interview-intelligence/questions",
+            json={
+                "title": "Low-ranked target question",
+                "slug": "review-gap-target-question",
+                "track": "CODING",
+                "difficulty": "HARD",
+                "summary": "Clean-room target question used to prove filtering happens before catalog truncation.",
+                "prompt": "Explain how you would design and verify a bounded worker queue under sustained overload.",
+                "companies": ["Example Co"],
+                "stages": ["SCREENING"],
+                "skills": ["concurrency"],
+                "patterns": ["queue"],
+                "frequency_score": 0,
+                "published": True,
+            },
+        )
+        assert created.status_code == 201, created.text
+        question_id = created.json()["id"]
+    finally:
+        app.dependency_overrides.pop(require_operator_or_internal, None)
+
+    engine = create_engine(database_url)
+    now = datetime.now(timezone.utc)
+    with Session(engine) as session:
+        user = session.scalar(select(User).where(User.email == "a@example.com"))
+        question = session.get(InterviewIntelligenceQuestion, question_id)
+        assert user is not None and question is not None
+
+        session.add_all(
+            [
+                InterviewIntelligenceQuestion(
+                    slug=f"review-gap-distractor-{index}",
+                    title=f"High-ranked distractor {index}",
+                    track="CODING",
+                    difficulty="HARD",
+                    summary="Clean-room distractor that must not hide the target from a filtered query.",
+                    prompt="Describe a generic coding problem that is not part of the requested company or stage.",
+                    baseline_company_labels=["Other Co"],
+                    company_labels=["Other Co"],
+                    stages=["PHONE"],
+                    skills=[],
+                    patterns=[],
+                    hints=[],
+                    follow_ups=[],
+                    solution_outline=[],
+                    baseline_frequency_score=100,
+                    frequency_score=100,
+                    confidence=100,
+                    report_count=0,
+                    published=True,
+                )
+                for index in range(1001)
+            ]
+        )
+
+        attempts = []
+        for index in range(1001):
+            attempts.append(
+                InterviewQuestionAttempt(
+                    user_id=user.id,
+                    question_id=question.id,
+                    answer_text="historical practice",
+                    status="COMPLETED",
+                    score=100 if index == 0 else 10,
+                    feedback_json={},
+                    created_at=now - timedelta(seconds=1001 - index),
+                    updated_at=now - timedelta(seconds=1001 - index),
+                )
+            )
+        session.add_all(attempts)
+        session.commit()
+    engine.dispose()
+
+    filtered = client.get(
+        "/api/v1/interview-intelligence/questions",
+        params={
+            "company": "example co",
+            "stage": "screening",
+            "track": "CODING",
+            "difficulty": "HARD",
+            "limit": 10,
+        },
+    )
+    assert filtered.status_code == 200, filtered.text
+    assert filtered.json()["total"] == 1
+    assert [item["id"] for item in filtered.json()["items"]] == [question_id]
+
+    progress = client.get("/api/v1/interview-intelligence/progress")
+    assert progress.status_code == 200, progress.text
+    question_progress = progress.json()["by_question"][question_id]
+    assert progress.json()["total_attempts"] == 1001
+    assert question_progress == {
+        "attempts": 1001,
+        "best_score": 100,
+        "latest_score": 10,
+    }
+
+
+def test_future_reported_at_is_rejected_before_it_can_skew_freshness(client, database_url) -> None:
+    _seed(database_url, client)
+    response = client.post(
+        "/api/v1/interview-intelligence/reports",
+        json={
+            "company": "Example Co",
+            "role": "Data Architect",
+            "interview_stage": "SCREENING",
+            "title": "Future-dated report",
+            "body": "This report is intentionally future dated and must never influence freshness evidence.",
+            "reported_at": (datetime.now(timezone.utc) + timedelta(days=2)).isoformat(),
+        },
+    )
+    assert response.status_code == 422, response.text
+    assert "reported_at cannot be in the future" in response.text
+
+
+
+def test_question_workspace_submission_history_and_discussion(client, database_url) -> None:
+    _seed(database_url, client)
+
+    app.dependency_overrides[require_operator_or_internal] = lambda: None
+    try:
+        created = client.post(
+            "/api/v1/internal/interview-intelligence/questions",
+            json={
+                "title": "Design a resilient iterator service",
+                "slug": "test-question-workspace",
+                "track": "CODING",
+                "difficulty": "MEDIUM",
+                "summary": "Clean-room workspace question used to certify submissions and discussion.",
+                "prompt": "Design an iterator-like service and explain correctness, complexity, edge cases, and verification.",
+                "companies": ["Example Co"],
+                "stages": ["SCREENING"],
+                "skills": ["complexity", "testing"],
+                "patterns": ["iterator"],
+                "hints": ["Define the state and invariants first."],
+                "follow_ups": ["How would you make the iterator restartable?"],
+                "solution_outline": ["Define state", "Establish invariants", "Analyze complexity", "Test boundaries"],
+                "frequency_score": 25,
+                "published": True,
+            },
+        )
+        assert created.status_code == 201, created.text
+        question = created.json()
+    finally:
+        app.dependency_overrides.pop(require_operator_or_internal, None)
+
+    first = client.post(
+        "/api/v1/interview-intelligence/attempts",
+        json={
+            "question_id": question["id"],
+            "answer_text": "Define iterator state, preserve invariants, handle edge cases, test boundaries, and analyze complexity.",
+        },
+    )
+    assert first.status_code == 201, first.text
+
+    second = client.post(
+        "/api/v1/interview-intelligence/attempts",
+        json={
+            "question_id": question["id"],
+            "code_text": "def next_item(items, index):\n    return items[index] if index < len(items) else None",
+        },
+    )
+    assert second.status_code == 201, second.text
+
+    submissions = client.get(
+        f"/api/v1/interview-intelligence/questions/{question['slug']}/submissions",
+        params={"limit": 1},
+    )
+    assert submissions.status_code == 200, submissions.text
+    submission_payload = submissions.json()
+    assert submission_payload["question_id"] == question["id"]
+    assert submission_payload["total"] == 2
+    assert submission_payload["scored"] == 2
+    assert submission_payload["average_score"] is not None
+    assert submission_payload["strong_attempts"] in {0, 1, 2}
+    assert len(submission_payload["items"]) == 1
+    assert submission_payload["items"][0]["score"] == second.json()["score"]
+    assert submission_payload["items"][0]["answer_excerpt"].startswith("def next_item")
+
+    general_post = client.post(
+        "/api/v1/interview-intelligence/community",
+        json={
+            "company": "Example Co",
+            "category": "INTERVIEW_EXPERIENCE",
+            "title": "General interview note",
+            "body": "This is a general candidate community post and is not scoped to a single question.",
+        },
+    )
+    assert general_post.status_code == 201, general_post.text
+    assert general_post.json()["question_id"] is None
+
+    discussion_post = client.post(
+        "/api/v1/interview-intelligence/community",
+        json={
+            "question_id": question["id"],
+            "company": "Example Co",
+            "category": "INTERVIEW_EXPERIENCE",
+            "title": "Iterator edge-case discussion",
+            "body": "I would explicitly test exhaustion, boundary transitions, and complexity before optimizing the implementation.",
+        },
+    )
+    assert discussion_post.status_code == 201, discussion_post.text
+    assert discussion_post.json()["question_id"] == question["id"]
+
+    discussion = client.get(
+        "/api/v1/interview-intelligence/community",
+        params={"question_id": question["id"]},
+    )
+    assert discussion.status_code == 200, discussion.text
+    assert [item["id"] for item in discussion.json()] == [discussion_post.json()["id"]]
+    assert discussion.json()[0]["question_id"] == question["id"]
+
+    missing_question = client.post(
+        "/api/v1/interview-intelligence/community",
+        json={
+            "question_id": "00000000-0000-0000-0000-000000000001",
+            "title": "Missing question",
+            "body": "This post must be rejected because the referenced interview question does not exist.",
+        },
+    )
+    assert missing_question.status_code == 404, missing_question.text

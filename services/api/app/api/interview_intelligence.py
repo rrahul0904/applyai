@@ -6,8 +6,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field, HttpUrl
-from sqlalchemy import func, or_, select
+from pydantic import BaseModel, Field, HttpUrl, field_validator
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -106,8 +106,19 @@ class ReportWrite(BaseModel):
     reported_at: datetime | None = None
     source_reference: str | None = Field(default=None, max_length=320)
 
+    @field_validator("reported_at")
+    @classmethod
+    def reject_future_reported_at(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        normalized = value if value.tzinfo is not None and value.utcoffset() is not None else value.replace(tzinfo=timezone.utc)
+        if normalized > datetime.now(timezone.utc):
+            raise ValueError("reported_at cannot be in the future")
+        return normalized
+
 
 class CommunityPostWrite(BaseModel):
+    question_id: uuid.UUID | None = None
     company: str | None = Field(default=None, max_length=240)
     category: Literal["INTERVIEW_EXPERIENCE", "COMPENSATION", "CAREER_DEVELOPMENT", "COMPANY_CULTURE", "OTHER"] = "INTERVIEW_EXPERIENCE"
     title: str = Field(min_length=5, max_length=320)
@@ -279,6 +290,9 @@ def capabilities() -> dict[str, Any]:
             "interview_stage_filter": True,
             "freshness_sort": True,
             "per_question_progress": True,
+            "question_submission_history": True,
+            "question_scoped_discussion": True,
+            "tabbed_question_workspace": True,
             "durable_attempts": True,
             "staged_coaching": True,
             "candidate_reports": True,
@@ -467,20 +481,33 @@ def list_questions(
     if q:
         pattern = f"%{q.strip()}%"
         statement = statement.where(or_(InterviewIntelligenceQuestion.title.ilike(pattern), InterviewIntelligenceQuestion.summary.ilike(pattern), InterviewIntelligenceQuestion.prompt.ilike(pattern)))
+    if company:
+        statement = statement.where(
+            text(
+                "EXISTS ("
+                "SELECT 1 FROM jsonb_array_elements_text(interview_intelligence_questions.company_labels) AS company_label(value) "
+                "WHERE lower(company_label.value) = :company_key"
+                ")"
+            )
+        ).params(company_key=company.strip().lower())
+    if stage:
+        statement = statement.where(
+            text(
+                "EXISTS ("
+                "SELECT 1 FROM jsonb_array_elements_text(interview_intelligence_questions.stages) AS stage_label(value) "
+                "WHERE lower(stage_label.value) = :stage_key"
+                ")"
+            )
+        ).params(stage_key=stage.strip().lower())
+    total = int(session.scalar(select(func.count()).select_from(statement.subquery())) or 0)
     if sort == "recent":
         ordering = (InterviewIntelligenceQuestion.last_reported_at.desc().nulls_last(), InterviewIntelligenceQuestion.frequency_score.desc())
     elif sort == "confidence":
         ordering = (InterviewIntelligenceQuestion.confidence.desc(), InterviewIntelligenceQuestion.frequency_score.desc())
     else:
         ordering = (InterviewIntelligenceQuestion.frequency_score.desc(), InterviewIntelligenceQuestion.confidence.desc())
-    items = list(session.scalars(statement.order_by(*ordering).limit(1000)))
-    if company:
-        key = company.strip().lower()
-        items = [item for item in items if any(label.lower() == key for label in (item.company_labels or []))]
-    if stage:
-        stage_key = stage.strip().lower()
-        items = [item for item in items if any(label.lower() == stage_key for label in (item.stages or []))]
-    return {"items": [_serialize_question(item) for item in items[:limit]], "total": len(items)}
+    items = list(session.scalars(statement.order_by(*ordering).limit(limit)))
+    return {"items": [_serialize_question(item) for item in items], "total": total}
 
 
 @router.get("/questions/{slug}")
@@ -489,6 +516,81 @@ def get_question(slug: str, _user: User = Depends(get_current_user), session: Se
     if item is None:
         raise HTTPException(status_code=404, detail="Interview question not found")
     return _serialize_question(item)
+
+
+@router.get("/questions/{slug}/submissions")
+def question_submissions(
+    slug: str,
+    limit: int = Query(default=25, ge=1, le=100),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    question = session.scalar(
+        select(InterviewIntelligenceQuestion).where(
+            InterviewIntelligenceQuestion.slug == slug,
+            InterviewIntelligenceQuestion.published.is_(True),
+        )
+    )
+    if question is None:
+        raise HTTPException(status_code=404, detail="Interview question not found")
+
+    attempt_filter = (
+        InterviewQuestionAttempt.user_id == user.id,
+        InterviewQuestionAttempt.question_id == question.id,
+    )
+    total = int(
+        session.scalar(
+            select(func.count()).select_from(InterviewQuestionAttempt).where(*attempt_filter)
+        )
+        or 0
+    )
+    scored = int(
+        session.scalar(
+            select(func.count(InterviewQuestionAttempt.score)).where(*attempt_filter)
+        )
+        or 0
+    )
+    average_score = session.scalar(
+        select(func.avg(InterviewQuestionAttempt.score)).where(*attempt_filter)
+    )
+    strong_attempts = int(
+        session.scalar(
+            select(func.count())
+            .select_from(InterviewQuestionAttempt)
+            .where(*attempt_filter, InterviewQuestionAttempt.score >= 80)
+        )
+        or 0
+    )
+    attempts = list(
+        session.scalars(
+            select(InterviewQuestionAttempt)
+            .where(*attempt_filter)
+            .order_by(
+                InterviewQuestionAttempt.created_at.desc(),
+                InterviewQuestionAttempt.id.desc(),
+            )
+            .limit(limit)
+        )
+    )
+    return {
+        "question_id": str(question.id),
+        "slug": question.slug,
+        "total": total,
+        "scored": scored,
+        "average_score": round(float(average_score), 1) if average_score is not None else None,
+        "strong_attempts": strong_attempts,
+        "items": [
+            {
+                "id": str(item.id),
+                "status": item.status,
+                "score": item.score,
+                "answer_excerpt": ((item.answer_text or item.code_text or "")[:500] or None),
+                "feedback": item.feedback_json,
+                "created_at": item.created_at,
+            }
+            for item in attempts
+        ],
+    }
 
 
 @router.get("/companies")
@@ -523,30 +625,72 @@ def create_attempt(payload: AttemptWrite, user: User = Depends(get_current_user)
 
 @router.get("/progress")
 def progress(user: User = Depends(get_current_user), session: Session = Depends(get_session)) -> dict[str, Any]:
-    attempts = list(session.scalars(select(InterviewQuestionAttempt).where(InterviewQuestionAttempt.user_id == user.id).order_by(InterviewQuestionAttempt.created_at.desc()).limit(1000)))
-    question_ids = {item.question_id for item in attempts}
-    questions = {item.id: item for item in session.scalars(select(InterviewIntelligenceQuestion).where(InterviewIntelligenceQuestion.id.in_(question_ids)))} if question_ids else {}
-    by_track: dict[str, dict[str, int]] = {}
-    by_question: dict[str, dict[str, int | None]] = {}
-    for attempt in attempts:
-        track = questions.get(attempt.question_id).track if questions.get(attempt.question_id) else "UNKNOWN"
-        stats = by_track.setdefault(track, {"attempts": 0, "score_total": 0, "scored": 0})
-        stats["attempts"] += 1
-        question_key = str(attempt.question_id)
-        question_stats = by_question.setdefault(question_key, {"attempts": 0, "best_score": None, "latest_score": None})
-        question_stats["attempts"] = int(question_stats["attempts"] or 0) + 1
-        if question_stats["latest_score"] is None and attempt.score is not None:
-            question_stats["latest_score"] = attempt.score
-        if attempt.score is not None:
-            stats["score_total"] += attempt.score
-            stats["scored"] += 1
-            current_best = question_stats["best_score"]
-            question_stats["best_score"] = attempt.score if current_best is None else max(int(current_best), attempt.score)
-    for stats in by_track.values():
-        stats["average_score"] = round(stats["score_total"] / stats["scored"]) if stats["scored"] else 0
-        del stats["score_total"]
-        del stats["scored"]
-    return {"total_attempts": len(attempts), "by_track": by_track, "by_question": by_question}
+    question_rows = session.execute(
+        select(
+            InterviewQuestionAttempt.question_id,
+            func.count(InterviewQuestionAttempt.id).label("attempts"),
+            func.max(InterviewQuestionAttempt.score).label("best_score"),
+        )
+        .where(InterviewQuestionAttempt.user_id == user.id)
+        .group_by(InterviewQuestionAttempt.question_id)
+    ).all()
+
+    latest_ranked = (
+        select(
+            InterviewQuestionAttempt.question_id.label("question_id"),
+            InterviewQuestionAttempt.score.label("score"),
+            func.row_number()
+            .over(
+                partition_by=InterviewQuestionAttempt.question_id,
+                order_by=(InterviewQuestionAttempt.created_at.desc(), InterviewQuestionAttempt.id.desc()),
+            )
+            .label("row_number"),
+        )
+        .where(
+            InterviewQuestionAttempt.user_id == user.id,
+            InterviewQuestionAttempt.score.is_not(None),
+        )
+        .subquery()
+    )
+    latest_scores = {
+        row.question_id: row.score
+        for row in session.execute(
+            select(latest_ranked.c.question_id, latest_ranked.c.score).where(latest_ranked.c.row_number == 1)
+        )
+    }
+
+    track_rows = session.execute(
+        select(
+            InterviewIntelligenceQuestion.track,
+            func.count(InterviewQuestionAttempt.id).label("attempts"),
+            func.coalesce(func.sum(InterviewQuestionAttempt.score), 0).label("score_total"),
+            func.count(InterviewQuestionAttempt.score).label("scored"),
+        )
+        .join(
+            InterviewIntelligenceQuestion,
+            InterviewIntelligenceQuestion.id == InterviewQuestionAttempt.question_id,
+        )
+        .where(InterviewQuestionAttempt.user_id == user.id)
+        .group_by(InterviewIntelligenceQuestion.track)
+    ).all()
+
+    by_question = {
+        str(row.question_id): {
+            "attempts": int(row.attempts),
+            "best_score": int(row.best_score) if row.best_score is not None else None,
+            "latest_score": int(latest_scores[row.question_id]) if latest_scores.get(row.question_id) is not None else None,
+        }
+        for row in question_rows
+    }
+    by_track = {
+        row.track: {
+            "attempts": int(row.attempts),
+            "average_score": round(int(row.score_total) / int(row.scored)) if row.scored else 0,
+        }
+        for row in track_rows
+    }
+    total_attempts = sum(item["attempts"] for item in by_question.values())
+    return {"total_attempts": total_attempts, "by_track": by_track, "by_question": by_question}
 
 
 @router.post("/coach")
@@ -574,6 +718,7 @@ def submit_report(payload: ReportWrite, user: User = Depends(get_current_user), 
 def list_community(
     company: str | None = None,
     category: str | None = None,
+    question_id: uuid.UUID | None = Query(default=None),
     _user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> list[dict[str, Any]]:
@@ -582,17 +727,53 @@ def list_community(
         statement = statement.where(InterviewCommunityPost.company_label.ilike(company))
     if category:
         statement = statement.where(InterviewCommunityPost.category == category)
+    if question_id:
+        statement = statement.where(InterviewCommunityPost.question_id == question_id)
     items = list(session.scalars(statement.order_by(InterviewCommunityPost.created_at.desc()).limit(100)))
-    return [{"id": str(item.id), "company": item.company_label, "category": item.category, "title": item.title, "body": item.body, "replies": item.replies_json, "reaction_count": len(item.reaction_user_ids or []), "created_at": item.created_at} for item in items]
+    return [
+        {
+            "id": str(item.id),
+            "question_id": str(item.question_id) if item.question_id else None,
+            "company": item.company_label,
+            "category": item.category,
+            "title": item.title,
+            "body": item.body,
+            "replies": item.replies_json,
+            "reaction_count": len(item.reaction_user_ids or []),
+            "created_at": item.created_at,
+        }
+        for item in items
+    ]
 
 
 @router.post("/community", status_code=status.HTTP_201_CREATED)
 def create_community_post(payload: CommunityPostWrite, user: User = Depends(get_current_user), session: Session = Depends(get_session)) -> dict[str, Any]:
-    item = InterviewCommunityPost(user_id=user.id, company_label=payload.company, category=payload.category, title=payload.title, body=payload.body)
+    if payload.question_id is not None:
+        question = session.get(InterviewIntelligenceQuestion, payload.question_id)
+        if question is None or not question.published:
+            raise HTTPException(status_code=404, detail="Interview question not found")
+    item = InterviewCommunityPost(
+        user_id=user.id,
+        question_id=payload.question_id,
+        company_label=payload.company,
+        category=payload.category,
+        title=payload.title,
+        body=payload.body,
+    )
     session.add(item)
     session.commit()
     session.refresh(item)
-    return {"id": str(item.id), "title": item.title, "reaction_count": 0, "replies": []}
+    return {
+        "id": str(item.id),
+        "question_id": str(item.question_id) if item.question_id else None,
+        "company": item.company_label,
+        "category": item.category,
+        "title": item.title,
+        "body": item.body,
+        "reaction_count": 0,
+        "replies": [],
+        "created_at": item.created_at,
+    }
 
 
 @router.post("/community/{post_id}/replies", status_code=status.HTTP_201_CREATED)

@@ -1480,6 +1480,13 @@ export interface components {
             };
             /** Items */
             items?: components["schemas"]["ApplicationBoardItem"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /**
+             * Returned
+             * @default 0
+             */
+            returned: number;
             /**
              * Total
              * @default 0
@@ -2937,7 +2944,10 @@ export interface operations {
     };
     get_application_board_api_v1_applications_board_get: {
         parameters: {
-            query?: never;
+            query?: {
+                cursor?: string | null;
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2951,6 +2961,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApplicationBoardResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

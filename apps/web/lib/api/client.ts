@@ -95,6 +95,8 @@ export type ApplicationBoardResponse = {
   items: ApplicationBoardItem[];
   counts: Record<string, number>;
   total: number;
+  next_cursor: string | null;
+  returned: number;
 };
 export type ApplicationTrackerWrite = Partial<
   Pick<
@@ -382,8 +384,12 @@ export const api = {
       const suffix = params.size ? `?${params.toString()}` : "";
       return request<ApplicationListPage>(`/applications${suffix}`, { signal });
     },
-    board: (signal?: AbortSignal) =>
-      request<ApplicationBoardResponse>("/applications/board", { signal }),
+    board: (signal?: AbortSignal, cursor?: string) => {
+      const params = new URLSearchParams();
+      if (cursor) params.set("cursor", cursor);
+      const suffix = params.size ? `?${params.toString()}` : "";
+      return request<ApplicationBoardResponse>(`/applications/board${suffix}`, { signal });
+    },
     detail: (id: string, signal?: AbortSignal) =>
       request<Application>(`/applications/${id}`, { signal }),
     create: (jobId: string) =>

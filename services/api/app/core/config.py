@@ -64,6 +64,14 @@ class Settings(BaseSettings):
     s3_upload_expiration_seconds: int = Field(default=900, ge=60, le=3600)
 
     task_queue_provider: str = "memory"
+    rate_limit_enabled: bool | None = None
+    rate_limit_window_seconds: int = Field(default=60, ge=10, le=3600)
+    rate_limit_network_requests: int = Field(default=900, ge=10, le=100_000)
+    rate_limit_read_requests: int = Field(default=600, ge=10, le=100_000)
+    rate_limit_write_requests: int = Field(default=120, ge=5, le=100_000)
+    rate_limit_expensive_requests: int = Field(default=30, ge=2, le=10_000)
+    rate_limit_upload_requests: int = Field(default=12, ge=2, le=1_000)
+    rate_limit_webhook_requests: int = Field(default=600, ge=10, le=100_000)
     sqs_queue_url: str | None = None
     sqs_dlq_url: str | None = None
     source_sqs_queue_url: str | None = None
@@ -328,6 +336,17 @@ class Settings(BaseSettings):
         ):
             raise ValueError(f"{environment.title()} lean profile requires durable object storage")
 
+        if environment == "production" and self.rate_limit_enabled is False:
+            raise ValueError("Production API rate limiting cannot be disabled")
+        if self.rate_limit_network_requests < max(
+            self.rate_limit_read_requests,
+            self.rate_limit_write_requests,
+            self.rate_limit_expensive_requests,
+            self.rate_limit_upload_requests,
+            self.rate_limit_webhook_requests,
+        ):
+            raise ValueError("RATE_LIMIT_NETWORK_REQUESTS must cover every per-route limit")
+
         if self.task_queue_provider not in {"memory", "sqs", "postgres"}:
             raise ValueError("TASK_QUEUE_PROVIDER must be memory, postgres or sqs")
         if self.task_queue_provider == "sqs" and not self.sqs_queue_url:
@@ -444,6 +463,12 @@ class Settings(BaseSettings):
         if not ref:
             return None
         return f"https://{ref}.storage.supabase.co/storage/v1/s3"
+
+    @property
+    def rate_limit_runtime_enabled(self) -> bool:
+        if self.rate_limit_enabled is not None:
+            return self.rate_limit_enabled
+        return self.app_env.lower() in {"staging", "production"}
 
     @property
     def storage_runtime_configured(self) -> bool:

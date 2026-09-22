@@ -1,6 +1,10 @@
+from datetime import timedelta
+
 from sqlalchemy import select
 
 from app.application_agent_models import ApplicationExecution, ApplicationQuestionMemory
+from app.api.application_agent import BROWSER_WORKER_CERTIFICATION_TYPE
+from app.operations_models import OperationsCertification
 from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.jobs.seed import seed_development_jobs
@@ -178,6 +182,76 @@ def test_application_agent_reuses_verified_answers_and_requires_confirmation(cli
         )
         assert answer is not None
         assert answer.answer == "No"
+
+
+
+def test_application_agent_fails_closed_when_browser_worker_heartbeat_expires(client):
+    with SessionLocal() as session:
+        seed_development_jobs(session)
+    assert client.put("/api/v1/profile", json=_profile()).status_code == 200
+    job_id = _selected_job(client)
+    application_id = _prepare_copilot(client, job_id)
+
+    prepared = client.post(
+        f"/api/v1/application-agent/applications/{application_id}/prepare",
+        json={
+            "approval_mode": "SMART",
+            "observed_fields": [
+                {"field_id": "first_name", "label": "First name", "field_type": "TEXT", "required": True},
+                {"field_id": "email", "label": "Email", "field_type": "TEXT", "required": True},
+            ],
+        },
+    )
+    assert prepared.status_code == 201
+    execution_id = prepared.json()["id"]
+
+    approved = client.post(f"/api/v1/application-agent/executions/{execution_id}/approve")
+    assert approved.status_code == 200
+    assert approved.json()["state"] == "READY_FOR_EXECUTION"
+
+    settings = get_settings().model_copy(update={"internal_api_token": "application-agent-test-token"})
+    app.dependency_overrides[get_settings] = lambda: settings
+    headers = {"X-ApplyAI-Internal-Token": "application-agent-test-token"}
+
+    heartbeat = client.post(
+        "/api/v1/internal/application-agent/browser-worker/heartbeat",
+        headers=headers,
+        json={"worker_id": "application-agent-test-worker", "version": "test-sha"},
+    )
+    assert heartbeat.status_code == 200
+
+    capabilities = client.get("/api/v1/application-agent/capabilities")
+    assert capabilities.status_code == 200
+    assert capabilities.json()["browser_automation_available"] is True
+    ttl_seconds = capabilities.json()["browser_worker_ttl_seconds"]
+
+    with SessionLocal() as session:
+        certification = session.scalar(
+            select(OperationsCertification)
+            .where(
+                OperationsCertification.certification_type == BROWSER_WORKER_CERTIFICATION_TYPE,
+                OperationsCertification.environment == settings.app_env,
+            )
+            .order_by(OperationsCertification.created_at.desc())
+        )
+        assert certification is not None
+        certification.created_at = certification.created_at - timedelta(seconds=ttl_seconds + 1)
+        session.commit()
+
+    capabilities = client.get("/api/v1/application-agent/capabilities")
+    assert capabilities.status_code == 200
+    assert capabilities.json()["browser_automation_available"] is False
+    assert capabilities.json()["browser_worker_last_seen_at"]
+
+    unavailable = client.post(f"/api/v1/application-agent/executions/{execution_id}/execute")
+    assert unavailable.status_code == 503
+    assert unavailable.json()["error"]["code"] == "BROWSER_WORKER_UNAVAILABLE"
+
+    with SessionLocal() as session:
+        execution = session.get(ApplicationExecution, execution_id)
+        assert execution is not None
+        assert execution.state == "READY_FOR_EXECUTION"
+        assert execution.browser_handoff in (None, {})
 
 
 def test_application_agent_blocks_unknown_required_and_sensitive_answers(client):

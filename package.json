@@ -32,5 +32,10 @@
     "test:full": "bash scripts/local-certify.sh",
     "release:contract": "python3 scripts/verify_full_functional_contract.py",
     "release:predeploy-certify": "bash scripts/predeploy-certify.sh"
+  },
+  "pnpm": {
+    "overrides": {
+      "nanoid": "3.3.18"
+    }
   }
 }

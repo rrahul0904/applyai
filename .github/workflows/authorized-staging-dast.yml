@@ -1,0 +1,79 @@
+name: ApplyAI Authorized Staging DAST
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: HTTPS URL for an ApplyAI-owned Vercel staging or preview deployment
+        required: true
+        type: string
+      scan_mode:
+        description: Baseline is passive; full performs an active ZAP scan against the authorized staging target
+        required: true
+        default: baseline
+        type: choice
+        options:
+          - baseline
+          - full
+
+permissions:
+  contents: read
+
+jobs:
+  zap:
+    name: OWASP ZAP authorized staging scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      TARGET_URL: ${{ inputs.target_url }}
+      SCAN_MODE: ${{ inputs.scan_mode }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12.11"
+      - name: Refuse non-ApplyAI targets
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os, re, sys
+          from urllib.parse import urlparse
+
+          raw = os.environ["TARGET_URL"]
+          parsed = urlparse(raw)
+          host = (parsed.hostname or "").lower()
+          allowed = (
+              parsed.scheme == "https"
+              and (
+                  host == "applyai-gold.vercel.app"
+                  or re.fullmatch(r"applyai-[a-z0-9-]+-rrahul0904-5013s-projects\.vercel\.app", host)
+              )
+          )
+          if not allowed:
+              print(f"Refusing DAST target outside the ApplyAI-owned allow-list: {raw}")
+              sys.exit(2)
+          print(f"Authorized target: {raw}")
+          PY
+      - name: Verify target is reachable
+        run: curl --fail --location --retry 3 --max-time 30 "$TARGET_URL" >/dev/null
+      - name: Run ZAP scan
+        shell: bash
+        run: |
+          mkdir -p artifacts/zap
+          chmod 777 artifacts/zap
+          if [ "$SCAN_MODE" = "full" ]; then
+            script=zap-full-scan.py
+          else
+            script=zap-baseline.py
+          fi
+          docker run --rm \
+            -v "$PWD/artifacts/zap:/zap/wrk/:rw" \
+            ghcr.io/zaproxy/zaproxy:stable \
+            "$script" -t "$TARGET_URL" -r report.html -J report.json -w report.md
+      - name: Upload ZAP evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: applyai-zap-${{ inputs.scan_mode }}-${{ github.run_id }}
+          path: artifacts/zap
+          retention-days: 30

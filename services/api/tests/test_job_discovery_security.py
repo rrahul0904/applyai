@@ -201,3 +201,29 @@ def test_generic_extractor_quarantines_listing_pages():
     result = extract_career_page(listing, page_url="https://example.com/jobs")
     assert result.status == ValidationStatus.QUARANTINED
     assert result.posting is None
+
+
+def test_sitemap_discovery_rejects_external_entities():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/sitemap.xml":
+            return httpx.Response(
+                200,
+                text="""<?xml version='1.0'?>
+                <!DOCTYPE urlset [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
+                <urlset><url><loc>&xxe;</loc></url></urlset>""",
+                headers={"Content-Type": "application/xml"},
+            )
+        return httpx.Response(404)
+
+    result = discover_job_urls_from_sitemaps(
+        SafeHttpFetcher(
+            budget=CrawlBudget(max_pages=1),
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
+            resolver=public_resolver,
+        ),
+        "https://example.com",
+        max_sitemaps=1,
+    )
+
+    assert result.sitemap_urls == ()
+    assert result.candidate_job_urls == ()

@@ -1,6 +1,7 @@
 import json
 
 import httpx
+import pytest
 
 from app.jobs.contracts import JobSourceType, SourceTrustLevel
 from app.jobs.partner_feed import PartnerFeedConnector
@@ -102,3 +103,25 @@ def test_authorized_xml_feed_parses_rss_items():
     assert raw.title == "Research Analyst"
     assert raw.company_name == "Example Foundation"
     assert raw.apply_url == "https://jobs.example.org/job-1"
+
+
+def test_authorized_xml_feed_rejects_external_entities():
+    xml = b"""<?xml version='1.0'?>
+    <!DOCTYPE rss [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
+    <rss><channel><item>
+      <id>job-unsafe</id>
+      <title>&xxe;</title>
+      <company>Example Foundation</company>
+      <link>https://jobs.example.org/job-unsafe</link>
+    </item></channel></rss>"""
+    connector = PartnerFeedConnector(
+        feed_url="https://feeds.example.org/jobs.xml",
+        source_identity="foundation-feed",
+        provider_key="licensed-foundation",
+        feed_format="xml",
+        field_map={"apply_url": "link", "source_url": "link"},
+        fetcher=fetcher_for(xml, "application/rss+xml"),
+    )
+
+    with pytest.raises(ValueError, match="unsafe or malformed"):
+        connector.fetch(None)

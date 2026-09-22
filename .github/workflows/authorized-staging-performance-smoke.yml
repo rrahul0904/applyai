@@ -1,0 +1,109 @@
+name: ApplyAI Authorized Staging Performance Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: HTTPS URL for an ApplyAI-owned staging or preview deployment
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  public-surface-smoke:
+    name: Bounded public performance smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TARGET_URL: ${{ inputs.target_url }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12.11"
+      - name: Refuse non-ApplyAI targets
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os, re, sys
+          from urllib.parse import urlparse
+          raw = os.environ['TARGET_URL']
+          parsed = urlparse(raw)
+          host = (parsed.hostname or '').lower()
+          allowed = parsed.scheme == 'https' and (
+              host == 'applyai-gold.vercel.app'
+              or re.fullmatch(r'applyai-[a-z0-9-]+-rrahul0904-5013s-projects\.vercel\.app', host)
+          )
+          if not allowed:
+              print(f'Refusing performance target outside the ApplyAI-owned allow-list: {raw}')
+              sys.exit(2)
+          PY
+      - name: Run bounded concurrency smoke
+        shell: bash
+        run: |
+          mkdir -p artifacts/performance
+          python - <<'PY'
+          import concurrent.futures, json, os, statistics, time, urllib.request
+          from urllib.parse import urljoin
+
+          base = os.environ['TARGET_URL'].rstrip('/') + '/'
+          routes = ['/', '/pricing', '/sign-in']
+          requests_per_route = 20
+          concurrency = 5
+          timeout = 15
+          results = []
+
+          def hit(route):
+              url = urljoin(base, route.lstrip('/'))
+              started = time.perf_counter()
+              try:
+                  req = urllib.request.Request(url, headers={'User-Agent': 'ApplyAI-Launch-Performance-Smoke/1.0'})
+                  with urllib.request.urlopen(req, timeout=timeout) as response:
+                      response.read(2048)
+                      status = response.status
+                  error = None
+              except Exception as exc:
+                  status = getattr(exc, 'code', 0) or 0
+                  error = str(exc)
+              elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
+              return {'route': route, 'status': status, 'elapsed_ms': elapsed_ms, 'error': error}
+
+          for route in routes:
+              with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
+                  futures = [pool.submit(hit, route) for _ in range(requests_per_route)]
+                  results.extend(f.result() for f in futures)
+
+          latencies = [r['elapsed_ms'] for r in results if 200 <= r['status'] < 400]
+          failures = [r for r in results if not (200 <= r['status'] < 400)]
+          ordered = sorted(latencies)
+          p95 = ordered[max(0, int(len(ordered) * 0.95) - 1)] if ordered else None
+          report = {
+              'total_requests': len(results),
+              'successful_requests': len(latencies),
+              'failure_count': len(failures),
+              'failure_rate': round(len(failures) / len(results), 4),
+              'median_ms': round(statistics.median(latencies), 2) if latencies else None,
+              'p95_ms': p95,
+              'max_ms': max(latencies) if latencies else None,
+              'routes': routes,
+              'concurrency': concurrency,
+              'requests_per_route': requests_per_route,
+              'failures': failures[:10],
+          }
+          print(json.dumps(report, indent=2))
+          with open('artifacts/performance/report.json', 'w') as fh:
+              json.dump(report, fh, indent=2)
+          if failures:
+              raise SystemExit('Performance smoke had failed HTTP requests')
+          if p95 is None or p95 > 2500:
+              raise SystemExit(f'Public-route p95 exceeded 2500 ms: {p95}')
+          PY
+      - name: Upload performance evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: applyai-performance-smoke-${{ github.run_id }}
+          path: artifacts/performance
+          retention-days: 30

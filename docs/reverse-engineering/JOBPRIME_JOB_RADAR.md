@@ -1,6 +1,12 @@
+---
+applyai_fit: CORE
+fit_scope: PARTIAL
+destination: candidate-core
+---
+
 # JobPrime -> ApplyAI Job Radar reverse-engineering contract
 
-Status: reverse engineering started (2026-09-22)
+Status: Phase A repository slice implemented in draft PR; exact-head verification pending (2026-09-23)
 Source: https://jobprime.vercel.app/
 Canonical destination: ApplyAI (`/jobs`, `/matches`, alerts, Career Intelligence)
 
@@ -9,6 +15,59 @@ Canonical destination: ApplyAI (`/jobs`, `/matches`, alerts, Career Intelligence
 JobPrime is a capability donor, not a new standalone product. Its useful surface is the autonomous discovery loop: a candidate confirms a resume-derived search profile, the system fans out across multiple job queries, normalizes and filters listings, ranks them, explains the strongest matches, returns direct application links, and can repeat that scan on a schedule.
 
 ApplyAI already owns canonical jobs, candidate preferences, deterministic Career Intelligence, durable AI jobs, saved searches, alerts, application handoff and billing. The implementation below therefore extends those boundaries rather than duplicating a second job marketplace.
+
+## ApplyAI Fit
+
+**PARTIAL — APPLYAI CORE**
+
+JobPrime's useful capability is a candidate-facing job-discovery and ranking loop, so the correct destination is ApplyAI's existing candidate core rather than a separate product. This slice reuses canonical jobs, authenticated candidate state, the existing durable task/outbox runtime, and explicit public application handoffs.
+
+The fit is partial because scheduled delivery, a live third-party search provider, realtime scan streaming, candidate feedback actions, and AI reranking are intentionally outside the implemented/certified boundary of this PR.
+
+## Why this qualifies
+
+The capability directly supports the ApplyAI candidate journey: persist a confirmed search intent, execute a bounded job scan, normalize/deduplicate results, handle evidenced compensation, rank candidates deterministically with an auditable score breakdown, and persist the resulting shortlist for later candidate review.
+
+It also strengthens trust boundaries already used elsewhere in ApplyAI: idempotent work submission, tenant-scoped reads, durable outbox execution, source provenance, explicit missing-evidence handling, and deterministic fallback behavior that remains useful without an AI provider.
+
+## Candidate journey stages
+
+- `DISCOVER_JOBS` — turn a confirmed target-role/search profile into a bounded multi-query scan.
+- `UNDERSTAND_FIT` — score canonical jobs against title, skills, experience, location/work-mode, and evidenced annual salary signals.
+- `CAREER_INTELLIGENCE` — persist ranked scan artifacts with versioned deterministic score breakdowns and source evidence.
+- `APPLY` — retain a public source/application handoff URL; this slice does not submit applications.
+
+## Absorb into ApplyAI
+
+- Persisted `JobSearchProfile`, `JobScan`, and deterministic scan-match artifacts.
+- A provider-neutral `JobRadarProvider` contract.
+- The first concrete adapter over ApplyAI's existing canonical job corpus (`canonical-store-v1`), avoiding an unverified external-provider dependency in this repository slice.
+- URL normalization and deterministic deduplication using provider id, canonicalized public URL, then a conservative fallback key.
+- Salary parsing that preserves evidenced currency/period and leaves unsupported conversion unknown.
+- Versioned deterministic scoring with per-signal values, weights, contributions, and missing-signal disclosure.
+- One idempotent on-demand scan persisted before execution and dispatched through ApplyAI's existing task outbox/worker path.
+
+## Keep separate
+
+- Scheduled Job Radar delivery, timezone-aware recurrence, delivery preferences/logs, and notification deduplication.
+- AI/model reranking, AI-generated match explanations, prompts, provider/model selection, and related AI certification.
+- A live JSearch/RapidAPI or other external job-search-provider integration and its quota/terms certification.
+- Realtime/SSE progress transport and candidate-facing profile/scan UI.
+- Autonomous application submission or any bypass of employer authentication, CAPTCHA, or anti-bot controls.
+- Claims of production readiness until exact-head repository CI and later hosted/provider certification pass.
+
+## Implementation destination
+
+`candidate-core`
+
+Current repository targets for this slice:
+
+- `services/api/app/job_radar_models.py`
+- `services/api/app/job_radar_service.py`
+- `services/api/app/api/job_radar.py`
+- `services/api/app/workers/job_radar.py`
+- `services/api/alembic/versions/a7s1w3p6t864_job_radar_phase_a.py`
+- `services/api/tests/test_job_radar_phase_a.py`
 
 ## Evidence boundary
 
@@ -314,3 +373,14 @@ Quality dashboard/evals should monitor Precision@5/10, save/open/apply downstrea
 ## Smallest truthful next implementation action
 
 Implement **Phase A steps 1-3 only**: the persisted search-profile/scan contracts, a provider-neutral adapter with one concrete provider, and deterministic normalize/dedupe/salary/score logic with tests. Do not start scheduled delivery or model reranking until one on-demand scan is repository-tested end to end. This creates a useful vertical slice while preserving ApplyAI's existing architecture and avoids claiming JobPrime parity from documentation alone.
+
+
+## Implementation status
+
+**IMPLEMENTED IN DRAFT PR — exact-head certification pending**
+
+The branch now contains the Phase A persistence, provider contract/concrete canonical-store adapter, normalization/dedupe/salary logic, deterministic scoring, and one durable on-demand scan path. The scan request persists its profile/scan/outbox state, is idempotent by candidate + request key, is routable through the PostgreSQL/default task workers, persists ranked matches and source evidence, and is tenant-scoped on read.
+
+Repository tests added in this slice cover salary formats/unknowns, deterministic dedupe, on-demand scan persistence/idempotency, outbox creation, PostgreSQL worker dispatch, source URL normalization, deterministic score provenance, and cross-tenant scan isolation. These are implementation assertions until the exact PR head completes CI.
+
+**Not claimed by this PR:** scheduled delivery, scheduler idempotency, notification delivery/dedupe, realtime scan streaming, a live external search provider, or AI reranking. Those remain later implementation and hosted/provider certification work.

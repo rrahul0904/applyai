@@ -201,12 +201,17 @@ def deduplicate_candidates(candidates: list[NormalizedJobCandidate]) -> list[Nor
         provider_key = f"{item.provider}:{item.provider_job_id}" if item.provider_job_id else None
         posted = item.posted_at.date().isoformat() if item.posted_at else "unknown"
         fallback = "|".join((item.company.lower(), item.title.lower(), (item.location or "").lower(), posted))
-        if (provider_key and provider_key in provider_ids) or item.application_url in urls or fallback in fallbacks:
+        if provider_key and provider_key in provider_ids:
+            continue
+        if item.application_url in urls:
+            continue
+        if provider_key is None and fallback in fallbacks:
             continue
         if provider_key:
             provider_ids.add(provider_key)
+        else:
+            fallbacks.add(fallback)
         urls.add(item.application_url)
-        fallbacks.add(fallback)
         result.append(item)
     return result
 

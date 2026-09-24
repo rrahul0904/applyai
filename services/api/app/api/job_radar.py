@@ -109,6 +109,9 @@ def _scan_payload(session: Session, scan: JobScan) -> dict:
         ],
         "ai_reranking": "NOT_IMPLEMENTED",
         "scheduled_delivery": "NOT_IMPLEMENTED",
+        "external_job_providers": "NOT_IMPLEMENTED",
+        "realtime_streaming": "NOT_IMPLEMENTED",
+        "autonomous_applications": "NOT_IMPLEMENTED",
     }
 
 

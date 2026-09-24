@@ -7,10 +7,11 @@ from app.core.config import Settings
 from app.core.database import SessionLocal
 from app.core.queue import Task, supports_task_type
 from app.durability_models import TaskOutbox
-from app.job_radar_models import JobScan, JobScanMatch
+from app.job_radar_models import JobScan, JobScanMatch, JobSearchProfile
 from app.job_radar_service import (
     NormalizedJobCandidate,
     deduplicate_candidates,
+    deterministic_score,
     parse_salary_text,
 )
 from app.models import (
@@ -56,6 +57,23 @@ def test_salary_parser_preserves_evidenced_period_currency_and_unknowns():
         "INR",
         "YEAR",
     )
+    single = parse_salary_text("$135k/year")
+    assert single is not None
+    assert (single.minimum, single.maximum) == (135_000, 135_000)
+
+    floor = parse_salary_text("from $125k/year")
+    assert floor is not None
+    assert (floor.minimum, floor.maximum) == (125_000, None)
+
+    ceiling = parse_salary_text("up to EUR 10k/month")
+    assert ceiling is not None
+    assert (ceiling.minimum, ceiling.maximum, ceiling.currency, ceiling.interval) == (
+        None,
+        10_000,
+        "EUR",
+        "MONTH",
+    )
+
     assert parse_salary_text("competitive") is None
     assert parse_salary_text("$150k-$120k/year") is None
 
@@ -85,6 +103,45 @@ def test_dedupe_prefers_provider_id_then_canonical_url():
         application_url="https://jobs.example.com/roles/3",
     )
     assert deduplicate_candidates([base, duplicate_id, duplicate_url, unique]) == [base, unique]
+
+
+def test_deterministic_score_discloses_missing_signals_without_imputation():
+    profile = JobSearchProfile(
+        target_titles=["Data Engineer"],
+        skills=[],
+        years_experience=None,
+        seniority_preferences=[],
+        preferred_locations=[],
+        remote_policy="ANY",
+        salary_min=None,
+        salary_currency="USD",
+        query_hints={},
+    )
+    job = NormalizedJobCandidate(
+        provider="canonical-store-v1",
+        provider_job_id="job-missing-signals",
+        application_url="https://jobs.example.com/roles/missing-signals",
+        title="Data Engineer",
+        company="Example",
+        description="",
+        canonical_job_id=None,
+        location=None,
+        work_mode=None,
+        employment_type=None,
+        seniority=None,
+        skills=(),
+        salary=None,
+        posted_at=None,
+    )
+
+    score, breakdown = deterministic_score(profile, job)
+
+    assert score == 40
+    assert breakdown["version"] == "job-radar-deterministic-v1"
+    assert breakdown["signals"]["title"] == 100
+    assert breakdown["missing_signals"] == ["skills", "experience", "location", "salary"]
+    assert breakdown["contributions"]["skills"] == 0
+    assert breakdown["contributions"]["salary"] == 0
 
 
 def _seed_job() -> None:
@@ -169,13 +226,25 @@ def test_on_demand_scan_is_persisted_idempotent_and_worker_routable(client, swit
     assert payload["top_k"] == 5
     assert payload["ai_reranking"] == "NOT_IMPLEMENTED"
     assert payload["scheduled_delivery"] == "NOT_IMPLEMENTED"
+    assert payload["external_job_providers"] == "NOT_IMPLEMENTED"
+    assert payload["realtime_streaming"] == "NOT_IMPLEMENTED"
+    assert payload["autonomous_applications"] == "NOT_IMPLEMENTED"
     assert payload["jobs_seen"] == 1
     assert payload["jobs_ranked"] == 1
     assert len(payload["matches"]) == 1
     assert payload["matches"][0]["application_url"] == "https://jobs.example.com/radar-1"
     assert payload["matches"][0]["deterministic_score"] >= 80
     assert payload["matches"][0]["score_breakdown"]["version"] == "job-radar-deterministic-v1"
+    assert payload["matches"][0]["score_breakdown"]["missing_signals"] == []
     assert payload["matches"][0]["source_evidence"]["provider_job_id"] == "radar-1"
+    assert payload["matches"][0]["source_evidence"]["salary"] == {
+        "minimum": 150000,
+        "maximum": 180000,
+        "currency": "USD",
+        "interval": "YEAR",
+        "raw": "provider-structured",
+        "provenance": "TEST",
+    }
 
     second = client.post(
         "/api/v1/job-radar/scans",

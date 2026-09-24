@@ -26,6 +26,7 @@ class SalaryRange:
     currency: str
     interval: str
     raw: str
+    provenance: str | None = None
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,7 @@ class ProviderJobCandidate:
     salary_max: int | None = None
     salary_currency: str | None = None
     salary_interval: str | None = None
+    salary_provenance: str | None = None
     posted_at: datetime | None = None
 
 
@@ -120,7 +122,12 @@ def _salary_numbers(text: str) -> list[int]:
     return values[:2]
 
 
-def parse_salary_text(value: str | None, *, default_currency: str = "USD") -> SalaryRange | None:
+def parse_salary_text(
+    value: str | None,
+    *,
+    default_currency: str = "USD",
+    provenance: str | None = "provider-text",
+) -> SalaryRange | None:
     raw = _clean(value)
     if raw is None:
         return None
@@ -151,7 +158,7 @@ def parse_salary_text(value: str | None, *, default_currency: str = "USD") -> Sa
         else "MONTH" if re.search(r"(?:/|PER\s*)?(?:MO|MONTH)\b|MONTHLY", upper)
         else "YEAR"
     )
-    return SalaryRange(minimum, maximum, currency, interval, raw)
+    return SalaryRange(minimum, maximum, currency, interval, raw, provenance)
 
 
 def normalize_candidate(candidate: ProviderJobCandidate) -> NormalizedJobCandidate | None:
@@ -167,9 +174,14 @@ def normalize_candidate(candidate: ProviderJobCandidate) -> NormalizedJobCandida
             (candidate.salary_currency or "USD").upper(),
             (candidate.salary_interval or "YEAR").upper(),
             candidate.salary_text or "provider-structured",
+            candidate.salary_provenance,
         )
     elif candidate.salary_text:
-        salary = parse_salary_text(candidate.salary_text, default_currency=candidate.salary_currency or "USD")
+        salary = parse_salary_text(
+            candidate.salary_text,
+            default_currency=candidate.salary_currency or "USD",
+            provenance=candidate.salary_provenance or "provider-text",
+        )
     skills = tuple(dict.fromkeys(value.lower() for raw in candidate.skills if (value := _clean(raw))))
     work_mode = _clean(candidate.work_mode)
     employment_type = _clean(candidate.employment_type)
@@ -375,6 +387,7 @@ class CanonicalStoreJobProvider:
                 salary_max=pay.maximum if pay else None,
                 salary_currency=pay.currency if pay else None,
                 salary_interval=pay.interval if pay else None,
+                salary_provenance=pay.provenance if pay else None,
                 posted_at=job.posted_at,
             ))
         return result
@@ -430,6 +443,18 @@ def run_job_scan(session: Session, *, scan_id: uuid.UUID, provider: JobRadarProv
                     "provider": item.provider,
                     "provider_job_id": item.provider_job_id,
                     "application_url": item.application_url,
+                    "salary": (
+                        None
+                        if item.salary is None
+                        else {
+                            "minimum": item.salary.minimum,
+                            "maximum": item.salary.maximum,
+                            "currency": item.salary.currency,
+                            "interval": item.salary.interval,
+                            "raw": item.salary.raw,
+                            "provenance": item.salary.provenance,
+                        }
+                    ),
                 },
                 rank=rank,
             ))

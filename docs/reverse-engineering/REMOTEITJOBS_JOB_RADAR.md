@@ -13,11 +13,15 @@ Product: https://remoteitjobs.net/
 Canonical destination: ApplyAI Job Radar / candidate-core
 Related implementation: issue #75 and branch `reverse/applyai-jobprime-radar`
 
-## Consolidation decision
+## ApplyAI Fit
 
 RemoteITJobs.net is a capability donor, not a standalone ApplyAI product. Its strongest reusable ideas are the ingestion/normalization pipeline, remote-work eligibility taxonomy, faceted discovery model, public-source application handoff, and search-engine/AI-discovery-friendly landing pages.
 
 This donor should extend the existing JobPrime/Job Radar implementation instead of creating a parallel job store, matching engine, scheduler, or application workflow.
+
+## Why this qualifies
+
+RemoteITJobs is relevant to ApplyAI only as a clean-room capability donor for canonical job ingestion, remote-eligibility evidence, conservative deduplication, and public application handoff. It does not justify a second job marketplace, scheduler, ranking runtime, or application engine.
 
 ## Publicly observed behavior
 
@@ -44,7 +48,7 @@ Observed discovery dimensions include:
 
 Job detail pages preserve the original-source application handoff rather than hosting the application workflow.
 
-## ApplyAI delta
+## Absorb into ApplyAI
 
 The existing JobPrime donor already establishes persisted JobSearchProfile/JobScan, provider-neutral ingestion, normalization, dedupe, salary handling, deterministic scoring, and one durable on-demand scan.
 
@@ -90,6 +94,16 @@ RemoteITJobs adds concrete requirements that should be absorbed into that slice:
    - canonical URLs and deduplicated metadata;
    - avoid generating thin or unsupported pages from arbitrary tags;
    - search/AI discoverability is a distribution surface, not a relevance signal.
+
+## Candidate journey stages
+
+- `DISCOVER_JOBS` — improve canonical remote-job discovery and evidence quality.
+- `UNDERSTAND_FIT` — expose remote eligibility, compensation, freshness, and provenance as explicit signals.
+- `APPLY` — preserve the verified public employer/provider handoff URL; no application submission is added.
+
+## Implementation destination
+
+`candidate-core` — extend the existing ApplyAI Job Radar/canonical job contracts only. No separate RemoteITJobs runtime or product shell is introduced.
 
 ## Proposed canonical job additions
 
@@ -201,7 +215,7 @@ The next repository-certified checkpoint should capture:
 - one on-demand scan persistence result using the existing durable task/outbox path;
 - exact-head unit/integration test results.
 
-## Not claimed
+## Keep separate
 
 - live Remotive/RemoteOK/Himalayas/Greenhouse credentials or API certification;
 - permission to scrape any source;
@@ -211,6 +225,12 @@ The next repository-certified checkpoint should capture:
 - autonomous applications;
 - RemoteITJobs traffic reproducibility;
 - production SEO performance.
+
+## Implementation status
+
+**DOCUMENTED ONLY — NOT IMPLEMENTED IN THIS SLICE.**
+
+This file remains a clean-room donor contract. PR #76's implemented repository slice is the JobPrime Phase A on-demand Job Radar path; the RemoteITJobs-specific remote-eligibility/facet delta remains future work.
 
 ## Next action
 

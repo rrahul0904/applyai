@@ -24,7 +24,12 @@ from app.jobs.contracts import (
 )
 from app.jobs.pipeline import JobIngestionPipeline, normalize_text, payload_hash
 from app.jobs.source_authority import record_field_provenance, should_source_update_canonical
-from app.jobs.source_completeness import closure_authoritative, observed_completeness
+from app.jobs.source_completeness import (
+    CoverageStatus,
+    failed_coverage_receipt,
+    observed_completeness,
+    observed_coverage,
+)
 from app.models import (
     Job,
     JobLocation,
@@ -296,8 +301,9 @@ class RegisteredSourceIngestionPipeline:
                 )
 
         completeness = observed_completeness(connector, counts)
+        coverage = observed_coverage(connector, counts, source.configuration)
         if counts["failed"] == 0:
-            if closure_authoritative(completeness):
+            if coverage.status is CoverageStatus.COMPLETE:
                 freshness = self._apply_registry_freshness(source, seen_external_ids)
                 counts["stale"] += freshness["stale"]
                 counts["closed"] += freshness["closed"]
@@ -308,6 +314,7 @@ class RegisteredSourceIngestionPipeline:
                         "source_id": str(source.id),
                         "fetched": counts["fetched"],
                         "source_completeness": completeness.value,
+                        "source_coverage_status": coverage.status.value,
                     },
                 )
             run.status = "COMPLETED"
@@ -327,9 +334,17 @@ class RegisteredSourceIngestionPipeline:
 
         source.last_job_count = counts["valid"]
         configuration = dict(source.configuration or {})
+        coverage_details = coverage.as_dict()
+        coverage_at = utcnow().isoformat()
         configuration["last_source_completeness"] = completeness.value
-        configuration["last_source_completeness_at"] = utcnow().isoformat()
+        configuration["last_source_completeness_at"] = coverage_at
+        if coverage.status is CoverageStatus.COMPLETE:
+            configuration["last_successful_full_snapshot_at"] = coverage_at
+            coverage_details["last_successful_full_snapshot_at"] = coverage_at
+        configuration["last_source_coverage"] = coverage_details
         source.configuration = configuration
+        run.coverage_status = coverage.status.value
+        run.coverage_details = coverage_details
         self._finish_run(run, counts, started_monotonic)
         self.session.commit()
         logger.info(
@@ -465,10 +480,21 @@ class RegisteredSourceIngestionPipeline:
             if source.consecutive_failures >= 3
             else SourceHealthStatus.DEGRADED.value
         )
+        coverage = failed_coverage_receipt(
+            source.configuration,
+            reason=category.value,
+        )
+        coverage_details = coverage.as_dict()
+        configuration = dict(source.configuration or {})
+        configuration["last_source_coverage"] = coverage_details
+        configuration["last_source_completeness_at"] = utcnow().isoformat()
+        source.configuration = configuration
         run.status = "FAILED"
         run.failed = 1
         run.error_category = category.value
         run.error_summary = type(exc).__name__
+        run.coverage_status = coverage.status.value
+        run.coverage_details = coverage_details
         run.completed_at = utcnow()
         run.duration_ms = int((time.monotonic() - started_monotonic) * 1000)
         self.session.commit()

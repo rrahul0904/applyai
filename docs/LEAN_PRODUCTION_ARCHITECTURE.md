@@ -1,139 +1,65 @@
-# ApplyAI Lean Production Architecture
+# ApplyAI production deployment architecture
 
-Updated: 2026-08-31
+Updated: 2026-10-01
 
-## Launch profile
+## Repository release target
 
-ApplyAI's initial production target is deliberately smaller than the existing AWS scale profile:
+The current production deployment workflows target Vercel for both the Next.js
+web application and FastAPI API, with Supabase for PostgreSQL, Auth, and private
+resume storage:
 
 ```text
 Candidate
-  -> Vercel / Next.js 16
-  -> Clerk session/JWT
-  -> Railway / FastAPI
-       -> Railway PostgreSQL
-       -> Cloudflare R2 (private S3-compatible storage)
-       -> transactional TaskOutbox
-            -> postgres_tasks
-            -> Railway worker
+  -> Vercel / Next.js web (`apps/web`)
+  -> Vercel / FastAPI (`services/api`)
+  -> Supabase Auth + PostgreSQL + private Storage
+  -> PostgreSQL task queue and request-triggered task processing
 ```
 
-The launch version does **not** require AWS.
+This is the repository's deployment target, not proof that the currently hosted
+services run this topology or a particular commit. The production readiness
+workflow checks Vercel + Supabase at `https://applyai-gold.vercel.app`.
 
-## Responsibilities
+The corresponding guarded workflows are:
 
-| Concern | Lean production | Scale profile |
-| --- | --- | --- |
-| Candidate web | Vercel | Vercel |
-| Identity | Clerk | Clerk |
-| API | Railway FastAPI | ECS/Fargate FastAPI |
-| PostgreSQL | Railway Postgres | Aurora PostgreSQL |
-| Resume objects | Cloudflare R2 | private S3 |
-| Durable queue | PostgreSQL | SQS |
-| Outbox | PostgreSQL | PostgreSQL |
-| Resume/source/AI worker | Railway | ECS/Fargate |
-| Browser-heavy worker | isolated Railway service when enabled | ECS/Fargate |
-| Infra definition | Railway project/service configuration | Terraform + bootstrap CloudFormation |
+- `.github/workflows/deploy-vercel-applyai.yml` — Vercel web project `applyai`,
+  root `apps/web`.
+- `.github/workflows/deploy-vercel-applyai-api.yml` — Vercel API project
+  `applyai-api`, root `services/api`.
+- `.github/workflows/production-provider-readiness.yml` and
+  `.github/workflows/production-supabase-auth-acceptance.yml` — hosted readiness
+  and authenticated production acceptance.
 
-## Deployment profiles
+Production uses `AUTH_PROVIDER=supabase`, `TASK_QUEUE_PROVIDER=postgres`,
+`OBJECT_STORAGE_PROVIDER=supabase`, and `REQUEST_TRIGGERED_TASKS_ENABLED=true`
+as set by the API deployment workflow. This profile configures request-triggered
+durable task processing; it does not prove a separate long-running worker is
+deployed or processing work. The current readiness contract's
+`background_worker_configured` field indicates configuration only.
 
-`DEPLOYMENT_PROFILE=lean` is the launch profile.
+## Promotion gates
 
-Lean production requires:
+Deploy only an exact, reviewed release SHA. The release sequence is Preview API,
+Preview web, authenticated acceptance and human UAT, then protected-main API and
+web production workflows. The production workflow requires
+`production_ready=true`, a matching Supabase instance, configured operator role,
+private storage configuration, disabled dev auth, and task processing
+configuration. A successful HTTP status alone is insufficient.
 
-```text
-AUTH_PROVIDER=clerk
-TASK_QUEUE_PROVIDER=postgres
-OBJECT_STORAGE_PROVIDER=s3
-DATABASE_URL=<managed PostgreSQL URL>
-WEB_ORIGIN=https://...
-CLERK_ISSUER=https://...
-CLERK_JWKS_URL=https://...
-```
+The current observed production probe is HTTP 503 with
+`production_ready=false` and `operator_configured=false`. No exact deployed web,
+API, or worker SHA is exposed by the readiness response. Do not promote until
+the owner actions in `artifacts/release/HOSTED_DEPLOYMENT_HANDOFF.md` are
+complete and recorded against the release SHA.
 
-`DEPLOYMENT_PROFILE=aws` keeps the established SQS/Aurora/S3 path.
+## Alternate and historical profiles
 
-Business logic must not branch on infrastructure provider. Provider differences remain inside database, queue and object-storage boundaries.
+`docs/RAILWAY_DEPLOYMENT.md` and older sections of `docs/deployment/VERCEL.md`
+describe a Railway API/PostgreSQL/worker plus Clerk/R2 launch profile. That is a
+separate, older deployment path; it is not the current Vercel + Supabase
+workflow contract. Do not combine secrets or services from both profiles in a
+single release. Any future change back to Railway must update the deployment
+workflows, readiness contract, and this document together.
 
-## Database
-
-The API consumes one canonical `DATABASE_URL`. Railway's standard `postgresql://...` value is normalized to SQLAlchemy's installed psycopg dialect (`postgresql+psycopg://...`).
-
-Legacy split variables remain available for the existing AWS runtime:
-
-```text
-DATABASE_HOST
-DATABASE_PORT
-DATABASE_NAME
-DATABASE_USER
-DATABASE_PASSWORD
-```
-
-When `DATABASE_URL` is explicitly supplied, it wins.
-
-## Durable Postgres queue
-
-The transactional outbox remains the first durability boundary. For the lean profile an outbox publisher materializes each task into `postgres_tasks` using a unique idempotency key.
-
-Worker semantics:
-
-- `QUEUED`
-- `RUNNING`
-- `RETRY_WAIT`
-- `COMPLETED`
-- `DEAD`
-- `CANCELLED`
-
-Claims use `SELECT ... FOR UPDATE SKIP LOCKED`. Running work has a lease owner, lease expiry and heartbeat. Expired leases are reclaimable after worker failure. Failed work retries with bounded exponential backoff and moves to `DEAD` after the configured attempt limit.
-
-This keeps multiple Railway workers safe without Redis, Kafka or SQS.
-
-## Object storage
-
-The existing S3-compatible provider handles both AWS S3 and Cloudflare R2.
-
-AWS scale profile:
-
-```text
-S3_SERVER_SIDE_ENCRYPTION=AES256
-```
-
-Cloudflare R2 launch profile:
-
-```text
-S3_ENDPOINT_URL=https://<account-id>.r2.cloudflarestorage.com
-S3_REGION=auto
-S3_SERVER_SIDE_ENCRYPTION=none
-```
-
-The R2 mode omits the AWS `x-amz-server-side-encryption: AES256` PutObject header, which R2's S3 compatibility surface does not accept. R2 credentials remain server-side only.
-
-Buckets must stay private. Resume Share Intelligence always serves through ApplyAI's controlled public route and never exposes the raw private object URL.
-
-## Long-running work
-
-Vercel is not used for:
-
-- source crawling/ingestion;
-- resume parsing;
-- durable AI jobs;
-- browser application execution.
-
-Those are long-running Railway workers in lean production.
-
-## AWS preservation
-
-The following remain supported and validated as an optional future scale/enterprise profile:
-
-```text
-infra/bootstrap/*
-infra/staging/*
-Aurora
-ECS/Fargate
-SQS
-S3
-EventBridge
-CloudWatch
-```
-
-Removing AWS from launch requirements does not authorize deleting or weakening those resources or their validation workflows.
+AWS ECS/Fargate and SQS remain an optional scale profile. They are not required
+for the repository's current Vercel + Supabase launch path.

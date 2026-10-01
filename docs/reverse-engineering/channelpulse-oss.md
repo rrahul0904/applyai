@@ -10,7 +10,7 @@ destination: services/api/app/api/career_prepare.py, services/api/app/preparatio
 **Donor:** `willysharp5/ChannelPulse-oss`
 **Target product:** ApplyAI
 **Runtime adjacency:** AgentDock/shared native context-capture boundary
-**Status:** Phase A canonical interview transcript/privacy contracts implemented locally; repository verification pending
+**Status:** Phase A canonical interview transcript/privacy contracts implemented and exact-head hosted API/migration checks passed on PR #80 SHA `3515e522264c18cc7a21eebc7e954a620461cc55` (2026-10-01). Human production use is unverified.
 **Donor license:** GNU AGPL-3.0
 
 ## Purpose and boundary
@@ -265,4 +265,4 @@ Keep desktop overlays, stealth/live interview assistance, native audio/screen ca
 
 ## Implementation status
 
-Phase A source now supports canonical session provenance, explicit transcript consent, bounded retention, idempotent transcript segments, consent revocation and transcript deletion. Automated API tests are running against the clean local PostgreSQL migration chain. Native capture, desktop overlays and production certification remain unverified.
+Phase A source supports canonical session provenance, explicit transcript consent, bounded retention, idempotent transcript segments, consent revocation and transcript deletion. API tests and clean migration validation passed on the exact PR head. Native capture, desktop overlays, real candidate consent flows and production certification remain unverified.

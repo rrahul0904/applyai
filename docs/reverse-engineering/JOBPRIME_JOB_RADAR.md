@@ -6,7 +6,7 @@ destination: candidate-core
 
 # JobPrime -> ApplyAI Job Radar reverse-engineering contract
 
-Status: Phase A repository slice implemented in draft PR; exact-head verification pending (2026-09-23)
+Status: Phase A repository slice is implemented and exact-head hosted checks passed on PR #80 SHA `3515e522264c18cc7a21eebc7e954a620461cc55` (2026-10-01). Production and real-inventory gates remain open.
 Source: https://jobprime.vercel.app/
 Canonical destination: ApplyAI (`/jobs`, `/matches`, alerts, Career Intelligence)
 
@@ -377,10 +377,10 @@ Implement **Phase A steps 1-3 only**: the persisted search-profile/scan contract
 
 ## Implementation status
 
-**IMPLEMENTED IN DRAFT PR — exact-head certification pending**
+**REPOSITORY-VERIFIED on PR #80 SHA `3515e522264c18cc7a21eebc7e954a620461cc55`; hosted CI passed.** The full-functional CI uses `REQUIRE_REAL_INVENTORY=0`, so this does not certify live job inventory or production readiness.
 
 The branch now contains the Phase A persistence, provider contract/concrete canonical-store adapter, normalization/dedupe/salary logic, deterministic scoring, and one durable on-demand scan path. The scan request persists its profile/scan/outbox state, is idempotent by candidate + request key, is routable through the PostgreSQL/default task workers, persists ranked matches and source evidence, and is tenant-scoped on read.
 
-Repository tests added in this slice cover salary formats/unknowns, deterministic dedupe, on-demand scan persistence/idempotency, outbox creation, PostgreSQL worker dispatch, source URL normalization, deterministic score provenance, and cross-tenant scan isolation. These are implementation assertions until the exact PR head completes CI.
+Repository tests added in this slice cover salary formats/unknowns, deterministic dedupe, on-demand scan persistence/idempotency, outbox creation, PostgreSQL worker dispatch, source URL normalization, deterministic score provenance, and cross-tenant scan isolation. These tests passed on the exact PR head; they remain repository evidence, not hosted provider or production evidence.
 
 **Not claimed by this PR:** scheduled delivery, scheduler idempotency, notification delivery/dedupe, realtime scan streaming, a live external search provider, or AI reranking. Those remain later implementation and hosted/provider certification work.

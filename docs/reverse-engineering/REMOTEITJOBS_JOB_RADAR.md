@@ -7,7 +7,7 @@ source_type: public-product-clean-room
 
 # RemoteITJobs.net -> ApplyAI Job Radar reverse-engineering contract
 
-Status: research/donor contract started (2026-09-23)
+Status: remote-scope and opportunity-lifecycle delta is implemented and repository-tested on PR #80 SHA `3515e522264c18cc7a21eebc7e954a620461cc55` (2026-10-01). Live external provider coverage remains unverified.
 Source: https://www.reddit.com/r/SideProject/s/Q2cMWN2sfq
 Product: https://remoteitjobs.net/
 Canonical destination: ApplyAI Job Radar / candidate-core
@@ -228,10 +228,10 @@ The next repository-certified checkpoint should capture:
 
 ## Implementation status
 
-**DOCUMENTED ONLY — NOT IMPLEMENTED IN THIS SLICE.**
+**PARTIALLY IMPLEMENTED — REPOSITORY-VERIFIED; LIVE PROVIDER UNVERIFIED.**
 
-This file remains a clean-room donor contract. PR #76's implemented repository slice is the JobPrime Phase A on-demand Job Radar path; the RemoteITJobs-specific remote-eligibility/facet delta remains future work.
+ApplyAI now has conservative remote-scope classification (including UNKNOWN), eligible-country/region evidence, reason codes, URL provenance, and listing lifecycle rules that do not close jobs on search absence. Automated coverage passed on PR #80 SHA `3515e522264c18cc7a21eebc7e954a620461cc55`. The provider is still `canonical-store-v1`; no live RemoteITJobs/ATS/aggregator fetch or cross-source production coverage is claimed.
 
 ## Next action
 
-Use issue #75 / PR #76 as the implementation vehicle. Keep the JobPrime Phase A architecture, add the RemoteITJobs normalization/remote-eligibility/provenance test delta, and certify one bounded on-demand scan before scheduled delivery or AI reranking.
+Next: connect an authorized external provider, then verify complete/partial coverage, source provenance and candidate eligibility against real postings. Do not enable expiry from absence or claim global remote eligibility from a generic “remote” label.

@@ -11,6 +11,8 @@ from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
 from app.job_radar_models import JobScan, JobScanMatch, JobSearchProfile
+from app.jobs.opportunity_lifecycle import OpportunityEvidence, OpportunityLifecycle, advance_lifecycle, sanitized_match_evidence
+from app.jobs.remote_eligibility import assess_remote_eligibility
 from app.models import Company, Job, JobCompensation, JobLocation, JobSkill, JobSource, JobSourceLink
 
 SCORING_VERSION = "job-radar-deterministic-v1"
@@ -431,6 +433,59 @@ def run_job_scan(session: Session, *, scan_id: uuid.UUID, provider: JobRadarProv
 
         session.execute(delete(JobScanMatch).where(JobScanMatch.scan_id == scan.id))
         for rank, ((score, breakdown), item) in enumerate(selected, start=1):
+            canonical_job = session.get(Job, item.canonical_job_id)
+            first_seen = canonical_job.first_seen_at if canonical_job else datetime.now(timezone.utc)
+            last_seen = canonical_job.last_seen_at if canonical_job else first_seen
+            observed_at = last_seen
+            remote = assess_remote_eligibility(work_mode=item.work_mode, location=item.location)
+            lifecycle = OpportunityLifecycle("OPEN", first_seen, first_seen)
+            lifecycle = advance_lifecycle(lifecycle, OpportunityEvidence(
+                observed_at=observed_at,
+                source_url=item.application_url,
+                observation="OPEN",
+                coverage="COMPLETE",
+                authoritative=True,
+                reason_codes=("CANONICAL_JOB_ACTIVE",),
+            ))
+            source_rows = list(session.execute(
+                select(JobSource, JobSourceLink)
+                .join(JobSourceLink, JobSourceLink.job_source_id == JobSource.id)
+                .where(JobSourceLink.job_id == item.canonical_job_id)
+                .order_by(JobSourceLink.is_primary.desc(), JobSource.connector_key, JobSource.source_url)
+            ))
+            aggregator_keys = {"open-jobs", "openjobs", "open-jobs-api", "remoteitjobs", "jobprime", "european-tech-opportunities", "europeantechopportunities"}
+            aggregator_sources = [source.source_url for source, _ in source_rows if source.connector_key.casefold().replace("_", "-") in aggregator_keys]
+            canonical_sources = [source.source_url for source, _ in source_rows if source.source_url]
+            source_evidence = sanitized_match_evidence({
+                "provider": item.provider,
+                "provider_job_id": item.provider_job_id,
+                "title": item.title,
+                "company": item.company,
+                "location": item.location,
+                "work_mode": item.work_mode,
+                "employment_type": item.employment_type,
+                "seniority": item.seniority,
+                "skills": list(item.skills),
+                "explanation": "Deterministic fit across title, skills, experience, location and salary; inspect evidence before applying.",
+                "application_url": item.application_url,
+                "salary": None if item.salary is None else {
+                    "minimum": item.salary.minimum,
+                    "maximum": item.salary.maximum,
+                    "currency": item.salary.currency,
+                    "interval": item.salary.interval,
+                    "raw": item.salary.raw,
+                    "provenance": item.salary.provenance,
+                },
+                "remote_eligibility": remote.projection(),
+                "opportunity": {
+                    "state": lifecycle.state,
+                    "first_seen": lifecycle.first_seen.isoformat(),
+                    "last_seen": observed_at.isoformat(),
+                    "closed_at": lifecycle.closed_at.isoformat() if lifecycle.closed_at else None,
+                    "reason_codes": ["CANONICAL_JOB_ACTIVE"],
+                },
+                "provenance": {"canonical_sources": canonical_sources or [item.application_url], "aggregator_sources": aggregator_sources},
+            })
             session.add(JobScanMatch(
                 scan_id=scan.id,
                 job_id=item.canonical_job_id,
@@ -439,23 +494,7 @@ def run_job_scan(session: Session, *, scan_id: uuid.UUID, provider: JobRadarProv
                 application_url=item.application_url,
                 deterministic_score=score,
                 score_breakdown=breakdown,
-                source_evidence={
-                    "provider": item.provider,
-                    "provider_job_id": item.provider_job_id,
-                    "application_url": item.application_url,
-                    "salary": (
-                        None
-                        if item.salary is None
-                        else {
-                            "minimum": item.salary.minimum,
-                            "maximum": item.salary.maximum,
-                            "currency": item.salary.currency,
-                            "interval": item.salary.interval,
-                            "raw": item.salary.raw,
-                            "provenance": item.salary.provenance,
-                        }
-                    ),
-                },
+                source_evidence=source_evidence,
                 rank=rank,
             ))
         scan.jobs_seen = len(raw)

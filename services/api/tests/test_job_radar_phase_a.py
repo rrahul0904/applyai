@@ -235,6 +235,14 @@ def test_on_demand_scan_is_persisted_idempotent_and_worker_routable(client, swit
     assert payload["matches"][0]["application_url"] == "https://jobs.example.com/radar-1"
     assert payload["matches"][0]["deterministic_score"] >= 80
     assert payload["matches"][0]["score_breakdown"]["version"] == "job-radar-deterministic-v1"
+    evidence = payload["matches"][0]["source_evidence"]
+    assert evidence["remote_eligibility"]["decision"] == "INELIGIBLE"
+    assert evidence["remote_eligibility"]["remote_scope"] == "NOT_REMOTE"
+    assert evidence["opportunity"]["state"] == "OPEN"
+    assert evidence["opportunity"]["first_seen"]
+    assert evidence["opportunity"]["last_seen"]
+    assert evidence["provenance"]["canonical_sources"]
+    assert evidence["provenance"]["aggregator_sources"] == []
     assert payload["matches"][0]["score_breakdown"]["missing_signals"] == []
     assert payload["matches"][0]["source_evidence"]["provider_job_id"] == "radar-1"
     assert payload["matches"][0]["source_evidence"]["salary"] == {

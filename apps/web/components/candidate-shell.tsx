@@ -5,6 +5,7 @@ import {
   Bell,
   BrainCircuit,
   BriefcaseBusiness,
+  Radio,
   Gift,
   CircleUserRound,
   Home,
@@ -38,6 +39,7 @@ const navigation: NavigationItem[] = [
     icon: Search,
     activePrefixes: ["/jobs", "/matches", "/saved", "/alerts", "/import-job"],
   },
+  { href: "/job-radar", label: "Job Radar", icon: Radio, activePrefixes: ["/job-radar"] },
   {
     href: "/applications",
     label: "Applications",

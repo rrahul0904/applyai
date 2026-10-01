@@ -1,5 +1,6 @@
 import httpx
 import pytest
+from unittest.mock import patch
 
 from app.jobs.ats_detector import detect_ats
 from app.jobs.career_extractor import extract_career_page
@@ -12,6 +13,7 @@ from app.jobs.web_security import (
     CrawlBudgetExceeded,
     PublicUrlRejected,
     SafeHttpFetcher,
+    _PublicDnsPinnedBackend,
     validate_public_http_url,
 )
 
@@ -44,6 +46,20 @@ def test_public_url_policy_blocks_private_and_unsafe_schemes():
 
     with pytest.raises(PublicUrlRejected):
         validate_public_http_url("https://internal.example/jobs", resolver=private_resolver)
+
+
+def test_public_dns_pin_keeps_checked_address_at_tcp_connect():
+    backend = _PublicDnsPinnedBackend()
+    backend.addresses["jobs.example"] = "93.184.216.34"
+    with patch("app.jobs.web_security.httpcore.SyncBackend.connect_tcp", return_value="connected") as connect:
+        assert backend.connect_tcp("jobs.example", 443, timeout=2) == "connected"
+    assert connect.call_args.args[0] == "93.184.216.34"
+
+
+def test_dns_pinned_transport_fails_closed_for_unchecked_host():
+    backend = _PublicDnsPinnedBackend()
+    with pytest.raises(PublicUrlRejected, match="no validated public DNS pin"):
+        backend.connect_tcp("jobs.example", 443)
 
 
 def test_fetcher_revalidates_redirect_destination_and_caps_decompressed_bytes():

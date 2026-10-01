@@ -8,6 +8,7 @@ from typing import Callable, Iterable
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import httpx
+import httpcore
 
 
 class PublicUrlRejected(ValueError):
@@ -58,6 +59,39 @@ class SafeFetchResult:
 Resolver = Callable[[str, int], Iterable[tuple]]
 
 
+class _PublicDnsPinnedBackend(httpcore.SyncBackend):
+    """Keep HTTPX's TLS hostname while forcing TCP to the checked public address."""
+
+    def __init__(self) -> None:
+        self.addresses: dict[str, str] = {}
+
+    def connect_tcp(self, host: str, port: int, timeout=None, local_address=None, socket_options=None):
+        address = self.addresses.get(host.casefold())
+        if address is None:
+            raise PublicUrlRejected("Connection host has no validated public DNS pin")
+        return super().connect_tcp(address, port, timeout, local_address, socket_options)
+
+
+def _validated_addresses(host: str, port: int, resolver: Resolver) -> list[str]:
+    try:
+        literal = ipaddress.ip_address(host.strip("[]"))
+    except ValueError:
+        literal = None
+    if literal is not None:
+        addresses = [str(literal)]
+    else:
+        try:
+            results = list(resolver(host, port))
+        except OSError as exc:
+            raise PublicUrlRejected("Hostname could not be resolved") from exc
+        addresses = sorted({result[4][0] for result in results if len(result) >= 5 and result[4]})
+    if not addresses:
+        raise PublicUrlRejected("Hostname did not resolve to an address")
+    if any(_is_forbidden_address(address) for address in addresses):
+        raise PublicUrlRejected("Hostname resolves to a non-public address")
+    return addresses
+
+
 def _default_resolver(host: str, port: int) -> Iterable[tuple]:
     return socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
 
@@ -96,27 +130,7 @@ def validate_public_http_url(
 
     # Literal IPs are validated directly. DNS names must resolve and every returned
     # address must be globally routable; a mixed public/private answer is rejected.
-    try:
-        literal = ipaddress.ip_address(host.strip("[]"))
-    except ValueError:
-        literal = None
-    if literal is not None:
-        if not literal.is_global:
-            raise PublicUrlRejected("Private, loopback, link-local and reserved IPs are blocked")
-    else:
-        try:
-            results = list(resolver(host, port))
-        except OSError as exc:
-            raise PublicUrlRejected("Hostname could not be resolved") from exc
-        addresses = {
-            result[4][0]
-            for result in results
-            if len(result) >= 5 and result[4]
-        }
-        if not addresses:
-            raise PublicUrlRejected("Hostname did not resolve to an address")
-        if any(_is_forbidden_address(address) for address in addresses):
-            raise PublicUrlRejected("Hostname resolves to a non-public address")
+    _validated_addresses(host, port, resolver)
 
     netloc = host
     if parsed.port and not ((scheme == "http" and parsed.port == 80) or (scheme == "https" and parsed.port == 443)):
@@ -143,7 +157,17 @@ class SafeHttpFetcher:
             follow_redirects=False,
             timeout=self.budget.request_timeout_seconds,
             headers={"User-Agent": user_agent, "Accept-Encoding": "gzip, deflate"},
+            trust_env=False,
         )
+        self._pinned_backend = _PublicDnsPinnedBackend() if self._owns_client else None
+        if self._pinned_backend is not None:
+            # HTTPX's public constructor does not expose httpcore's sync network backend.
+            # Pin through the transport pool while preserving the original URL host for TLS/SNI.
+            pool = getattr(self.client._transport, "_pool", None)
+            if pool is None or not hasattr(pool, "_network_backend"):
+                self.client.close()
+                raise RuntimeError("HTTP transport cannot enforce validated DNS pins")
+            pool._network_backend = self._pinned_backend
         self.pages_fetched = 0
 
     def close(self) -> None:
@@ -170,6 +194,11 @@ class SafeHttpFetcher:
 
         for redirect_count in range(self.budget.max_redirects + 1):
             current = validate_public_http_url(current, resolver=self.resolver)
+            if self._pinned_backend is not None:
+                parts = urlsplit(current)
+                port = parts.port or (443 if parts.scheme == "https" else 80)
+                addresses = _validated_addresses(parts.hostname or "", port, self.resolver)
+                self._pinned_backend.addresses[(parts.hostname or "").casefold()] = addresses[0]
             self.pages_fetched += 1
             with self.client.stream("GET", current, headers=headers) as response:
                 if response.status_code in {301, 302, 303, 307, 308}:

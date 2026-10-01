@@ -68,7 +68,43 @@ export type NotificationItem = {
   created_at: string;
 };
 
+export type JobRadarProfile = {
+  id: string;
+  target_titles: string[];
+  skills: string[];
+  years_experience: number | null;
+  seniority_preferences: string[];
+  preferred_locations: string[];
+  remote_policy: "ANY" | "REMOTE" | "HYBRID" | "ONSITE";
+  salary_min: number | null;
+  salary_currency: string;
+};
+
+export type JobRadarScan = {
+  id: string;
+  status: string;
+  jobs_seen: number;
+  jobs_after_filter: number;
+  jobs_ranked: number;
+  error_code: string | null;
+  error_detail: string | null;
+  ai_reranking: string;
+  scheduled_delivery: string;
+  external_job_providers: string;
+  realtime_streaming: string;
+  matches: Array<{
+    id: string; job_id: string; application_url: string; deterministic_score: number;
+    score_breakdown: Record<string, unknown>; source_evidence: Record<string, unknown>; rank: number;
+  }>;
+};
+
 export const platformApi = {
+  jobRadar: {
+    profile: () => request<JobRadarProfile>("/api/v1/job-radar/profile"),
+    saveProfile: (payload: Omit<JobRadarProfile, "id">) => request<JobRadarProfile>("/api/v1/job-radar/profile", { method: "PUT", body: JSON.stringify(payload) }),
+    createScan: () => request<JobRadarScan>("/api/v1/job-radar/scans", { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ max_queries: 5, per_query_limit: 25, top_k: 10 }) }),
+    getScan: (id: string) => request<JobRadarScan>(`/api/v1/job-radar/scans/${id}`),
+  },
   semanticMatches: (limit = 25) => request<{ engine: string; items: SemanticMatch[] }>(`/semantic-matches?limit=${limit}`),
   savedSearches: {
     list: () => request<SavedSearch[]>("/saved-searches"),

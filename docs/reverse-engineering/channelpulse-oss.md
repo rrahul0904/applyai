@@ -1,10 +1,16 @@
+---
+applyai_fit: INTELLIGENCE
+fit_scope: PARTIAL
+destination: services/api/app/api/career_prepare.py, services/api/app/preparation_models.py, services/api/app/api/interview_media.py
+---
+
 # ChannelPulse OSS clean-room reverse-engineering plan
 
-**Started:** 2026-09-22  
-**Donor:** `willysharp5/ChannelPulse-oss`  
-**Target product:** ApplyAI  
-**Runtime adjacency:** AgentDock/shared native context-capture boundary  
-**Status:** Phase 0 audit and target mapping complete; implementation not yet claimed  
+**Started:** 2026-09-22
+**Donor:** `willysharp5/ChannelPulse-oss`
+**Target product:** ApplyAI
+**Runtime adjacency:** AgentDock/shared native context-capture boundary
+**Status:** Phase A canonical interview transcript/privacy contracts implemented locally; repository verification pending
 **Donor license:** GNU AGPL-3.0
 
 ## Purpose and boundary
@@ -232,3 +238,31 @@ Do not call this donor fully reverse-engineered/implemented until ApplyAI can de
 ## Smallest next repository slice
 
 Implement **Phase 1 only**: the governed `InterviewSession`/`InterviewTurn`/transcript contract in the existing FastAPI + PostgreSQL modular monolith, with API/service tests and candidate-ownership/retention rules. Do not begin by cloning the desktop overlay. This gives ApplyAI a canonical, testable domain boundary that later speech, native capture, and all three practice workbenches can depend on without creating a second system of record.
+
+## ApplyAI Fit
+
+ChannelPulse has a partial ApplyAI fit for interview-session privacy, transcript provenance and candidate-controlled practice. Native capture, overlays and live desktop assistance are outside this repository-verified slice.
+
+## Why this qualifies
+
+ApplyAI already owns canonical candidate identity, persisted mock interviews, questions, answers, coaching and interview history. Adding explicit transcript consent, retention, source provenance and segment-level deletion extends this existing candidate journey without duplicating interview systems.
+
+## Candidate journey stages
+
+Discovery → interview preparation → mock interview → optional explicit transcript consent → transcript review/deletion.
+
+## Absorb into ApplyAI
+
+Absorb only independently specified session/turn state transitions, transcript segments, ownership, retention, consent, provenance and API contracts. The runtime uses existing `MockInterviewSession` and `InterviewTurnRecord` rows and adds segment records.
+
+## Keep separate
+
+Keep desktop overlays, stealth/live interview assistance, native audio/screen capture, provider-specific speech systems and donor data/UI separate. Do not copy AGPL source, assets, prompt text, migrations or result data.
+
+## Implementation destination
+
+`services/api/app/api/career_prepare.py`, `services/api/app/api/interview_media.py`, `services/api/app/interview_session_lifecycle.py`, `services/api/app/preparation_models.py` and migration `c9u3y5r8v086`.
+
+## Implementation status
+
+Phase A source now supports canonical session provenance, explicit transcript consent, bounded retention, idempotent transcript segments, consent revocation and transcript deletion. Automated API tests are running against the clean local PostgreSQL migration chain. Native capture, desktop overlays and production certification remain unverified.

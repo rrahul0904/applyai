@@ -106,6 +106,36 @@ export const platformApi = {
     getScan: (id: string) => request<JobRadarScan>(`/api/v1/job-radar/scans/${id}`),
   },
   semanticMatches: (limit = 25) => request<{ engine: string; items: SemanticMatch[] }>(`/semantic-matches?limit=${limit}`),
+  recommendations: (limit = 50) => request<{
+    ranking_scope: string;
+    profile_ready: boolean;
+    items: Array<{
+      id: string;
+      job_id: string;
+      title: string;
+      company_name: string;
+      location: string | null;
+      work_mode: string | null;
+      posted_at: string | null;
+      last_seen_at: string;
+      saved: boolean;
+      applied: boolean;
+      recently_viewed: boolean;
+      match_score: number;
+      deterministic_score: number;
+      career_v2_score: number | null;
+      freshness_adjustment: number;
+      summary: string;
+      explanation: string;
+      strengths: string[];
+      gaps: string[];
+      skills: string[];
+      source_label: string;
+      data_origin: string;
+    }>;
+  }>(`/api/v1/workspace/recommendations?limit=${limit}`),
+  trackAnalyticsEvent: (payload: { event_type: string; entity_type?: string; entity_id?: string; metadata?: Record<string, unknown> }) =>
+    request<void>("/api/v1/analytics/events", { method: "POST", body: JSON.stringify(payload) }),
   savedSearches: {
     list: () => request<SavedSearch[]>("/saved-searches"),
     create: (payload: { name: string; query: Record<string, unknown>; alerts_enabled?: boolean; minimum_match_score?: number }) => request<SavedSearch>("/saved-searches", { method: "POST", body: JSON.stringify(payload) }),

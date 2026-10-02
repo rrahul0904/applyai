@@ -23,7 +23,7 @@ function recommendationLabel(decision?: string | null) {
 
 export function RecommendedJobsView() {
   const queryClient = useQueryClient();
-  const semantic = useQuery({ queryKey: ["semantic-matches"], queryFn: () => platformApi.semanticMatches(40) });
+  const recommendations = useQuery({ queryKey: ["recommendations"], queryFn: () => platformApi.recommendations(50) });
   const career = useQuery({ queryKey: ["career-v2-matches"], queryFn: ({ signal }) => api.careerV2.matches(signal), retry: false });
   const radar = useQuery({
     queryKey: ["career-v2-radar"],
@@ -47,6 +47,7 @@ export function RecommendedJobsView() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["career-v2-radar"] }),
         queryClient.invalidateQueries({ queryKey: ["career-v2-matches"] }),
+        queryClient.invalidateQueries({ queryKey: ["recommendations"] }),
       ]);
     },
   });
@@ -69,15 +70,11 @@ export function RecommendedJobsView() {
     },
   });
 
-  if (semantic.isLoading || career.isLoading) return <Skeleton className="page-skeleton" />;
-  if (semantic.isError) return <ErrorState message={semantic.error.message} retry={() => semantic.refetch()} />;
+  if (recommendations.isLoading || career.isLoading) return <Skeleton className="page-skeleton" />;
+  if (recommendations.isError) return <ErrorState message={recommendations.error.message} retry={() => recommendations.refetch()} />;
 
   const careerByJob = new Map((career.data?.items ?? []).map((item) => [item.job_id, item]));
-  const items = [...(semantic.data?.items ?? [])].sort((a, b) => {
-    const scoreA = careerByJob.get(a.job_id)?.final_score ?? a.semantic_score;
-    const scoreB = careerByJob.get(b.job_id)?.final_score ?? b.semantic_score;
-    return scoreB - scoreA;
-  });
+  const items = recommendations.data?.items ?? [];
   const activeWatch = watches.data?.items[0];
   const radarItems = (radar.data?.items ?? [])
     .filter((item) => item.radar_bucket === "TOP_MATCH" || item.radar_bucket === "PENDING_JUDGMENT")
@@ -188,7 +185,7 @@ export function RecommendedJobsView() {
         <div className="cx-recommendation-list">
           {items.map((item, index) => {
             const match = careerByJob.get(item.job_id);
-            const score = Math.max(0, Math.round(match?.final_score ?? item.semantic_score));
+            const score = Math.round(item.match_score);
             const tone = match?.decision?.toUpperCase() === "APPLY_NOW" || match?.decision?.toUpperCase() === "STRONG" ? "success" : "info";
             return (
               <Card key={item.job_id} className="cx-recommendation-card">
@@ -196,7 +193,7 @@ export function RecommendedJobsView() {
                 <div className="cx-recommendation-main">
                   <div className="cx-recommendation-heading">
                     <div>
-                      <p className="cx-action-label">{item.company}</p>
+                      <p className="cx-action-label">{item.company_name}</p>
                       <h2>{item.title}</h2>
                     </div>
                     <div className="cx-match-summary">

@@ -11,14 +11,16 @@ import {
   Home,
   IdCard,
   LogOut,
+  Menu,
+  X,
   Search,
   Settings,
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { signOutAction } from "@/app/auth/actions";
 import { devSignOut } from "@/app/dev-login/actions";
 import type { ApplyAISession } from "@/lib/auth/session";
@@ -50,7 +52,7 @@ const navigation: NavigationItem[] = [
     href: "/career",
     label: "Career Coach",
     icon: Sparkles,
-    activePrefixes: ["/career", "/resume", "/network", "/analytics", "/portfolio"],
+    activePrefixes: ["/career", "/resume", "/network", "/analytics"],
   },
   {
     href: "/interview-prep",
@@ -78,6 +80,9 @@ const navigation: NavigationItem[] = [
   },
 ];
 
+const mobilePrimary = navigation.filter((item) => ["/dashboard", "/jobs", "/applications", "/interview-prep"].includes(item.href));
+const mobileMore = navigation.filter((item) => !mobilePrimary.includes(item));
+
 function isActive(pathname: string, item: NavigationItem) {
   return item.activePrefixes.some((prefix) =>
     pathname === prefix || pathname.startsWith(`${prefix}/`),
@@ -92,6 +97,30 @@ export function CandidateShell({
   children: ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreButton = useRef<HTMLButtonElement>(null);
+  const morePanel = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    function keyboardNavigation(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        router.push("/jobs");
+      }
+      if (event.key === "Escape" && moreOpen) {
+        setMoreOpen(false);
+        moreButton.current?.focus();
+      }
+    }
+    document.addEventListener("keydown", keyboardNavigation);
+    return () => document.removeEventListener("keydown", keyboardNavigation);
+  }, [router, moreOpen]);
+
+  useEffect(() => {
+    if (moreOpen) morePanel.current?.querySelector<HTMLAnchorElement>("a")?.focus();
+  }, [moreOpen]);
+
   const email = session.email ?? "Candidate";
   const initial = email.charAt(0).toUpperCase();
 
@@ -149,7 +178,7 @@ export function CandidateShell({
 
       <div className="app-content cx-app-content">
         <header className="app-topbar cx-topbar">
-          <Link className="top-search cx-top-search" href="/jobs">
+          <Link className="top-search cx-top-search" href="/jobs" aria-keyshortcuts="Meta+K Control+K">
             <Search size={18} aria-hidden="true" />
             <span>Search roles, companies, or skills</span>
             <kbd aria-hidden="true">⌘ K</kbd>
@@ -167,8 +196,26 @@ export function CandidateShell({
         <main className="app-main cx-app-main">{children}</main>
       </div>
 
+      {moreOpen ? (
+        <nav ref={morePanel} id="mobile-more-navigation" className="cx-mobile-more" aria-label="More mobile navigation">
+          <div className="cx-mobile-more-heading">
+            <strong>More destinations</strong>
+            <button type="button" aria-label="Close more navigation" onClick={() => { setMoreOpen(false); moreButton.current?.focus(); }}><X size={20} /></button>
+          </div>
+          {mobileMore.map((item) => (
+            <Link key={item.href} href={item.href} aria-current={isActive(pathname, item) ? "page" : undefined} onClick={() => setMoreOpen(false)}>{item.label}</Link>
+          ))}
+          <Link href="/settings" onClick={() => setMoreOpen(false)}>Settings and privacy</Link>
+          {session.kind === "dev-test" || session.kind === "supabase" ? (
+            <form action={session.kind === "supabase" ? signOutAction : devSignOut}>
+              <button type="submit" className="cx-mobile-signout"><LogOut size={18} aria-hidden="true" />Sign out</button>
+            </form>
+          ) : null}
+        </nav>
+      ) : null}
+
       <nav className="mobile-nav cx-mobile-nav" aria-label="Primary mobile navigation">
-        {navigation.map((item) => {
+        {mobilePrimary.map((item) => {
           const Icon = item.icon;
           const active = isActive(pathname, item);
           return (
@@ -183,6 +230,18 @@ export function CandidateShell({
             </Link>
           );
         })}
+        <button
+          ref={moreButton}
+          type="button"
+          aria-expanded={moreOpen}
+          aria-controls="mobile-more-navigation"
+          aria-label="More navigation"
+          className={mobileMore.some((item) => isActive(pathname, item)) ? "active" : undefined}
+          onClick={() => setMoreOpen(!moreOpen)}
+        >
+          <Menu size={21} aria-hidden="true" />
+          More
+        </button>
       </nav>
     </div>
   );

@@ -52,7 +52,8 @@ def decide_opportunity(evidence: OpportunityEvidence) -> OpportunityDecision:
 
 
 def advance_lifecycle(current: OpportunityLifecycle, evidence: OpportunityEvidence) -> OpportunityLifecycle:
-    if evidence.observed_at < current.last_seen:
+    watermark = max(current.last_seen, current.closed_at) if current.closed_at else current.last_seen
+    if evidence.observed_at < watermark:
         return current
     decision = decide_opportunity(evidence)
     if decision.state == "INCONCLUSIVE":
@@ -61,11 +62,15 @@ def advance_lifecycle(current: OpportunityLifecycle, evidence: OpportunityEviden
     if decision.state == "CLOSED":
         return replace(current, state="CLOSED", closed_at=evidence.observed_at, reason_codes=decision.reason_codes)
     reopened = current.state == "CLOSED"
+    if reopened and not evidence.authoritative:
+        return replace(current, reason_codes=("NON_AUTHORITATIVE_REOPEN_IGNORED",))
     return replace(current, state="REOPENED" if reopened else "OPEN", last_seen=evidence.observed_at, closed_at=None,
                    reason_codes=("EXPLICIT_REOPEN_OBSERVATION",) if reopened else decision.reason_codes)
 
 
 def public_source_url(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return None
     try:
         parts = urlsplit(value or "")
         if parts.scheme not in {"https", "http"} or not parts.hostname or parts.username or parts.password:
@@ -92,14 +97,40 @@ def sanitized_match_evidence(raw: dict) -> dict:
         out["skills"] = [" ".join(value.split())[:120] for value in raw["skills"][:40] if isinstance(value, str) and value.strip()]
     out["application_url"] = public_source_url(raw.get("application_url"))
     salary = raw.get("salary")
-    out["salary"] = {k: salary[k] for k in ("minimum", "maximum", "currency", "interval", "raw", "provenance") if k in salary} if isinstance(salary, dict) else None
+    out["salary"] = None
+    if isinstance(salary, dict):
+        out["salary"] = {}
+        for key in ("minimum", "maximum"):
+            entry = salary.get(key)
+            if entry is None or (isinstance(entry, (int, float)) and not isinstance(entry, bool)):
+                out["salary"][key] = entry
+        for key in ("currency", "interval", "raw", "provenance"):
+            entry = salary.get(key)
+            if isinstance(entry, str):
+                out["salary"][key] = " ".join(entry.split())[:280]
     for name, fields in {
-        "remote_eligibility": ("remote_scope", "eligible_countries", "eligible_regions", "location_evidence", "decision", "reason_codes"),
+        "remote_eligibility": ("remote_scope", "eligible_countries", "eligible_regions", "location_evidence", "decision", "reason_codes", "selected_source_url", "source_authority", "conflicting_source_urls"),
         "opportunity": ("state", "first_seen", "last_seen", "closed_at", "reason_codes"),
     }.items():
         value = raw.get(name)
-        if isinstance(value, dict): out[name] = {k: value[k] for k in fields if k in value}
+        if isinstance(value, dict):
+            projected = {}
+            for key in fields:
+                entry = value.get(key)
+                if key in {"eligible_countries", "eligible_regions", "reason_codes", "conflicting_source_urls"}:
+                    if isinstance(entry, (tuple, list)):
+                        projected[key] = [" ".join(item.split())[:280] for item in entry[:40] if isinstance(item, str)]
+                elif entry is None or isinstance(entry, str):
+                    projected[key] = " ".join(entry.split())[:500] if isinstance(entry, str) else None
+            if name == "remote_eligibility":
+                projected["selected_source_url"] = public_source_url(value.get("selected_source_url"))
+                projected["conflicting_source_urls"] = [url for item in projected.get("conflicting_source_urls", []) if (url := public_source_url(item))]
+            out[name] = projected
     provenance = raw.get("provenance")
     if isinstance(provenance, dict):
-        out["provenance"] = {key: [url for value in provenance.get(key, []) if (url := public_source_url(value))] for key in ("canonical_sources", "aggregator_sources")}
+        out["provenance"] = {}
+        for key in ("canonical_sources", "aggregator_sources"):
+            entries = provenance.get(key, [])
+            out["provenance"][key] = list(dict.fromkeys(url for value in entries[:40]
+                if isinstance(value, str) and (url := public_source_url(value)))) if isinstance(entries, (tuple, list)) else []
     return out

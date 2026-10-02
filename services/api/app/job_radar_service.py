@@ -12,13 +12,20 @@ from sqlalchemy.orm import Session
 
 from app.job_radar_models import JobScan, JobScanMatch, JobSearchProfile
 from app.jobs.opportunity_lifecycle import OpportunityEvidence, OpportunityLifecycle, advance_lifecycle, sanitized_match_evidence
-from app.jobs.remote_eligibility import assess_remote_eligibility
+from app.jobs.remote_eligibility import (
+    RemoteSourceEvidence,
+    assess_remote_eligibility,
+    assess_remote_sources,
+)
 from app.models import Company, Job, JobCompensation, JobLocation, JobSkill, JobSource, JobSourceLink
 
 SCORING_VERSION = "job-radar-deterministic-v1"
 PROVIDER_NAME = "canonical-store-v1"
 SCORE_WEIGHTS = {"title": 0.40, "skills": 0.30, "experience": 0.15, "location": 0.10, "salary": 0.05}
 _TRACKING_KEYS = {"source", "ref", "referrer", "tracking", "trk"}
+_ATS_SOURCE_TYPES = {"GREENHOUSE", "LEVER", "ASHBY", "SMARTRECRUITERS", "WORKABLE", "WORKDAY", "ICIMS", "ORACLE", "SUCCESSFACTORS", "JOBVITE", "UKG", "BAMBOOHR", "JAZZHR", "RECRUITEE", "TEAMTAILOR", "PINPOINT", "COMEET", "PERSONIO", "RIPPLING", "ADP", "PAYLOCITY", "DAYFORCE", "TALEO", "PAGEUP", "PEOPLEADMIN", "CORNERSTONE", "NEOGOV"}
+_EMPLOYER_SOURCE_TYPES = {"EMPLOYER_DIRECT", "CAREER_SITE", "JSON_LD", "EMPLOYER_JSONLD", "EMPLOYER_CAREER_SITE", "EMPLOYER_OFFICIAL_API"}
+_AGGREGATOR_SOURCE_TYPES = {"OPEN_JOBS", "AUTHORIZED_AGGREGATOR_FEED", "LICENSED_FEED", "RELIEFWEB", "GOVERNMENT_FEED"}
 
 
 @dataclass(frozen=True)
@@ -95,6 +102,57 @@ def _clean(value: str | None) -> str | None:
 
 def _tokens(value: str | None) -> set[str]:
     return set(re.findall(r"[a-z0-9+#.]+", (value or "").lower()))
+
+
+def _remote_source_authority(source: JobSource) -> str:
+    checkpoint = source.checkpoint if isinstance(source.checkpoint, dict) else {}
+    source_type = str(checkpoint.get("source_type") or "").strip().upper()
+    key = source.connector_key.strip().upper().replace("-", "_")
+    if source_type in _ATS_SOURCE_TYPES or key in _ATS_SOURCE_TYPES:
+        return "ATS"
+    if source_type in _EMPLOYER_SOURCE_TYPES or key in _EMPLOYER_SOURCE_TYPES:
+        return "EMPLOYER"
+    if source_type in _AGGREGATOR_SOURCE_TYPES or key in _AGGREGATOR_SOURCE_TYPES:
+        return "AGGREGATOR"
+    return "UNKNOWN"
+
+
+def _source_remote_evidence(
+    source: JobSource,
+    canonical_job_id: uuid.UUID,
+    *,
+    primary: bool,
+    canonical_location: str | None,
+    canonical_work_mode: str | None,
+) -> RemoteSourceEvidence:
+    checkpoint = source.checkpoint if isinstance(source.checkpoint, dict) else {}
+    metadata = checkpoint.get("source_metadata")
+    metadata = metadata if isinstance(metadata, dict) else {}
+
+    def string_tuple(value: object) -> tuple[str, ...]:
+        if not isinstance(value, (tuple, list)):
+            return ()
+        return tuple(item[:120] for item in value if isinstance(item, str) and item.strip())[:40]
+
+    scope = metadata.get("remote_scope")
+    return RemoteSourceEvidence(
+        canonical_job_id=str(canonical_job_id),
+        source_url=source.source_url,
+        authority=_remote_source_authority(source),
+        work_mode=(
+            metadata.get("work_mode")
+            if isinstance(metadata.get("work_mode"), str)
+            else canonical_work_mode if primary else None
+        ),
+        location=(
+            metadata.get("location")
+            if isinstance(metadata.get("location"), str)
+            else canonical_location if primary else None
+        ),
+        scope=(scope if isinstance(scope, str) else None),
+        countries=string_tuple(metadata.get("eligible_countries")),
+        regions=string_tuple(metadata.get("eligible_regions")),
+    )
 
 
 def canonicalize_application_url(value: str) -> str | None:
@@ -437,7 +495,30 @@ def run_job_scan(session: Session, *, scan_id: uuid.UUID, provider: JobRadarProv
             first_seen = canonical_job.first_seen_at if canonical_job else datetime.now(timezone.utc)
             last_seen = canonical_job.last_seen_at if canonical_job else first_seen
             observed_at = last_seen
-            remote = assess_remote_eligibility(work_mode=item.work_mode, location=item.location)
+            source_rows = list(session.execute(
+                select(JobSource, JobSourceLink)
+                .join(JobSourceLink, JobSourceLink.job_source_id == JobSource.id)
+                .where(JobSourceLink.job_id == item.canonical_job_id)
+                .order_by(JobSourceLink.is_primary.desc(), JobSource.connector_key, JobSource.source_url)
+            ))
+            remote_sources = tuple(
+                _source_remote_evidence(
+                    source,
+                    item.canonical_job_id,
+                    primary=bool(link.is_primary),
+                    canonical_location=item.location,
+                    canonical_work_mode=item.work_mode,
+                )
+                for source, link in source_rows
+            )
+            remote = (
+                assess_remote_sources(
+                    canonical_job_id=str(item.canonical_job_id),
+                    sources=remote_sources,
+                )
+                if remote_sources
+                else assess_remote_eligibility(work_mode=item.work_mode, location=item.location)
+            )
             lifecycle = OpportunityLifecycle("OPEN", first_seen, first_seen)
             lifecycle = advance_lifecycle(lifecycle, OpportunityEvidence(
                 observed_at=observed_at,
@@ -446,12 +527,6 @@ def run_job_scan(session: Session, *, scan_id: uuid.UUID, provider: JobRadarProv
                 coverage="COMPLETE",
                 authoritative=True,
                 reason_codes=("CANONICAL_JOB_ACTIVE",),
-            ))
-            source_rows = list(session.execute(
-                select(JobSource, JobSourceLink)
-                .join(JobSourceLink, JobSourceLink.job_source_id == JobSource.id)
-                .where(JobSourceLink.job_id == item.canonical_job_id)
-                .order_by(JobSourceLink.is_primary.desc(), JobSource.connector_key, JobSource.source_url)
             ))
             aggregator_keys = {"open-jobs", "openjobs", "open-jobs-api", "remoteitjobs", "jobprime", "european-tech-opportunities", "europeantechopportunities"}
             aggregator_sources = [source.source_url for source, _ in source_rows if source.connector_key.casefold().replace("_", "-") in aggregator_keys]

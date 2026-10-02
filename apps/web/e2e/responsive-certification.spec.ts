@@ -68,6 +68,18 @@ async function expectPrimaryNavigation(page: Page, width: number) {
     await expect(sidebar).toBeHidden();
     const homeTarget = mobileNav.getByRole("link", { name: "Home" });
     await expectMinimumHitArea(homeTarget, 44);
+    await expect(mobileNav.getByRole("link")).toHaveCount(4);
+    const moreTarget = mobileNav.getByRole("button", { name: "More navigation" });
+    await expectMinimumHitArea(moreTarget, 44);
+    await moreTarget.click();
+    const moreMenu = page.getByRole("navigation", { name: "More mobile navigation" });
+    await expect(moreMenu).toBeVisible();
+    await expect(moreMenu.getByRole("link", { name: "Job Radar", exact: true })).toBeVisible();
+    await expectMinimumHitArea(moreMenu.getByRole("link", { name: "Settings and privacy" }), 44);
+    await expect(moreMenu.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(moreMenu).toBeHidden();
+    await expect(moreTarget).toBeFocused();
   } else {
     await expect(sidebar).toBeVisible();
     await expect(mobileNav).toBeHidden();

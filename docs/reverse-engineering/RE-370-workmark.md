@@ -1,81 +1,109 @@
+---
+applyai_fit: CORE
+fit_scope: PARTIAL
+destination: candidate-career-intelligence
+---
+
 # RE-370 — Workmark capability-donor research
 
-Research date: 2026-10-01 (America/New_York)
+Date reviewed: 2026-10-01 (America/New_York)
 
-## Source target
+Public targets:
+- https://www.reddit.com/r/IMadeThis/comments/1wv75s1/i_made_a_resum%C3%A9_that_finds_work_for_you_for_cs/
+- https://www.workmark.org/
+- https://www.workmark.org/how-it-works
+- https://www.workmark.org/levels
+- https://www.workmark.org/business
+- https://www.workmark.org/privacy
 
-- Reddit launch: https://www.reddit.com/r/IMadeThis/comments/1wv75s1/i_made_a_resum%C3%A9_that_finds_work_for_you_for_cs/
-- Product: https://www.workmark.org/
-- How it works: https://www.workmark.org/how-it-works
-- Levels: https://www.workmark.org/levels
-- Employer view: https://www.workmark.org/business
-- Privacy: https://www.workmark.org/privacy
+## Clean-room boundary
 
-The Reddit launch described Workmark as a CS student / entry-level product that connects GitHub, infers skills from work already built, gives a roadmap, and matches jobs, internships, hackathons, fellowships, open-source work, events, and perks. At research time the Reddit post had 0 comments, so there was no direct comment feedback to incorporate.
+This summary records publicly observable product behavior and first-party claims. It does not infer or copy private Workmark source code, prompts, model weights, database schema, ranking logic, production scale, or hiring-outcome accuracy. The ApplyAI implementation is independently authored and deliberately exposes deterministic evidence receipts rather than claiming Workmark parity.
 
-## Publicly observable product behavior
+## Research findings
 
-Workmark's first-party pages describe a loop of:
+The Reddit launch describes Workmark as a CS-student / entry-level career product that connects GitHub, derives skills from work already built, creates a roadmap, and matches users to jobs, internships, hackathons, fellowships, open-source work, events, and student perks. At review time the launch post had zero comments, so there was no direct community feedback to incorporate.
 
-1. user-selected GitHub repositories;
-2. a proof-based skills record and evidence-depth levels;
-3. target-role skill gaps;
-4. guided projects with task/verification workflow;
-5. matched opportunities;
-6. an opt-in employer-facing view.
+Workmark's first-party pages describe a loop of user-selected repositories, proof-based skill records, evidence depth, skill gaps, guided projects, opportunity matching, and an opt-in employer view. Its public methodology says repository evidence can include manifests/build files, import relationships, commit dates/authorship, and tests, while its public copy says source-code bodies are not read/stored. Its level model distinguishes evidence depth and reserves later confirmation-style levels for stronger collaborator/dependency evidence.
 
-Its published methodology says repository selection is user-controlled and that analysis uses repository metadata such as manifests/build files, import relationships, commit dates/authorship and tests. Its public copy says source-code bodies are not stored/read. Its level descriptions distinguish beginner/intermediate/advanced evidence depth and explicitly reserve later confirmation-based levels for future collaborator/dependency evidence.
+The privacy page describes GitHub as an external source after authorization and repository selection and names service providers, but these disclosures are not evidence of Workmark's private implementation architecture.
 
-The privacy page says the service uses GitHub as its outside source after authorization and names service providers including GitHub, Anthropic, Voyage AI, Supabase, Vercel and Resend. Those vendor disclosures are not sufficient evidence of Workmark's private architecture or algorithms.
+Public comparator repositories reviewed during the market scan included SkillSync, campus-opportunity-recommender, KaushalSetu, and CodeMeet. They reinforce a broader market pattern around GitHub/CV evidence, skill-gap analysis, explainable matching, and project-based recruiting. The capability donor selected for ApplyAI is specifically the proof-of-work → evidence depth → role gap → guided next-build loop.
 
-## What is fact vs inference
+## ApplyAI Fit
 
-### Verified from public product material
+**PARTIAL — CORE CANDIDATE CAREER INTELLIGENCE**
 
-- chosen-repository GitHub evidence is central to the candidate record;
-- evidence depth/repetition matters more than a raw technology count;
-- users can inspect/challenge evidence;
-- skill gaps feed guided project recommendations;
-- opportunities span more than jobs;
-- employer access is intended to be candidate-controlled;
-- the product publishes a human-decision boundary for hiring.
+ApplyAI already owns candidate portfolio, Career Intelligence, job matching, opportunity ingestion, employer workflows, privacy/export, and evidence-aware application/resume surfaces. Rebuilding Workmark as a second standalone career platform would duplicate those systems. The useful donor capability is the missing GitHub proof-of-work loop that can strengthen ApplyAI's existing evidence model.
 
-### Not verified
+## Why this qualifies
 
-- internal scoring weights or model prompts;
-- exact repository parser implementation;
-- private database schema;
-- exact matching/ranking algorithm;
-- production scale, accuracy or hiring-outcome performance;
-- source code, because no public Workmark repository was identified in this research.
+The donor behavior converts evidence a candidate already controls into attributable career signals, makes missing evidence explicit, and recommends a bounded next project rather than inventing experience. That directly improves ApplyAI's evidence-first portfolio and preparation journey while preserving candidate agency and a human hiring-decision boundary.
 
-## Comparator scan
+## Candidate journey stages
 
-Public comparator repositories found during research include:
+- `BUILD_PROFILE` — connect selected work and retain repository-level evidence receipts.
+- `MEASURE_READINESS` — compare observed signals with a transparent target-role checklist.
+- `BUILD_EVIDENCE` — turn an unmet evidence area into a scoped next-build brief.
+- `MATCH_OPPORTUNITIES` — later use candidate-approved proof signals as one explainable input to existing ApplyAI matching.
+- `PRESENT_EVIDENCE` — later expose candidate-controlled proof to portfolio/employer surfaces with consent and dispute controls.
 
-- SkillSync — CV + GitHub audit, skill-gap analysis, job matching, recruiter/university surfaces: https://github.com/malik-builds/SkillSync
-- campus-opportunity-recommender — deterministic opportunity matching and skill-gap feedback: https://github.com/aakashp2008/campus-opportunity-recommender
-- KaushalSetu — academia/industry skill mapping, gaps and explainable career matching: https://github.com/codedby-jay/kaushalsetu
+## Absorb into ApplyAI
 
-These reinforce the broader market pattern, but the Workmark capability donor is specifically the proof-of-work -> evidence depth -> gap -> guided next-build loop.
+- User-controlled GitHub repository evidence.
+- Deterministic, attributable skill signals.
+- Evidence-depth recurrence across repositories.
+- Transparent target-role gaps.
+- Guided next-build recommendations with acceptance criteria.
+- Evidence receipts that can feed existing portfolio and Career Intelligence surfaces.
+- Candidate-controlled publication / employer exposure in a later phase.
+- Dispute and evidence-review controls in a later phase.
 
-## ApplyAI integration decision
+## Keep separate
 
-Do not create a second career platform. ApplyAI already owns the portfolio, Career Intelligence, job matching, opportunity ingestion, employer, privacy/export and candidate-evidence surfaces. RE-370 therefore contributes one bounded vertical slice:
+- Workmark branding and proprietary implementation.
+- Any hidden or reverse-engineered private scoring formula.
+- Opaque candidate ranking or hiring probability.
+- Unsupported proficiency claims.
+- Automatic application behavior.
+- A duplicate job marketplace or duplicate employer product.
+- Claims of Workmark parity, production scale, or hiring-outcome accuracy.
 
-`public GitHub evidence -> deterministic signals -> evidence depth -> transparent role gaps -> next-build recommendation`
+## Implementation destination
 
-Phase A intentionally does not implement private GitHub App access, arbitrary source-code reading, opaque candidate ranking, auto-application behavior, or Workmark parity.
+`candidate-career-intelligence`
 
-## Prototype acceptance boundary
+Phase A is implemented as a public ApplyAI Proof of Work Lab at `/proof-of-work`, backed by `/api/proof-of-work/github` and a deterministic evidence library. The next integration destination is the existing candidate portfolio and matching data model after private-repository consent and evidence persistence are designed.
 
-The prototype must:
+## Implementation status
 
-- scan at most six recent non-fork, non-archived public repositories owned by the supplied GitHub account;
-- use repository metadata and root artifact names only;
-- preserve repository-level evidence receipts;
-- call recurrence `Observed`, `Repeated`, or `Sustained` without calling it proficiency;
-- show transparent target-role requirements and missing evidence;
-- generate one bounded project brief with acceptance criteria;
-- not write to GitHub;
-- fail clearly on invalid usernames, upstream errors and rate limits.
+**PHASE A PROTOTYPE IMPLEMENTED — exact-head preview runtime verified; repository-wide gates still being evaluated**
+
+Phase A:
+- accepts a public GitHub username plus target role;
+- scans at most six recent owned, non-fork, non-archived public repositories;
+- reads repository metadata and root artifact names only;
+- derives deterministic signals for languages, testing, CI/CD, containers, data/migrations, infrastructure and build markers;
+- aggregates recurrence as `Observed`, `Repeated`, or `Sustained` evidence depth;
+- exposes the exact repositories supporting each signal;
+- compares evidence with a transparent role checklist;
+- turns the first unmet area into one bounded next-build recommendation with acceptance criteria;
+- does not write to GitHub and does not produce an opaque hiring/proficiency score;
+- includes focused deterministic tests.
+
+Issue: #81
+PR: #82
+Feature branch: `reverse/workmark-proof-of-work`
+
+The first exact-head preview successfully rendered `/proof-of-work` and returned a live HTTP 200 GitHub evidence report from the API. Repository-wide security audits currently also report dependency advisories that pre-existed this Phase A feature and are tracked separately from the donor slice.
+
+## Phase B gaps
+
+- Read-only GitHub App / OAuth with candidate-controlled private repository selection.
+- Stronger commit/authorship/test/CI receipts without reading arbitrary source bodies.
+- Persisted candidate consent, evidence challenges, and revocation.
+- Integration into the canonical ApplyAI portfolio and Career Intelligence stores.
+- Guided project task verification and completion receipts.
+- Existing ApplyAI opportunity matching using evidence as an explainable input.
+- Candidate-controlled employer exposure.
+- Evaluation/calibration for false-positive and false-negative evidence signals.

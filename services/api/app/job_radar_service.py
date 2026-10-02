@@ -511,12 +511,15 @@ def run_job_scan(session: Session, *, scan_id: uuid.UUID, provider: JobRadarProv
                 )
                 for source, link in source_rows
             )
+            # A canonical non-remote work mode is decisive without needing an
+            # authority comparison across sources. Source authority governs the
+            # geographic claims that make a remote role eligible.
             remote = (
                 assess_remote_sources(
                     canonical_job_id=str(item.canonical_job_id),
                     sources=remote_sources,
                 )
-                if remote_sources
+                if remote_sources and (item.work_mode or "").strip().upper() == "REMOTE"
                 else assess_remote_eligibility(work_mode=item.work_mode, location=item.location)
             )
             lifecycle = OpportunityLifecycle("OPEN", first_seen, first_seen)

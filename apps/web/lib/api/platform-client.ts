@@ -100,10 +100,10 @@ export type JobRadarScan = {
 
 export const platformApi = {
   jobRadar: {
-    profile: () => request<JobRadarProfile>("/api/v1/job-radar/profile"),
-    saveProfile: (payload: Omit<JobRadarProfile, "id">) => request<JobRadarProfile>("/api/v1/job-radar/profile", { method: "PUT", body: JSON.stringify(payload) }),
-    createScan: () => request<JobRadarScan>("/api/v1/job-radar/scans", { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ max_queries: 5, per_query_limit: 25, top_k: 10 }) }),
-    getScan: (id: string) => request<JobRadarScan>(`/api/v1/job-radar/scans/${id}`),
+    profile: () => request<JobRadarProfile>("/job-radar/profile"),
+    saveProfile: (payload: Omit<JobRadarProfile, "id">) => request<JobRadarProfile>("/job-radar/profile", { method: "PUT", body: JSON.stringify(payload) }),
+    createScan: () => request<JobRadarScan>("/job-radar/scans", { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ max_queries: 5, per_query_limit: 25, top_k: 10 }) }),
+    getScan: (id: string) => request<JobRadarScan>(`/job-radar/scans/${id}`),
   },
   semanticMatches: (limit = 25) => request<{ engine: string; items: SemanticMatch[] }>(`/semantic-matches?limit=${limit}`),
   recommendations: (limit = 50) => request<{
@@ -133,9 +133,9 @@ export const platformApi = {
       source_label: string;
       data_origin: string;
     }>;
-  }>(`/api/v1/workspace/recommendations?limit=${limit}`),
+  }>(`/workspace/recommendations?limit=${limit}`),
   trackAnalyticsEvent: (payload: { event_type: string; entity_type?: string; entity_id?: string; metadata?: Record<string, unknown> }) =>
-    request<void>("/api/v1/analytics/events", { method: "POST", body: JSON.stringify(payload) }),
+    request<void>("/analytics/events", { method: "POST", body: JSON.stringify(payload) }),
   savedSearches: {
     list: () => request<SavedSearch[]>("/saved-searches"),
     create: (payload: { name: string; query: Record<string, unknown>; alerts_enabled?: boolean; minimum_match_score?: number }) => request<SavedSearch>("/saved-searches", { method: "POST", body: JSON.stringify(payload) }),

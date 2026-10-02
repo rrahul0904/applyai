@@ -1,0 +1,84 @@
+.page {
+  min-height: 100vh;
+  background: radial-gradient(circle at 15% 5%, rgba(124, 92, 255, 0.13), transparent 32rem), #f7f7fb;
+  color: #17171c;
+  padding: 0 5vw 4rem;
+}
+
+.nav { max-width: 1180px; margin: 0 auto; min-height: 76px; display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.brand { display: inline-flex; align-items: center; gap: .65rem; font-weight: 800; font-size: 1.05rem; color: inherit; text-decoration: none; }
+.brand span { width: 32px; height: 32px; border-radius: 10px; background: #17171c; color: #fff; display: grid; place-items: center; }
+.navActions { display: flex; align-items: center; gap: 1rem; font-size: .85rem; }
+.navActions span { display: inline-flex; align-items: center; gap: .35rem; color: #585866; }
+.navActions a { color: #4f36cf; font-weight: 700; text-decoration: none; }
+
+.hero { max-width: 1180px; margin: 3.5rem auto 2.5rem; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(330px, .8fr); gap: 3rem; align-items: center; }
+.heroCopy h1 { font-size: clamp(2.7rem, 6vw, 5.8rem); line-height: .98; letter-spacing: -.065em; max-width: 900px; margin: .8rem 0 1.25rem; }
+.heroCopy > p:not(.eyebrow) { max-width: 760px; color: #5c5c69; font-size: 1.08rem; line-height: 1.7; }
+.eyebrow { display: flex; align-items: center; gap: .45rem; color: #5a3fe0; font-size: .78rem; font-weight: 800; text-transform: uppercase; letter-spacing: .13em; }
+.guardrails { display: flex; flex-wrap: wrap; gap: .7rem; margin-top: 1.5rem; }
+.guardrails span { display: inline-flex; align-items: center; gap: .4rem; padding: .55rem .7rem; background: #fff; border: 1px solid #e5e3ec; border-radius: 999px; color: #4d4d59; font-size: .78rem; font-weight: 650; }
+
+.formCard { background: #17171c; color: #fff; padding: 1.6rem; border-radius: 24px; box-shadow: 0 25px 70px rgba(28, 24, 50, .18); display: grid; gap: 1rem; }
+.formCard label { display: block; font-size: .78rem; font-weight: 750; color: #cbc8d7; margin-bottom: .4rem; }
+.inputShell { display: flex; align-items: center; gap: .65rem; background: #26262d; border: 1px solid #3a3942; border-radius: 12px; padding: 0 .8rem; }
+.inputShell input, .formCard select { width: 100%; min-height: 46px; border: 0; outline: 0; background: transparent; color: #fff; font: inherit; }
+.formCard select { background: #26262d; border: 1px solid #3a3942; border-radius: 12px; padding: 0 .8rem; }
+.formCard button { min-height: 48px; border: 0; border-radius: 12px; background: #8d72ff; color: #111; font-weight: 850; display: inline-flex; align-items: center; justify-content: center; gap: .5rem; cursor: pointer; }
+.formCard button:disabled { opacity: .55; cursor: wait; }
+.formNote { color: #aaa6ba; font-size: .75rem; line-height: 1.5; margin: 0; }
+.error { color: #ffb6bc; background: rgba(255, 94, 105, .12); border-radius: 10px; padding: .65rem; margin: 0; font-size: .82rem; }
+
+.explainer { max-width: 1180px; margin: 2rem auto 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+.explainer article, .panel { background: rgba(255,255,255,.86); border: 1px solid #e6e4ec; border-radius: 20px; padding: 1.3rem; }
+.explainer article > span { color: #7358eb; font-weight: 850; font-size: .8rem; }
+.explainer h2 { margin: .55rem 0 .4rem; font-size: 1.15rem; }
+.explainer p, .resultHeader p, .panelTitle p, .nextBuild p, .repoCard p, .empty { color: #676672; line-height: 1.55; }
+
+.results { max-width: 1180px; margin: 3.5rem auto 0; display: grid; gap: 1rem; }
+.resultHeader { display: flex; justify-content: space-between; gap: 2rem; align-items: end; padding: .5rem 0 1rem; }
+.resultHeader h2 { font-size: clamp(1.6rem, 3vw, 2.4rem); letter-spacing: -.03em; margin: .35rem 0; }
+.resultHeader p { max-width: 780px; margin: 0; }
+.scanMetric { min-width: 120px; text-align: right; }
+.scanMetric strong { display: block; font-size: 2.5rem; }
+.scanMetric span { color: #696875; font-size: .8rem; }
+.gridTwo { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.panelTitle { display: flex; align-items: flex-start; gap: .7rem; margin-bottom: 1rem; }
+.panelTitle h3 { margin: 0; font-size: 1.05rem; }
+.panelTitle p { margin: .2rem 0 0; font-size: .82rem; }
+.skillList, .requirementList { display: grid; gap: .55rem; }
+.skillRow { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .75rem; border-radius: 12px; background: #f8f7fb; }
+.skillRow div { min-width: 0; }
+.skillRow strong, .skillRow span { display: block; }
+.skillRow div span { color: #74727e; font-size: .72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 350px; }
+.depth { flex: 0 0 auto; border-radius: 999px; padding: .34rem .5rem; font-size: .69rem; font-weight: 800; }
+.observed { background: #eeeef3; color: #5e5d68; }
+.repeated { background: #e7e2ff; color: #563fc1; }
+.sustained { background: #daf4e7; color: #166b48; }
+.requirement { display: flex; align-items: flex-start; gap: .65rem; padding: .75rem; border-bottom: 1px solid #efedf3; }
+.requirement:last-child { border-bottom: 0; }
+.requirement div { display: grid; gap: .18rem; }
+.requirement span { color: #74727f; font-size: .74rem; }
+.metIcon { color: #21845f; flex: 0 0 auto; }
+.gapIcon { color: #b35b62; flex: 0 0 auto; }
+.nextBuild { background: linear-gradient(120deg, #211b39, #312555); color: #fff; border-radius: 22px; padding: 1.6rem; display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
+.nextBuild h3 { margin: .35rem 0; font-size: 1.5rem; }
+.nextBuild p { color: #c9c5d8; }
+.nextBuild ul { margin: 0; padding: 0; list-style: none; display: grid; gap: .65rem; align-content: center; }
+.nextBuild li { display: flex; align-items: center; gap: .55rem; color: #eeeaf8; font-size: .88rem; }
+.repoGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .7rem; }
+.repoCard { text-decoration: none; color: inherit; border: 1px solid #ece9f1; border-radius: 14px; padding: .9rem; transition: transform .15s ease, border-color .15s ease; }
+.repoCard:hover { transform: translateY(-2px); border-color: #a99ae8; }
+.repoCard strong, .repoCard span { display: block; }
+.repoCard span { color: #725ae0; font-size: .72rem; margin-top: .2rem; }
+.repoCard p { font-size: .74rem; margin: .7rem 0 0; }
+.footer { max-width: 1180px; margin: 2rem auto 0; border-top: 1px solid #e0dee7; padding-top: 1.2rem; color: #73717d; font-size: .78rem; }
+
+@media (max-width: 850px) {
+  .hero, .gridTwo, .nextBuild { grid-template-columns: 1fr; }
+  .hero { margin-top: 2rem; gap: 1.5rem; }
+  .explainer, .repoGrid { grid-template-columns: 1fr; }
+  .navActions span { display: none; }
+  .resultHeader { align-items: flex-start; flex-direction: column; }
+  .scanMetric { text-align: left; }
+}

@@ -1,0 +1,105 @@
+{
+  "recorded_at": "2026-10-02T15:27:37Z",
+  "repository": "rrahul0904/applyai",
+  "source": {
+    "branch": "codex/applyai-release-mission",
+    "sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+    "implementation_sha": "b6b7f70989aa98004723c5c69094ad373548de59",
+    "pull_request": "https://github.com/rrahul0904/applyai/pull/80",
+    "main_sha": "9798aa613c45cdf9d54f3e2c6c47481ca31d1852",
+    "migration_head": "d0v4z6s9w197"
+  },
+  "verification": {
+    "environment": "GitHub Actions, local PostgreSQL/API tests, Vercel Preview",
+    "status": "PASS_REPOSITORY_CONTROLLED",
+    "exact_sha_checks": {
+      "required_contexts_passed": 21,
+      "status": "PASS",
+      "summary": "All required contexts passed on exact SHA; full suite, CI, security, Playwright, image builds, fresh clone, scale benchmarks, and predeploy passed.",
+      "skipped": [
+        "Seed bounded job catalogue (REQUIRE_REAL_INVENTORY=0)"
+      ],
+      "failed": [],
+      "limitations": [
+        "Catalogue seed skipped; live job inventory is not measured."
+      ]
+    },
+    "local_result": "88 focused API tests passed across resume/auth/source/recommendation suites; two PDF UI tests, typecheck, scoped ESLint, Ruff, and visual PDF review reported passing by the implementation agent.",
+    "limitations": [
+      "The catalogue seed was skipped, so live job inventory and freshness are not measured.",
+      "Preview readiness is false; no authenticated candidate/operator journey was exercised."
+    ],
+    "workflow_runs": {
+      "ci": "https://github.com/rrahul0904/applyai/actions/runs/37024998236",
+      "security": "https://github.com/rrahul0904/applyai/actions/runs/37024998205",
+      "predeploy": "https://github.com/rrahul0904/applyai/actions/runs/37024998198",
+      "fresh_clone": "https://github.com/rrahul0904/applyai/actions/runs/37024998163",
+      "search_scale": "https://github.com/rrahul0904/applyai/actions/runs/37024998340",
+      "source_scheduler": "https://github.com/rrahul0904/applyai/actions/runs/37024997631",
+      "agent_runtime": "https://github.com/rrahul0904/applyai/actions/runs/37024998138"
+    }
+  },
+  "runtime": {
+    "production": {
+      "url": "https://applyai-gold.vercel.app",
+      "deployment_id": "6593569358",
+      "sha": "9798aa613c45cdf9d54f3e2c6c47481ca31d1852",
+      "observed_at": "2026-10-02T14:51:58Z",
+      "readiness_http": 503,
+      "runtime_ready": false,
+      "production_ready": false,
+      "limitation": "Readiness reported API/database/storage/worker checks false; this does not isolate the downstream root cause."
+    },
+    "preview": {
+      "deployment_id": "6811587621",
+      "sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+      "url": "https://applyai-f9ni042ii-rrahul0904-5013s-projects.vercel.app",
+      "observed_at": "2026-10-02T15:11:11Z",
+      "deployment_status": "success",
+      "routes": {
+        "/": 200,
+        "/proof-of-work": 200,
+        "/api/readiness": 200
+      },
+      "runtime_ready": false,
+      "production_ready": false,
+      "api_reachable": false,
+      "database_reachable": false,
+      "storage_configured": false,
+      "background_worker_configured": false,
+      "supabase_instance_match": false,
+      "limitations": [
+        "No authenticated candidate or operator journey was performed.",
+        "API, database, storage and worker functionality is not verified by public page responses."
+      ]
+    }
+  },
+  "live_provider_probe": {
+    "provider": "GitHub REST public API",
+    "environment_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+    "observed_at": "2026-10-02T15:13:03Z",
+    "test_identity": "octocat",
+    "request": "GET /api/proof-of-work/github?username=octocat&role=fullstack",
+    "http_status": 200,
+    "repositories_scanned": 6,
+    "repository_scan_limit": 6,
+    "source_bodies_read": false,
+    "recognized_signal_groups": 0,
+    "role_requirements_returned": 5,
+    "limitation": "One public test account verifies one public metadata path only; it does not test user consent, private repos, persistence, hiring evaluation, job sources or production."
+  },
+  "merge_gate": {
+    "required_approvals": 1,
+    "independent_approval_received": false,
+    "branch_protection_bypass_used": false,
+    "merge_state": "BLOCKED_REVIEW_REQUIRED"
+  },
+  "external_gates": {
+    "tracker": "UNAVAILABLE_AUTH_REQUIRED_401",
+    "live_provider_inventory": "NOT_MEASURED",
+    "production_operator": "NOT_VERIFIED",
+    "api_worker_sha": "UNKNOWN",
+    "production_migration": "UNKNOWN",
+    "human_uat_sessions": 0
+  }
+}

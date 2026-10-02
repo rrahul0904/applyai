@@ -5064,7 +5064,7 @@ export interface operations {
     export_resume_document_api_v1_resume_studio__document_id__export_get: {
         parameters: {
             query?: {
-                format?: "txt" | "html";
+                format?: "txt" | "html" | "pdf";
             };
             header?: never;
             path: {

@@ -219,6 +219,57 @@ def normalize_employment_type(value: str | None) -> str:
     return "UNKNOWN" if not normalized else "OTHER"
 
 
+def normalize_seniority(value: str | None) -> str:
+    """Normalize common provider levels without guessing from job titles."""
+    normalized = normalize_text(value or "")
+    mapping = {
+        "intern": "INTERN",
+        "internship": "INTERN",
+        "entry": "ENTRY",
+        "entry level": "ENTRY",
+        "entry-level": "ENTRY",
+        "junior": "JUNIOR",
+        "jr": "JUNIOR",
+        "associate": "ASSOCIATE",
+        "mid": "MID",
+        "mid level": "MID",
+        "mid-level": "MID",
+        "intermediate": "MID",
+        "senior": "SENIOR",
+        "sr": "SENIOR",
+        "lead": "LEAD",
+        "staff": "STAFF",
+        "principal": "PRINCIPAL",
+        "manager": "MANAGER",
+        "director": "DIRECTOR",
+        "vice president": "VP",
+        "vp": "VP",
+        "executive": "EXECUTIVE",
+    }
+    if normalized in mapping:
+        return mapping[normalized]
+    if not normalized:
+        return "UNKNOWN"
+    return re.sub(r"[^A-Z0-9]+", "_", normalized.upper()).strip("_")[:48] or "UNKNOWN"
+
+
+def normalize_facets(value: Any) -> tuple[str, ...]:
+    """Normalize provider tags/facets to stable bounded tokens."""
+    values = value if isinstance(value, (tuple, list, set)) else (value,)
+    facets: list[str] = []
+    for item in values:
+        if not isinstance(item, str):
+            continue
+        normalized = re.sub(
+            r"[^A-Z0-9+#.]+", "_", " ".join(item.split()).upper()
+        ).strip("_")[:64]
+        if normalized and normalized not in facets:
+            facets.append(normalized)
+        if len(facets) >= 40:
+            break
+    return tuple(facets)
+
+
 def normalize_workplace_type(value: str | None, locations: tuple[str, ...] = ()) -> str:
     normalized = normalize_text(value or "")
     if normalized in {"remote", "REMOTE".casefold()}:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import html
 import uuid
 from datetime import datetime, timezone
@@ -26,6 +27,7 @@ from app.platform_models import (
     SavedSearch,
 )
 from app.resume_evidence import composition_review, select_verified_facts, unsupported_numeric_claims
+from app.resumes.pdf_export import UnsupportedPdfText, export_resume_pdf
 
 router = APIRouter(tags=["candidate platform"])
 
@@ -415,9 +417,32 @@ def _flatten_resume(content: dict[str, Any]) -> str:
 
 
 @router.get("/resume-studio/{document_id}/export")
-def export_resume_document(document_id: uuid.UUID, format: Literal["txt", "html"] = Query(default="txt"), user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+def export_resume_document(document_id: uuid.UUID, format: Literal["txt", "html", "pdf"] = Query(default="txt"), user: User = Depends(get_current_user), session: Session = Depends(get_session)):
     item = _owned_resume_document(session, user, document_id)
     text = _flatten_resume(item.content)
+    if format == "pdf":
+        name = " ".join(part for part in (user.first_name, user.last_name) if part)
+        text = "\n".join(line for line in (name, user.email, "", text) if line is not None)
+        try:
+            pdf = export_resume_pdf(text)
+        except UnsupportedPdfText as exc:
+            raise HTTPException(status_code=422, detail={
+                "code": "PDF_TEXT_UNSUPPORTED",
+                "message": "This resume contains characters the PDF font cannot render. Download text instead; no content was removed.",
+            }) from exc
+        return {
+            "filename": f"{item.title.replace(' ', '-')}.pdf",
+            "content_type": "application/pdf",
+            "content": base64.b64encode(pdf.content).decode("ascii"),
+            "content_encoding": "base64",
+            "version": item.version,
+            "composition": {
+                "characters": len(text), "page_count": pdf.page_count,
+                "page_status": "WITHIN_ONE_PAGE_TARGET" if pdf.page_count == 1 else "OVERFLOW_REQUIRES_REVIEW",
+                "extractable_text": bool(text.strip()),
+                "universal_ats_compatibility": "NOT_CLAIMED",
+            },
+        }
     if format == "html":
         content = "<!doctype html><html><body><pre>" + html.escape(text) + "</pre></body></html>"
         content_type = "text/html"

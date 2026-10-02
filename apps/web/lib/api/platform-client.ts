@@ -46,6 +46,19 @@ export type ResumeDocument = {
   updated_at: string;
 };
 
+export type ResumeExport = {
+  filename: string;
+  content: string;
+  content_type: string;
+  content_encoding?: "base64";
+  version: number;
+  composition?: {
+    page_count?: number;
+    page_status: "WITHIN_ONE_PAGE_TARGET" | "OVERFLOW_REQUIRES_REVIEW";
+    extractable_text: boolean;
+  };
+};
+
 export type Contact = {
   id: string;
   name: string;
@@ -160,7 +173,7 @@ export const platformApi = {
     fromJob: (jobId: string) => request<ResumeDocument>(`/resume-studio/from-job/${jobId}`, { method: "POST" }),
     get: (id: string) => request<ResumeDocument>(`/resume-studio/${id}`),
     update: (id: string, payload: Record<string, unknown>) => request<ResumeDocument>(`/resume-studio/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
-    export: (id: string, format: "txt" | "html" = "txt") => request<{ filename: string; content: string; content_type: string; version: number }>(`/resume-studio/${id}/export?format=${format}`),
+    export: (id: string, format: "txt" | "html" | "pdf" = "txt") => request<ResumeExport>(`/resume-studio/${id}/export?format=${format}`),
   },
   interview: {
     list: (jobId?: string) => request<Array<Record<string, unknown>>>(`/interview-practice${jobId ? `?job_id=${jobId}` : ""}`),

@@ -297,7 +297,12 @@ def _recommendation_batch(
                 continue
         else:
             location_matches = False
-        if work_mode == "REMOTE" and "REMOTE" in preferred_modes and not relocation_open:
+        candidate_geography_known = candidate_country is not None or bool(candidate_regions)
+        if (
+            work_mode == "REMOTE"
+            and not relocation_open
+            and (candidate_geography_known or "REMOTE" in preferred_modes)
+        ):
             source_evidence = remote_sources.get(job.id, ())
             eligibility = (
                 assess_remote_sources(

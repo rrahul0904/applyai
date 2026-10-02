@@ -1,6 +1,30 @@
 # ApplyAI current state
 
-Checked 2026-10-01 19:11 EDT (2026-10-01 23:11 UTC). These values come from the checked-out Git refs, GitHub API/CLI, the deployed readiness endpoints, and the repository migration graph. Unknown values are called out explicitly.
+Latest hosted observations: 2026-10-02 14:51–14:52 UTC (10:51–10:52 EDT). Latest local repository inspection: 2026-10-02 15:03 UTC (11:03 EDT). Earlier checkpoints below are historical and must not be read as current runtime state.
+
+## Latest evidence-backed state
+
+| Item | Observed state | Evidence and boundary |
+|---|---|---|
+| Canonical repository and `main` | `rrahul0904/applyai`; `9798aa613c45cdf9d54f3e2c6c47481ca31d1852` | GitHub branch/API and local `origin/main` |
+| Release candidate | PR #80, `codex/applyai-release-mission` → `main`; pushed head `e38256b4d4a10eec54668853f6a6af0a29dda5c1`; local implementation is in progress beyond that SHA | [PR #80](https://github.com/rrahul0904/applyai/pull/80); all 21 required contexts passed on the pushed head; approval remains required |
+| Other open donor PRs | #82 RE-370 `f7321e8`; #78 RE-347 `bb402e7` → #76; #76 JobPrime `4c8a0fc`; #73 ChannelPulse `a0d5802` | GitHub PR API. #82 is source lineage for code copied into the local #80 release worktree; no source PR was closed or merged |
+| PR #80 checks and review | At exact head `e38256b`, all 21 required contexts succeeded; the bounded catalogue seed was skipped. Code changes address the three review findings from `b536e56` (source HTTP transport, recommendation ranking, queued scan input consistency). Independent approval has not been received. | [CI](https://github.com/rrahul0904/applyai/actions/runs/37016215148), [predeploy](https://github.com/rrahul0904/applyai/actions/runs/37016214768), [fresh clone](https://github.com/rrahul0904/applyai/actions/runs/37016214832), and related security/scale workflows. Independent approval remains required. |
+| Local follow-on implementation | PDF export, durable auth HTTPS enforcement, ATS/authorized-feed evidence propagation, and pre-scoring remote eligibility updates are in the working tree after `e38256b`; 88 focused API tests pass across resume/auth/source/recommendation suites. Web component tests (2), typecheck, scoped ESLint, Ruff, and PDF visual review were reported passing by the owning implementation agent; the integrated head still requires hosted CI. | Local tests and agent-owned verification; exact commands/results recorded in the capability ledger. |
+| Main branch protection | Enabled; strict up-to-date checks; 21 required contexts; one approval; stale reviews dismissed; last-push approval required; admin enforcement enabled; force push/deletion disabled | GitHub branch-protection API. No bypass or self-approval used. |
+| Production web | `https://applyai-gold.vercel.app`; GitHub deployment `6593569358`; SHA `9798aa613c45cdf9d54f3e2c6c47481ca31d1852` | At 2026-10-02 14:51:58 UTC `/api/readiness` returned HTTP 503 and `runtime_ready=false`, `production_ready=false`, `api_reachable=false`, `database_reachable=false`, `storage_configured=false`, `background_worker_configured=false`, and `supabase_instance_match=false`. This does not identify which downstream service caused the backend readiness failure. |
+| PR #80 preview | GitHub deployment `6810048336`; SHA `e38256b4d4a10eec54668853f6a6af0a29dda5c1`; [Preview](https://applyai-4o7l0u499-rrahul0904-5013s-projects.vercel.app) | At 2026-10-02 14:52 UTC `/` and `/proof-of-work` returned 200; `/api/readiness` returned HTTP 200 with `runtime_ready=false`, `production_ready=false`, `api_reachable=false`, `database_reachable=false`, `storage_configured=false`, `background_worker_configured=false`, and `supabase_instance_match=false`. These values describe this Preview environment; they do not establish production service state. |
+| Public route/auth probes | Landing/sign-in/sign-up returned 200; unsigned candidate access redirected; identity API returned 401. Production `/job-radar` returned 404; preview redirected `/job-radar` to sign-in. | Read-only unauthenticated probes. No authenticated candidate/operator browser journey was performed. |
+| API/worker deployment SHA, production migration revision, worker heartbeat/task receipts, live provider counts/freshness | Unknown | Not exposed by inspected deployment records or reachable readiness payload; no cloud/operator credentials available. |
+| Repository migration head | `d0v4z6s9w197` | Local clean PostgreSQL upgrade, `alembic current`, and `alembic check` after the Job Radar snapshot migration. This is not proof of the production migration revision. |
+| Reverse-engineering tracker | Not accessible | Fresh internal registry GET returned HTTP 401 `AUTH_REQUIRED`; no tracker rows were read or changed. |
+| Human UAT | 0 of 5 recorded sessions | `artifacts/release/HUMAN_UAT_PLAN.md`; automated browser tests are not human UAT. |
+
+Pushed implementation `e38256b4d4a10eec54668853f6a6af0a29dda5c1` passed all 21 required GitHub contexts and the fresh-clone/predeploy workflows; the catalogue seed was skipped. The Preview runtime itself remains unhealthy. Follow-on RE-355 PDF export, durable auth URL validation, and RE-225 source evidence/eligibility work are in the local tree and are not part of that certified source SHA. The branch must remain below `PRODUCTION_VERIFIED` until a single reviewed SHA has successful hosted runtime, provider, operator, migration, isolation, accessibility, and human-UAT evidence.
+
+## Historical checkpoint — 2026-10-01
+
+The following source tables were written on October 1. Their exact branch, PR and deployment entries are retained as history; use the latest evidence-backed table above for present state.
 
 ## Source and release identity
 

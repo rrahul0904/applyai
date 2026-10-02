@@ -200,3 +200,89 @@ def test_workspace_recommendations_rank_before_selecting_top_page(client):
     assert payload["candidate_pool_limit"] == 1800
     assert payload["items"][0]["id"] == str(strong.id)
     assert payload["items"][0]["deterministic_score"] > payload["items"][1]["deterministic_score"]
+
+
+def test_remote_recommendations_require_eligibility_when_candidate_geography_is_known(client):
+    profile = profile_payload()
+    profile["work_modes"] = []
+    client.put("/api/v1/profile", json=profile)
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as session:
+        company = Company(
+            canonical_name="Remote Eligibility Gate Labs",
+            normalized_name="remote eligibility gate labs",
+        )
+        session.add(company)
+        session.flush()
+        jobs = {
+            "allowed": Job(
+                company_id=company.id,
+                title="Senior Data Engineering Manager",
+                normalized_title="senior data engineering manager",
+                description="Lead Python and SQL data platform work.",
+                search_document="Senior data engineering manager Python SQL lead",
+                employment_type="FULL_TIME",
+                seniority="SENIOR",
+                status="ACTIVE",
+                posted_at=now,
+                last_seen_at=now,
+                data_origin="DEVELOPMENT_SEED",
+            ),
+            "excluded_country": Job(
+                company_id=company.id,
+                title="Senior Data Engineering Manager Canada",
+                normalized_title="senior data engineering manager canada",
+                description="Lead Python and SQL data platform work.",
+                search_document="Senior data engineering manager Python SQL lead Canada",
+                employment_type="FULL_TIME",
+                seniority="SENIOR",
+                status="ACTIVE",
+                posted_at=now,
+                last_seen_at=now,
+                data_origin="DEVELOPMENT_SEED",
+            ),
+            "excluded_unknown": Job(
+                company_id=company.id,
+                title="Senior Data Engineering Manager Unknown Remote",
+                normalized_title="senior data engineering manager unknown remote",
+                description="Lead Python and SQL data platform work.",
+                search_document="Senior data engineering manager Python SQL remote",
+                employment_type="FULL_TIME",
+                seniority="SENIOR",
+                status="ACTIVE",
+                posted_at=now,
+                last_seen_at=now,
+                data_origin="DEVELOPMENT_SEED",
+            ),
+        }
+        session.add_all(jobs.values())
+        session.flush()
+        for key, job in jobs.items():
+            session.add(JobLocation(
+                job_id=job.id,
+                location_text="Remote",
+                country_code=None,
+                work_mode="REMOTE",
+            ))
+            metadata = {"work_mode": "REMOTE"}
+            if key == "allowed":
+                metadata.update({"remote_scope": "COUNTRY_RESTRICTED", "eligible_countries": ["US"]})
+            elif key == "excluded_country":
+                metadata.update({"remote_scope": "COUNTRY_RESTRICTED", "eligible_countries": ["CA"]})
+            source = JobSource(
+                connector_key="greenhouse",
+                external_job_id=f"remote-eligibility-{key}",
+                source_url=f"https://boards.greenhouse.io/example/jobs/remote-eligibility-{key}",
+                checkpoint={"source_type": "GREENHOUSE", "source_metadata": metadata},
+            )
+            session.add(source)
+            session.flush()
+            session.add(JobSourceLink(job_id=job.id, job_source_id=source.id, is_primary=True))
+        session.commit()
+
+    response = client.get("/api/v1/workspace/recommendations?limit=50")
+    assert response.status_code == 200
+    recommended_ids = {item["id"] for item in response.json()["items"]}
+    assert str(jobs["allowed"].id) in recommended_ids
+    assert str(jobs["excluded_country"].id) not in recommended_ids
+    assert str(jobs["excluded_unknown"].id) not in recommended_ids

@@ -1,28 +1,32 @@
 {
-  "recorded_at": "2026-10-02T15:27:37Z",
+  "recorded_at": "2026-10-02T16:19:02Z",
   "repository": "rrahul0904/applyai",
   "source": {
     "branch": "codex/applyai-release-mission",
     "sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
-    "implementation_sha": "b6b7f70989aa98004723c5c69094ad373548de59",
+    "implementation_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
     "pull_request": "https://github.com/rrahul0904/applyai/pull/80",
     "main_sha": "9798aa613c45cdf9d54f3e2c6c47481ca31d1852",
-    "migration_head": "d0v4z6s9w197"
+    "migration_head": "d0v4z6s9w197",
+    "latest_evidence_checkpoint_sha": "ad38f3bc36d04ffcfc5e77ab7c3c418349291907"
   },
   "verification": {
     "environment": "GitHub Actions, local PostgreSQL/API tests, Vercel Preview",
     "status": "PASS_REPOSITORY_CONTROLLED",
     "exact_sha_checks": {
+      "tested_code_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+      "latest_pr_head": "ad38f3bc36d04ffcfc5e77ab7c3c418349291907",
       "required_contexts_passed": 21,
       "status": "PASS",
-      "summary": "All required contexts passed on exact SHA; full suite, CI, security, Playwright, image builds, fresh clone, scale benchmarks, and predeploy passed.",
+      "summary": "All required contexts and the full hosted suite passed on latest documentation/evidence head; implementation code is unchanged from the already certified code SHA.",
       "skipped": [
         "Seed bounded job catalogue (REQUIRE_REAL_INVENTORY=0)"
       ],
       "failed": [],
       "limitations": [
         "Catalogue seed skipped; live job inventory is not measured."
-      ]
+      ],
+      "latest_evidence_checkpoint": "ad38f3bc36d04ffcfc5e77ab7c3c418349291907"
     },
     "local_result": "88 focused API tests passed across resume/auth/source/recommendation suites; two PDF UI tests, typecheck, scoped ESLint, Ruff, and visual PDF review reported passing by the implementation agent.",
     "limitations": [
@@ -30,13 +34,13 @@
       "Preview readiness is false; no authenticated candidate/operator journey was exercised."
     ],
     "workflow_runs": {
-      "ci": "https://github.com/rrahul0904/applyai/actions/runs/37024998236",
-      "security": "https://github.com/rrahul0904/applyai/actions/runs/37024998205",
-      "predeploy": "https://github.com/rrahul0904/applyai/actions/runs/37024998198",
-      "fresh_clone": "https://github.com/rrahul0904/applyai/actions/runs/37024998163",
-      "search_scale": "https://github.com/rrahul0904/applyai/actions/runs/37024998340",
-      "source_scheduler": "https://github.com/rrahul0904/applyai/actions/runs/37024997631",
-      "agent_runtime": "https://github.com/rrahul0904/applyai/actions/runs/37024998138"
+      "ci": "https://github.com/rrahul0904/applyai/actions/runs/37027365669",
+      "security": "https://github.com/rrahul0904/applyai/actions/runs/37027365025",
+      "predeploy": "https://github.com/rrahul0904/applyai/actions/runs/37027364848",
+      "fresh_clone": "https://github.com/rrahul0904/applyai/actions/runs/37027365789",
+      "search_scale": "https://github.com/rrahul0904/applyai/actions/runs/37027365100",
+      "source_scheduler": "https://github.com/rrahul0904/applyai/actions/runs/37027365007",
+      "agent_runtime": "https://github.com/rrahul0904/applyai/actions/runs/37027365521"
     }
   },
   "runtime": {
@@ -44,17 +48,23 @@
       "url": "https://applyai-gold.vercel.app",
       "deployment_id": "6593569358",
       "sha": "9798aa613c45cdf9d54f3e2c6c47481ca31d1852",
-      "observed_at": "2026-10-02T14:51:58Z",
+      "observed_at": "2026-10-02T16:18:53Z",
       "readiness_http": 503,
       "runtime_ready": false,
       "production_ready": false,
-      "limitation": "Readiness reported API/database/storage/worker checks false; this does not isolate the downstream root cause."
+      "limitation": "Latest readiness still fails; these values do not independently identify the downstream root cause.",
+      "api_reachable": false,
+      "database_reachable": false,
+      "storage_configured": false,
+      "background_worker_configured": false,
+      "supabase_instance_match": false
     },
     "preview": {
-      "deployment_id": "6811587621",
-      "sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
-      "url": "https://applyai-f9ni042ii-rrahul0904-5013s-projects.vercel.app",
-      "observed_at": "2026-10-02T15:11:11Z",
+      "deployment_id": "6811997019",
+      "sha": "ad38f3bc36d04ffcfc5e77ab7c3c418349291907",
+      "implementation_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+      "url": "https://applyai-9trkjoja0-rrahul0904-5013s-projects.vercel.app",
+      "observed_at": "2026-10-02T16:17:51Z",
       "deployment_status": "success",
       "routes": {
         "/": 200,
@@ -69,15 +79,15 @@
       "background_worker_configured": false,
       "supabase_instance_match": false,
       "limitations": [
-        "No authenticated candidate or operator journey was performed.",
-        "API, database, storage and worker functionality is not verified by public page responses."
+        "No authenticated candidate/operator journey was performed.",
+        "Preview backend readiness is false."
       ]
     }
   },
   "live_provider_probe": {
     "provider": "GitHub REST public API",
-    "environment_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
-    "observed_at": "2026-10-02T15:13:03Z",
+    "environment_sha": "ad38f3bc36d04ffcfc5e77ab7c3c418349291907",
+    "observed_at": "2026-10-02T16:19:02Z",
     "test_identity": "octocat",
     "request": "GET /api/proof-of-work/github?username=octocat&role=fullstack",
     "http_status": 200,

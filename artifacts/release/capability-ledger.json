@@ -1,5 +1,5 @@
 {
-  "recorded_at": "2026-10-02T15:27:37Z",
+  "recorded_at": "2026-10-02T16:19:02Z",
   "repository": "rrahul0904/applyai",
   "source_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
   "tracker_access": "HTTP 401 AUTH_REQUIRED; no external rows read or changed",
@@ -289,5 +289,6 @@
       ],
       "next_action": "Complete documented external/provider/browser/UAT gates when credentials and operator access are available."
     }
-  ]
+  ],
+  "latest_evidence_checkpoint_sha": "ad38f3bc36d04ffcfc5e77ab7c3c418349291907"
 }

@@ -16,7 +16,7 @@ function renderView() {
   return render(<QueryClientProvider client={queryClient}><CandidateResumeStudioView /></QueryClientProvider>);
 }
 
-const createObjectURL = vi.fn(() => "blob:resume");
+const createObjectURL = vi.fn<(blob: Blob) => string>(() => "blob:resume");
 const revokeObjectURL = vi.fn();
 
 describe("Resume Studio PDF download", () => {

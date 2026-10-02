@@ -84,7 +84,7 @@ The implementation is intentionally migration-free for this slice. Radar derives
 
 ## Implementation status
 
-**IMPLEMENTED IN DRAFT PR — certification pending**
+**REPOSITORY-VERIFIED on PR #80 SHA `3515e522264c18cc7a21eebc7e954a620461cc55`; hosted CI and browser suite passed.** The E2E catalogue is seeded/deterministic, and the full-functional CI skips the real-inventory threshold; live provider, scheduled delivery, and production Radar runs remain unverified.
 
 Current repository behavior includes:
 
@@ -94,6 +94,6 @@ Current repository behavior includes:
 - Backend tests for fresh unmatched-job judgment, current/legacy decision bucketing, and skip-already-judged behavior.
 - An idempotent reverse-engineering registry script that records the source, ApplyAI fit, qualifying/excluded capabilities, and implementation target.
 
-Repository CI and preview/browser evidence remain certification boundaries. This document does not claim that the draft PR is merge-ready until those checks pass.
+Exact-head repository CI and hosted Preview checks passed. The tests use deterministic jobs and development-only auth; real inventory, human UAT and production readiness are separate release boundaries.
 
 A bounded follow-on can add governed unattended schedules/watches and durable transition history such as when a job enters or leaves `TOP_MATCH`. Those capabilities are explicitly not claimed by this slice.

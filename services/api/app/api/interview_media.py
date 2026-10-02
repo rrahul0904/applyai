@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.auth import get_current_user
 from app.core.database import get_session
 from app.core.storage import ObjectStorageProvider, get_object_storage
+from app.interview_session_lifecycle import ensure_available
 from app.models import User
 from app.preparation_models import InterviewRecording, MockInterviewSession, UsageLedger
 
@@ -80,6 +81,7 @@ def create_recording_upload_intent(
     storage: ObjectStorageProvider = Depends(get_object_storage),
 ) -> dict:
     interview = _owned_session(session, user, session_id)
+    ensure_available(interview, writing=True, capture=True)
     key = _safe_media_key(user.id, interview.id, payload.content_type)
     if storage.supports_direct_upload:
         return {
@@ -112,6 +114,7 @@ def proxy_recording_upload(
     storage: ObjectStorageProvider = Depends(get_object_storage),
 ) -> dict:
     interview = _owned_session(session, user, session_id)
+    ensure_available(interview, writing=True, capture=True)
     _validate_key(user, interview, storage_key)
     content_type = file.content_type or "application/octet-stream"
     if content_type not in ALLOWED_MEDIA_TYPES:
@@ -133,6 +136,7 @@ def complete_recording_upload(
     storage: ObjectStorageProvider = Depends(get_object_storage),
 ) -> dict:
     interview = _owned_session(session, user, session_id)
+    ensure_available(interview, writing=True, capture=True)
     _validate_key(user, interview, payload.storage_key)
     try:
         metadata = storage.head(key=payload.storage_key)
@@ -187,6 +191,7 @@ def download_recording(
     storage: ObjectStorageProvider = Depends(get_object_storage),
 ) -> Response:
     interview = _owned_session(session, user, session_id)
+    ensure_available(interview, capture=True)
     recording = session.scalar(
         select(InterviewRecording).where(
             InterviewRecording.id == recording_id,

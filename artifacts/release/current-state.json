@@ -1,0 +1,115 @@
+{
+  "recorded_at": "2026-10-02T16:19:02Z",
+  "repository": "rrahul0904/applyai",
+  "source": {
+    "branch": "codex/applyai-release-mission",
+    "sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+    "implementation_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+    "pull_request": "https://github.com/rrahul0904/applyai/pull/80",
+    "main_sha": "9798aa613c45cdf9d54f3e2c6c47481ca31d1852",
+    "migration_head": "d0v4z6s9w197",
+    "latest_evidence_checkpoint_sha": "ad38f3bc36d04ffcfc5e77ab7c3c418349291907"
+  },
+  "verification": {
+    "environment": "GitHub Actions, local PostgreSQL/API tests, Vercel Preview",
+    "status": "PASS_REPOSITORY_CONTROLLED",
+    "exact_sha_checks": {
+      "tested_code_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+      "latest_pr_head": "ad38f3bc36d04ffcfc5e77ab7c3c418349291907",
+      "required_contexts_passed": 21,
+      "status": "PASS",
+      "summary": "All required contexts and the full hosted suite passed on latest documentation/evidence head; implementation code is unchanged from the already certified code SHA.",
+      "skipped": [
+        "Seed bounded job catalogue (REQUIRE_REAL_INVENTORY=0)"
+      ],
+      "failed": [],
+      "limitations": [
+        "Catalogue seed skipped; live job inventory is not measured."
+      ],
+      "latest_evidence_checkpoint": "ad38f3bc36d04ffcfc5e77ab7c3c418349291907"
+    },
+    "local_result": "88 focused API tests passed across resume/auth/source/recommendation suites; two PDF UI tests, typecheck, scoped ESLint, Ruff, and visual PDF review reported passing by the implementation agent.",
+    "limitations": [
+      "The catalogue seed was skipped, so live job inventory and freshness are not measured.",
+      "Preview readiness is false; no authenticated candidate/operator journey was exercised."
+    ],
+    "workflow_runs": {
+      "ci": "https://github.com/rrahul0904/applyai/actions/runs/37027365669",
+      "security": "https://github.com/rrahul0904/applyai/actions/runs/37027365025",
+      "predeploy": "https://github.com/rrahul0904/applyai/actions/runs/37027364848",
+      "fresh_clone": "https://github.com/rrahul0904/applyai/actions/runs/37027365789",
+      "search_scale": "https://github.com/rrahul0904/applyai/actions/runs/37027365100",
+      "source_scheduler": "https://github.com/rrahul0904/applyai/actions/runs/37027365007",
+      "agent_runtime": "https://github.com/rrahul0904/applyai/actions/runs/37027365521"
+    }
+  },
+  "runtime": {
+    "production": {
+      "url": "https://applyai-gold.vercel.app",
+      "deployment_id": "6593569358",
+      "sha": "9798aa613c45cdf9d54f3e2c6c47481ca31d1852",
+      "observed_at": "2026-10-02T16:18:53Z",
+      "readiness_http": 503,
+      "runtime_ready": false,
+      "production_ready": false,
+      "limitation": "Latest readiness still fails; these values do not independently identify the downstream root cause.",
+      "api_reachable": false,
+      "database_reachable": false,
+      "storage_configured": false,
+      "background_worker_configured": false,
+      "supabase_instance_match": false
+    },
+    "preview": {
+      "deployment_id": "6811997019",
+      "sha": "ad38f3bc36d04ffcfc5e77ab7c3c418349291907",
+      "implementation_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+      "url": "https://applyai-9trkjoja0-rrahul0904-5013s-projects.vercel.app",
+      "observed_at": "2026-10-02T16:17:51Z",
+      "deployment_status": "success",
+      "routes": {
+        "/": 200,
+        "/proof-of-work": 200,
+        "/api/readiness": 200
+      },
+      "runtime_ready": false,
+      "production_ready": false,
+      "api_reachable": false,
+      "database_reachable": false,
+      "storage_configured": false,
+      "background_worker_configured": false,
+      "supabase_instance_match": false,
+      "limitations": [
+        "No authenticated candidate/operator journey was performed.",
+        "Preview backend readiness is false."
+      ]
+    }
+  },
+  "live_provider_probe": {
+    "provider": "GitHub REST public API",
+    "environment_sha": "ad38f3bc36d04ffcfc5e77ab7c3c418349291907",
+    "observed_at": "2026-10-02T16:19:02Z",
+    "test_identity": "octocat",
+    "request": "GET /api/proof-of-work/github?username=octocat&role=fullstack",
+    "http_status": 200,
+    "repositories_scanned": 6,
+    "repository_scan_limit": 6,
+    "source_bodies_read": false,
+    "recognized_signal_groups": 0,
+    "role_requirements_returned": 5,
+    "limitation": "One public test account verifies one public metadata path only; it does not test user consent, private repos, persistence, hiring evaluation, job sources or production."
+  },
+  "merge_gate": {
+    "required_approvals": 1,
+    "independent_approval_received": false,
+    "branch_protection_bypass_used": false,
+    "merge_state": "BLOCKED_REVIEW_REQUIRED"
+  },
+  "external_gates": {
+    "tracker": "UNAVAILABLE_AUTH_REQUIRED_401",
+    "live_provider_inventory": "NOT_MEASURED",
+    "production_operator": "NOT_VERIFIED",
+    "api_worker_sha": "UNKNOWN",
+    "production_migration": "UNKNOWN",
+    "human_uat_sessions": 0
+  }
+}

@@ -231,6 +231,9 @@ class MockInterviewSession(Base):
     overall_score: Mapped[int | None] = mapped_column(Integer)
     category_scores_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     final_feedback_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    transcript_consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    retention_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    provenance_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
     started_at: Mapped[datetime] = created_at()
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = created_at()
@@ -250,6 +253,25 @@ class InterviewTurnRecord(Base):
     score: Mapped[int | None] = mapped_column(Integer)
     evaluation_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = created_at()
+
+
+class InterviewTranscriptSegment(Base):
+    __tablename__ = "interview_transcript_segments"
+    __table_args__ = (
+        UniqueConstraint("interview_session_id", "client_segment_id", name="uq_interview_segment_client_id"),
+        Index("ix_interview_segments_session_created", "interview_session_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    interview_session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("mock_interview_sessions.id", ondelete="CASCADE"), nullable=False)
+    turn_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("interview_turns.id", ondelete="CASCADE"))
+    client_segment_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    speaker: Mapped[str] = mapped_column(String(16), nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    start_ms: Mapped[int | None] = mapped_column(Integer)
+    end_ms: Mapped[int | None] = mapped_column(Integer)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
     created_at: Mapped[datetime] = created_at()
 
 

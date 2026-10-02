@@ -1,0 +1,8 @@
+{
+  "fixture_type": "APPLYAI_AUTHORED_SYNTHETIC",
+  "canonical_job_id": "synthetic-canonical-job-1",
+  "sources": [
+    {"canonical_job_id": "synthetic-canonical-job-1", "source_url": "https://ats.example/roles/123?token=fixture", "authority": "ATS", "work_mode": "REMOTE", "location": "Remote US only", "scope": "COUNTRY_RESTRICTED", "countries": ["US"]},
+    {"canonical_job_id": "synthetic-canonical-job-1", "source_url": "https://aggregator.example/jobs/alias-789?utm_source=fixture", "authority": "AGGREGATOR", "work_mode": "REMOTE", "location": "Remote worldwide", "scope": "WORLDWIDE"}
+  ]
+}

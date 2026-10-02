@@ -1,6 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -419,6 +419,29 @@ class Settings(BaseSettings):
                 raise ValueError(
                     f"{environment.title()} Clerk auth requires CLERK_ISSUER and CLERK_JWKS_URL"
                 )
+            auth_urls: tuple[tuple[str, str | None], ...] = ()
+            if self.auth_provider == "clerk":
+                auth_urls = (
+                    ("CLERK_ISSUER", self.clerk_issuer),
+                    ("CLERK_JWKS_URL", self.clerk_jwks_url),
+                )
+            elif self.auth_provider == "supabase":
+                auth_urls = (
+                    ("SUPABASE_URL", self.supabase_url),
+                    ("SUPABASE_JWKS_URL", self.resolved_supabase_jwks_url),
+                )
+            for name, value in auth_urls:
+                if not value:
+                    continue
+                try:
+                    parsed = urlsplit(value)
+                    valid_https_url = parsed.scheme == "https" and bool(parsed.hostname)
+                except ValueError:
+                    valid_https_url = False
+                if not valid_https_url:
+                    raise ValueError(
+                        f"{environment.title()} {name} must be an absolute HTTPS URL"
+                    )
             if self.auth_provider == "supabase" and not self.supabase_url:
                 raise ValueError(
                     f"{environment.title()} Supabase auth requires SUPABASE_URL"

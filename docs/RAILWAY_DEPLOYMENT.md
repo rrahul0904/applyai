@@ -2,6 +2,13 @@
 
 Updated: 2026-08-31
 
+> **Historical/alternate deployment profile.** The current repository
+> production workflows target Vercel web + API with Supabase. This Railway
+> guide is not evidence that Railway currently hosts ApplyAI. Do not use it for
+> the current release unless the deployment owner explicitly selects Railway
+> and updates the workflows, readiness contract, and
+> [`LEAN_PRODUCTION_ARCHITECTURE.md`](LEAN_PRODUCTION_ARCHITECTURE.md) together.
+
 ## Purpose
 
 Railway is the launch runtime for ApplyAI's lean production profile. AWS remains an optional scale profile and is not required for this deployment.

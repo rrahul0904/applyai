@@ -37,6 +37,8 @@ def test_candidate_platform_saved_search_notifications_resume_and_analytics(clie
     export = client.get(f"/api/v1/resume-studio/{document.json()['id']}/export?format=txt")
     assert export.status_code == 200
     assert "Data and AI leader" in export.json()["content"]
+    assert export.json()["composition"]["extractable_text"] is True
+    assert export.json()["composition"]["universal_ats_compatibility"] == "NOT_CLAIMED"
 
     assert client.post("/api/v1/analytics/events", json={"event_type": "RESUME_EXPORTED", "entity_type": "resume", "entity_id": document.json()["id"]}).status_code == 204
     summary = client.get("/api/v1/analytics/summary")

@@ -507,3 +507,28 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* Keep the mobile bar to five destinations; secondary routes stay reachable. */
+.cx-mobile-more { display: none; }
+@media (max-width: 900px) {
+  .cx-mobile-nav button {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 3px; min-height: 49px; min-width: 0; border: 0; background: transparent;
+    font: inherit; font-size: 10px; font-weight: 700; color: var(--muted); cursor: pointer;
+  }
+  .cx-mobile-nav button.active { color: var(--career-blue); }
+  .cx-mobile-more {
+    display: flex; flex-direction: column; gap: 4px; position: fixed; z-index: 60;
+    inset: auto 12px calc(76px + env(safe-area-inset-bottom));
+    max-height: calc(100dvh - 160px); overflow-y: auto; padding: 14px;
+    border: 1px solid var(--border); border-radius: 18px; background: var(--surface, white);
+    box-shadow: 0 12px 40px rgba(23,32,51,.15);
+  }
+  .cx-mobile-more-heading { display: flex; align-items: center; justify-content: space-between; }
+  .cx-mobile-more-heading button { display: grid; place-items: center; min-height: 44px; min-width: 44px; border: 0; background: transparent; color: inherit; cursor: pointer; }
+  .cx-mobile-more a { display: flex; align-items: center; min-height: 44px; padding: 8px 10px; color: inherit; text-decoration: none; border-radius: 8px; }
+  .cx-mobile-signout { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 8px 10px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+  .cx-mobile-more a[aria-current="page"] { color: var(--career-blue); background: var(--career-blue-soft, #eef3ff); }
+}
+
+.cx-jobs-order { flex-shrink: 0; padding: 8px 12px; color: var(--muted); font-size: 13px; }

@@ -19,6 +19,8 @@ from app.jobs.contracts import (
     SourceTrustLevel,
     canonicalize_public_url,
     normalize_employment_type,
+    normalize_facets,
+    normalize_seniority,
     normalize_workplace_type,
 )
 
@@ -33,6 +35,65 @@ def _parse_datetime(value: Any) -> datetime | None:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=timezone.utc)
     return parsed
+
+
+def _source_evidence_metadata(
+    payload: dict[str, Any],
+    *,
+    trust_level: str,
+    work_mode: str,
+    location: str | None,
+    source_url: str,
+    application_url: str,
+) -> dict[str, Any]:
+    """Carry explicit source facts forward; never infer geographic eligibility."""
+    scope = payload.get("remote_scope")
+    if not isinstance(scope, str) or scope.strip().upper() not in {
+        "WORLDWIDE", "COUNTRY_RESTRICTED", "REGION_RESTRICTED", "UNKNOWN"
+    }:
+        scope = None
+    else:
+        scope = scope.strip().upper()
+
+    def values(*keys: str) -> tuple[str, ...]:
+        for key in keys:
+            value = payload.get(key)
+            if isinstance(value, str):
+                items = value.split(",")
+            elif isinstance(value, (tuple, list, set)):
+                items = value
+            else:
+                continue
+            return tuple(
+                " ".join(item.split())[:120]
+                for item in items if isinstance(item, str) and item.strip()
+            )[:40]
+        return ()
+
+    countries = values("eligible_countries", "eligibleCountries")
+    regions = values("eligible_regions", "eligibleRegions")
+    tags = normalize_facets(payload.get("tags") or payload.get("labels"))
+    updated_at = _parse_datetime(
+        payload.get("_applyai_source_updated_at") or payload.get("updatedAt")
+    )
+    return {
+        "trust_level": trust_level,
+        "work_mode": work_mode,
+        "location": location,
+        "remote_scope": scope,
+        "eligible_countries": countries,
+        "eligible_regions": regions,
+        "tags": tags,
+        "source_url": source_url,
+        "application_url": application_url,
+        "source_updated_at": updated_at.isoformat() if updated_at else None,
+        "remote_restriction_provenance": {
+            "source_field": "remote_scope",
+            "country_field": "eligible_countries/eligibleCountries",
+            "region_field": "eligible_regions/eligibleRegions",
+            "authority": trust_level,
+        },
+    }
 
 
 def raw_from_connector(connector: JobSourceConnector, payload: dict[str, Any]) -> RawJobPosting:
@@ -257,7 +318,7 @@ class LeverJobPostingConnector(JobSourceConnector):
             locations=tuple(locations),
             employment_type=normalize_employment_type(commitment),
             workplace_type=workplace_type,
-            seniority=level.upper().replace(" ", "_") if level else "UNKNOWN",
+            seniority=normalize_seniority(level),
             salary_min=_safe_int(salary.get("min")),
             salary_max=_safe_int(salary.get("max")),
             salary_currency=str(salary.get("currency") or "").upper() or None,
@@ -267,7 +328,14 @@ class LeverJobPostingConnector(JobSourceConnector):
             fetched_at=_parse_datetime(payload.get("_applyai_fetched_at")),
             raw_payload=payload,
             source_metadata={
-                "trust_level": SourceTrustLevel.OFFICIAL_ATS.value,
+                **_source_evidence_metadata(
+                    payload,
+                    trust_level=SourceTrustLevel.OFFICIAL_ATS.value,
+                    work_mode=workplace_type,
+                    location=locations[0] if locations else None,
+                    source_url=hosted_url,
+                    application_url=apply_url,
+                ),
                 "team": categories.get("team") if isinstance(categories, dict) else None,
                 "department": categories.get("department") if isinstance(categories, dict) else None,
                 "country": payload.get("country"),
@@ -410,6 +478,7 @@ class AshbyJobBoardConnector(JobSourceConnector):
             company_name=str(payload.get("_applyai_company_name") or self.company_name),
             title=str(payload.get("title") or "").strip(),
             description=description,
+            seniority=normalize_seniority(str(payload.get("seniority") or payload.get("level") or "")),
             location_text=locations[0] if locations else None,
             locations=tuple(locations),
             employment_type=normalize_employment_type(str(employment_type or "")),
@@ -424,7 +493,14 @@ class AshbyJobBoardConnector(JobSourceConnector):
             fetched_at=_parse_datetime(payload.get("_applyai_fetched_at")),
             raw_payload=payload,
             source_metadata={
-                "trust_level": SourceTrustLevel.OFFICIAL_ATS.value,
+                **_source_evidence_metadata(
+                    payload,
+                    trust_level=SourceTrustLevel.OFFICIAL_ATS.value,
+                    work_mode=normalize_workplace_type(str(workplace_value or ""), tuple(locations)),
+                    location=locations[0] if locations else None,
+                    source_url=job_url,
+                    application_url=apply_url,
+                ),
                 "department": payload.get("department"),
                 "team": payload.get("team"),
                 "address": payload.get("address"),

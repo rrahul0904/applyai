@@ -1,5 +1,7 @@
 from app.core.database import SessionLocal
 from app.jobs.seed import seed_development_jobs
+from app.models import Company, Job, JobLocation, JobSkill, JobSource, JobSourceLink
+from datetime import datetime, timedelta, timezone
 
 
 def seed_jobs() -> None:
@@ -112,3 +114,175 @@ def test_workspace_recommendations_and_tailoring_persist(client):
         "REJECTED",
         "REJECTED",
     ]
+
+
+def test_workspace_recommendations_rank_before_selecting_top_page(client):
+    client.put("/api/v1/profile", json=profile_payload())
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as session:
+        strong_company = Company(
+            canonical_name="Strong Match Labs",
+            normalized_name="strong match labs ranking test",
+        )
+        noise_company = Company(
+            canonical_name="Unrelated Roles Inc",
+            normalized_name="unrelated roles inc ranking test",
+        )
+        session.add_all([strong_company, noise_company])
+        session.flush()
+        strong = Job(
+            company_id=strong_company.id,
+            title="Senior Data Engineering Manager",
+            normalized_title="senior data engineering manager",
+            description="Lead Python and SQL data platform work.",
+            search_document="Senior data engineering manager Python SQL lead",
+            employment_type="FULL_TIME",
+            seniority="SENIOR",
+            status="ACTIVE",
+            posted_at=now - timedelta(days=60),
+            data_origin="DEVELOPMENT_SEED",
+        )
+        session.add(strong)
+        session.flush()
+        session.add_all([
+            JobLocation(
+                job_id=strong.id,
+                location_text="Remote, United States",
+                country_code="US",
+                work_mode="REMOTE",
+            ),
+            JobSkill(job_id=strong.id, name="Python", normalized_name="python"),
+            JobSkill(job_id=strong.id, name="SQL", normalized_name="sql"),
+        ])
+        source = JobSource(
+            connector_key="greenhouse",
+            external_job_id="ranking-fit-1",
+            source_url="https://boards.greenhouse.io/applyai/jobs/ranking-fit-1",
+            checkpoint={
+                "source_type": "GREENHOUSE",
+                "source_metadata": {"remote_scope": "WORLDWIDE", "work_mode": "REMOTE"},
+            },
+        )
+        session.add(source)
+        session.flush()
+        session.add(JobSourceLink(job_id=strong.id, job_source_id=source.id, is_primary=True))
+        noise_jobs = []
+        for index in range(260):
+            job = Job(
+                company_id=noise_company.id,
+                title=f"Unrelated Security Auditor {index}",
+                normalized_title=f"unrelated security auditor {index}",
+                description="Review security controls.",
+                employment_type="FULL_TIME",
+                seniority="MID",
+                status="ACTIVE",
+                posted_at=now + timedelta(hours=1),
+                data_origin="DEVELOPMENT_SEED",
+            )
+            noise_jobs.append(job)
+        session.add_all(noise_jobs)
+        session.flush()
+        session.add_all([
+            JobLocation(
+                job_id=job.id,
+                location_text="Boston, MA",
+                country_code="US",
+                work_mode="HYBRID",
+            )
+            for job in noise_jobs
+        ])
+        session.commit()
+
+    response = client.get("/api/v1/workspace/recommendations?limit=10")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ranking_scope"] == "BOUNDED_RELEVANT_AND_RECENT_CANDIDATE_POOL"
+    assert payload["candidate_pool_limit"] == 1800
+    assert payload["items"][0]["id"] == str(strong.id)
+    assert payload["items"][0]["deterministic_score"] > payload["items"][1]["deterministic_score"]
+
+
+def test_remote_recommendations_require_eligibility_when_candidate_geography_is_known(client):
+    profile = profile_payload()
+    profile["work_modes"] = []
+    client.put("/api/v1/profile", json=profile)
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as session:
+        company = Company(
+            canonical_name="Remote Eligibility Gate Labs",
+            normalized_name="remote eligibility gate labs",
+        )
+        session.add(company)
+        session.flush()
+        jobs = {
+            "allowed": Job(
+                company_id=company.id,
+                title="Senior Data Engineering Manager",
+                normalized_title="senior data engineering manager",
+                description="Lead Python and SQL data platform work.",
+                search_document="Senior data engineering manager Python SQL lead",
+                employment_type="FULL_TIME",
+                seniority="SENIOR",
+                status="ACTIVE",
+                posted_at=now,
+                last_seen_at=now,
+                data_origin="DEVELOPMENT_SEED",
+            ),
+            "excluded_country": Job(
+                company_id=company.id,
+                title="Senior Data Engineering Manager Canada",
+                normalized_title="senior data engineering manager canada",
+                description="Lead Python and SQL data platform work.",
+                search_document="Senior data engineering manager Python SQL lead Canada",
+                employment_type="FULL_TIME",
+                seniority="SENIOR",
+                status="ACTIVE",
+                posted_at=now,
+                last_seen_at=now,
+                data_origin="DEVELOPMENT_SEED",
+            ),
+            "excluded_unknown": Job(
+                company_id=company.id,
+                title="Senior Data Engineering Manager Unknown Remote",
+                normalized_title="senior data engineering manager unknown remote",
+                description="Lead Python and SQL data platform work.",
+                search_document="Senior data engineering manager Python SQL remote",
+                employment_type="FULL_TIME",
+                seniority="SENIOR",
+                status="ACTIVE",
+                posted_at=now,
+                last_seen_at=now,
+                data_origin="DEVELOPMENT_SEED",
+            ),
+        }
+        session.add_all(jobs.values())
+        session.flush()
+        for key, job in jobs.items():
+            session.add(JobLocation(
+                job_id=job.id,
+                location_text="Remote",
+                country_code=None,
+                work_mode="REMOTE",
+            ))
+            metadata = {"work_mode": "REMOTE"}
+            if key == "allowed":
+                metadata.update({"remote_scope": "COUNTRY_RESTRICTED", "eligible_countries": ["US"]})
+            elif key == "excluded_country":
+                metadata.update({"remote_scope": "COUNTRY_RESTRICTED", "eligible_countries": ["CA"]})
+            source = JobSource(
+                connector_key="greenhouse",
+                external_job_id=f"remote-eligibility-{key}",
+                source_url=f"https://boards.greenhouse.io/example/jobs/remote-eligibility-{key}",
+                checkpoint={"source_type": "GREENHOUSE", "source_metadata": metadata},
+            )
+            session.add(source)
+            session.flush()
+            session.add(JobSourceLink(job_id=job.id, job_source_id=source.id, is_primary=True))
+        session.commit()
+
+    response = client.get("/api/v1/workspace/recommendations?limit=50")
+    assert response.status_code == 200
+    recommended_ids = {item["id"] for item in response.json()["items"]}
+    assert str(jobs["allowed"].id) in recommended_ids
+    assert str(jobs["excluded_country"].id) not in recommended_ids
+    assert str(jobs["excluded_unknown"].id) not in recommended_ids

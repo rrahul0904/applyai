@@ -15,7 +15,7 @@ from app.core.database import get_session
 from app.core.outbox import add_task_outbox_event
 from app.core.queue import Task, supports_task_type
 from app.job_radar_models import JobScan, JobScanMatch, JobSearchProfile
-from app.job_radar_service import PROVIDER_NAME, SCORING_VERSION, build_query_plan, run_job_scan
+from app.job_radar_service import PROVIDER_NAME, SCORING_VERSION, build_query_plan, run_job_scan, snapshot_scoring_profile
 from app.models import ResumeVersion, User
 
 router = APIRouter(prefix="/job-radar", tags=["job radar"])
@@ -214,6 +214,7 @@ def create_scan(
         idempotency_key=request_key,
         status="QUEUED",
         query_plan_json=query_plan,
+        scoring_profile_snapshot=snapshot_scoring_profile(profile),
         provider_set_json=[PROVIDER_NAME],
         scoring_version=SCORING_VERSION,
         top_k=body.top_k,

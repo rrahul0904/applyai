@@ -17,6 +17,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.dialects.postgresql import TSVECTOR
@@ -301,6 +302,7 @@ class Job(Base):
     __table_args__ = (
         Index("ix_jobs_search", "normalized_title", "status", "posted_at"),
         Index("ix_jobs_search_vector", "search_vector", postgresql_using="gin"),
+        Index("ix_jobs_active_recent", "status", text("posted_at DESC NULLS LAST"), text("last_seen_at DESC"), "id", postgresql_where=text("status = 'ACTIVE'")),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()

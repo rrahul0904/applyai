@@ -59,17 +59,30 @@ class SafeFetchResult:
 Resolver = Callable[[str, int], Iterable[tuple]]
 
 
-class _PublicDnsPinnedBackend(httpcore.SyncBackend):
+class _PublicDnsPinnedBackend(httpcore.NetworkBackend):
     """Keep HTTPX's TLS hostname while forcing TCP to the checked public address."""
 
-    def __init__(self) -> None:
+    def __init__(self, backend: httpcore.NetworkBackend | None = None) -> None:
+        self._backend = backend if backend is not None else httpcore.SyncBackend()
         self.addresses: dict[str, str] = {}
 
     def connect_tcp(self, host: str, port: int, timeout=None, local_address=None, socket_options=None):
         address = self.addresses.get(host.casefold())
         if address is None:
             raise PublicUrlRejected("Connection host has no validated public DNS pin")
-        return super().connect_tcp(address, port, timeout, local_address, socket_options)
+        return self._backend.connect_tcp(
+            host=address,
+            port=port,
+            timeout=timeout,
+            local_address=local_address,
+            socket_options=socket_options,
+        )
+
+    def connect_unix_socket(self, path: str, timeout=None, socket_options=None):
+        raise PublicUrlRejected("Only validated public TCP destinations are supported")
+
+    def sleep(self, seconds: float) -> None:
+        self._backend.sleep(seconds)
 
 
 def _validated_addresses(host: str, port: int, resolver: Resolver) -> list[str]:
@@ -159,14 +172,17 @@ class SafeHttpFetcher:
             headers={"User-Agent": user_agent, "Accept-Encoding": "gzip, deflate"},
             trust_env=False,
         )
-        self._pinned_backend = _PublicDnsPinnedBackend() if self._owns_client else None
-        if self._pinned_backend is not None:
+        self._pinned_backend = None
+        if self._owns_client:
             # HTTPX's public constructor does not expose httpcore's sync network backend.
             # Pin through the transport pool while preserving the original URL host for TLS/SNI.
             pool = getattr(self.client._transport, "_pool", None)
             if pool is None or not hasattr(pool, "_network_backend"):
                 self.client.close()
                 raise RuntimeError("HTTP transport cannot enforce validated DNS pins")
+            # Delegate socket creation to the concrete backend supplied by this transport.
+            # HTTP Core still starts TLS with the original URL hostname, not the pinned IP.
+            self._pinned_backend = _PublicDnsPinnedBackend(pool._network_backend)
             pool._network_backend = self._pinned_backend
         self.pages_fetched = 0
 

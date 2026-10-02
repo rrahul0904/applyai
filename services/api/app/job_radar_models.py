@@ -66,6 +66,7 @@ class JobScan(Base):
     idempotency_key: Mapped[str] = mapped_column(String(160), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="QUEUED", index=True)
     query_plan_json: Mapped[list[dict]] = mapped_column(JSONB, nullable=False, default=list)
+    scoring_profile_snapshot: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     provider_set_json: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     scoring_version: Mapped[str] = mapped_column(String(80), nullable=False)
     top_k: Mapped[int] = mapped_column(Integer, nullable=False, default=10)

@@ -1,6 +1,8 @@
 from dataclasses import replace
 from datetime import datetime, timezone
 
+import pytest
+from pydantic import ValidationError
 from sqlalchemy import delete, select
 
 from app.core.config import Settings
@@ -10,9 +12,12 @@ from app.durability_models import TaskOutbox
 from app.job_radar_models import JobScan, JobScanMatch, JobSearchProfile
 from app.job_radar_service import (
     NormalizedJobCandidate,
+    ScoringProfileSnapshot,
     deduplicate_candidates,
     deterministic_score,
     parse_salary_text,
+    run_job_scan,
+    snapshot_scoring_profile,
 )
 from app.models import (
     Company,
@@ -295,3 +300,145 @@ def test_on_demand_scan_is_persisted_idempotent_and_worker_routable(client, swit
     switch_user("clerk_user_b", "b@example.com")
     forbidden = client.get(f"/api/v1/job-radar/scans/{scan_id}")
     assert forbidden.status_code == 404
+
+
+def _queued_scan(client, monkeypatch, *, key="snapshot-scan"):
+    from app.api import job_radar
+
+    _seed_job()
+    original = {
+        "target_titles": ["Data Engineer"],
+        "skills": ["Python", "SQL", "AWS"],
+        "years_experience": 8,
+        "seniority_preferences": ["SENIOR"],
+        "preferred_locations": ["Boston"],
+        "remote_policy": "HYBRID",
+        "salary_min": 140000,
+        "salary_currency": "USD",
+    }
+    assert client.put("/api/v1/job-radar/profile", json=original).status_code == 200
+    # Suppress memory-mode inline execution to reproduce durable queue delay.
+    # The real worker service is invoked below, in a separate database session.
+    monkeypatch.setattr(job_radar, "run_job_scan", lambda *args, **kwargs: True)
+    response = client.post("/api/v1/job-radar/scans", headers={"Idempotency-Key": key}, json={"top_k": 5})
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "QUEUED"
+    import uuid
+    return uuid.UUID(response.json()["id"]), original
+
+
+def test_queued_scan_and_retry_use_enqueue_time_profile(client, monkeypatch):
+    scan_id, original = _queued_scan(client, monkeypatch)
+    changed = {
+        **original,
+        "target_titles": ["Product Manager"],
+        "skills": ["Kubernetes"],
+        "years_experience": 0,
+        "seniority_preferences": ["ENTRY"],
+        "preferred_locations": ["Berlin"],
+        "remote_policy": "REMOTE",
+        "salary_min": 999999,
+        "salary_currency": "EUR",
+    }
+    assert client.put("/api/v1/job-radar/profile", json=changed).status_code == 200
+    requests = []
+    with SessionLocal() as session:
+        scan = session.get(JobScan, scan_id)
+        frozen_inputs = dict(scan.scoring_profile_snapshot)
+        assert frozen_inputs["target_titles"] == original["target_titles"]
+        assert frozen_inputs["skills"] == original["skills"]
+        assert frozen_inputs["salary_min"] == original["salary_min"]
+        assert frozen_inputs["snapshot_version"] == 1
+
+        class FailingProvider:
+            name = "canonical-store-v1"
+
+            def search(self, request):
+                requests.append(request)
+                raise RuntimeError("temporary provider failure")
+
+        assert not run_job_scan(session, scan_id=scan_id, provider=FailingProvider())
+        assert session.get(JobScan, scan_id).status == "FAILED"
+        assert session.get(JobScan, scan_id).scoring_profile_snapshot == frozen_inputs
+
+    # Another edit before the task retry must not change the original score.
+    assert client.put("/api/v1/job-radar/profile", json={**changed, "salary_min": 2000000, "years_experience": 1}).status_code == 200
+    assert dispatch_task(
+        Task(task_type="JOB_RADAR_SCAN", payload={"scan_id": str(scan_id)}, idempotency_key=f"snapshot-retry:{scan_id}"),
+        Settings(task_queue_provider="postgres"),
+    )
+    with SessionLocal() as session:
+        scan = session.get(JobScan, scan_id)
+        match = session.scalar(select(JobScanMatch).where(JobScanMatch.scan_id == scan_id))
+        assert scan.status == "COMPLETED"
+        assert scan.scoring_profile_snapshot == frozen_inputs
+        assert match is not None
+        assert match.deterministic_score == 100
+        assert match.score_breakdown["signals"] == {"title": 100, "skills": 100, "experience": 100, "location": 100, "salary": 100}
+        assert scan.query_plan_json[0]["query"] == "Data Engineer"
+        assert scan.query_plan_json[0]["location"] == "Boston"
+    assert requests[0].query == "Data Engineer"
+    assert requests[0].location == "Boston"
+    duplicate = client.post("/api/v1/job-radar/scans", headers={"Idempotency-Key": "snapshot-scan"}, json={"top_k": 5})
+    assert duplicate.json()["id"] == str(scan_id)
+    assert duplicate.json()["matches"][0]["deterministic_score"] == 100
+
+
+def test_snapshot_detaches_mutable_profile_collections(client, monkeypatch):
+    scan_id, _ = _queued_scan(client, monkeypatch)
+    with SessionLocal() as session:
+        scan = session.get(JobScan, scan_id)
+        profile = session.get(JobSearchProfile, scan.profile_id)
+        snapshot = snapshot_scoring_profile(profile)
+        frozen = ScoringProfileSnapshot.model_validate(snapshot)
+        profile.skills.append("unrelated skill")
+        profile.preferred_locations.append("Berlin")
+        assert frozen.skills == ("Python", "SQL", "AWS")
+        assert snapshot["skills"] == ["Python", "SQL", "AWS"]
+        assert frozen.preferred_locations == ("Boston",)
+        with pytest.raises(ValidationError, match="frozen"):
+            frozen.salary_min = 1
+
+
+@pytest.mark.parametrize("corruption,error", [
+    (None, "SCORING_PROFILE_SNAPSHOT_MISSING"),
+    ({}, "SCORING_PROFILE_SNAPSHOT_INVALID"),
+    ({"snapshot_version": 999}, "SCORING_PROFILE_SNAPSHOT_INVALID"),
+])
+def test_legacy_or_invalid_snapshot_never_uses_current_profile(client, monkeypatch, corruption, error):
+    scan_id, _ = _queued_scan(client, monkeypatch)
+    with SessionLocal() as session:
+        scan = session.get(JobScan, scan_id)
+        scan.scoring_profile_snapshot = corruption
+        session.commit()
+        assert run_job_scan(session, scan_id=scan_id)
+        assert scan.status == "FAILED"
+        assert scan.error_code == error
+        assert session.scalar(select(JobScanMatch).where(JobScanMatch.scan_id == scan_id)) is None
+
+
+def test_snapshot_owner_must_match_scan(client, monkeypatch):
+    import uuid
+    scan_id, _ = _queued_scan(client, monkeypatch)
+    with SessionLocal() as session:
+        scan = session.get(JobScan, scan_id)
+        scan.scoring_profile_snapshot = {**scan.scoring_profile_snapshot, "user_id": str(uuid.uuid4())}
+        session.commit()
+        assert run_job_scan(session, scan_id=scan_id)
+        assert scan.error_code == "SCORING_PROFILE_SNAPSHOT_INVALID"
+        assert session.scalar(select(JobScanMatch).where(JobScanMatch.scan_id == scan_id)) is None
+
+
+def test_completed_legacy_scan_keeps_results_without_snapshot(client, monkeypatch):
+    scan_id, _ = _queued_scan(client, monkeypatch)
+    with SessionLocal() as session:
+        assert run_job_scan(session, scan_id=scan_id)
+        scan = session.get(JobScan, scan_id)
+        assert scan.status == "COMPLETED"
+        match = session.scalar(select(JobScanMatch).where(JobScanMatch.scan_id == scan_id))
+        match_id = match.id
+        scan.scoring_profile_snapshot = None
+        session.commit()
+        assert run_job_scan(session, scan_id=scan_id)
+        assert scan.status == "COMPLETED"
+        assert session.scalar(select(JobScanMatch).where(JobScanMatch.scan_id == scan_id)).id == match_id

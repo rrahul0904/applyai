@@ -53,7 +53,7 @@ def test_public_dns_pin_keeps_checked_address_at_tcp_connect():
     backend.addresses["jobs.example"] = "93.184.216.34"
     with patch("app.jobs.web_security.httpcore.SyncBackend.connect_tcp", return_value="connected") as connect:
         assert backend.connect_tcp("jobs.example", 443, timeout=2) == "connected"
-    assert connect.call_args.args[0] == "93.184.216.34"
+    assert connect.call_args.kwargs["host"] == "93.184.216.34"
 
 
 def test_dns_pinned_transport_fails_closed_for_unchecked_host():

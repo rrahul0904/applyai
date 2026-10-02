@@ -2,12 +2,19 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
-
-_TOKEN = re.compile(r"[a-z][a-z0-9+#.-]{1,}", re.I)
-_NUMBER = re.compile(r"(?<![\w])(?:\$\s*)?\d[\d,]*(?:\.\d+)?\s*(?:%|x)?", re.I)
+_TOKEN = re.compile(r"[a-z][a-z0-9+#.-]{1,}", re.IGNORECASE)
+# Currency, sign, and magnitude are material parts of a quantified claim. A
+# rewrite from $10 to 10, -20% to 20%, or 10 million to 10 billion must not pass
+# merely because the digits appear in the source evidence.
+_NUMBER = re.compile(
+    r"(?<![\w])(?:[+\-−]\s*)?(?:[$€£¥]\s*)?(?:[+\-−]\s*)?"
+    r"\d[\d,]*(?:\.\d+)?(?:e[+\-]?\d+)?"
+    r"(?:\s*(?:%|x\b|(?:thousand|million|billion|trillion)\b|[kmb]\b))?",
+    re.IGNORECASE,
+)
 _STOP = {"and", "the", "for", "with", "from", "that", "this", "have", "into", "you", "your", "our", "are", "was", "were", "will", "job", "role", "team", "work", "using", "use", "all", "not"}
 ONE_PAGE_TARGET_CHARACTERS = 3200  # planning heuristic only; export remains ordinary text.
 
@@ -28,12 +35,15 @@ def select_verified_facts(job_text: str, facts: Iterable[object], *, limit: int 
         overlap = len(target & terms)
         score = round(100 * overlap / max(1, len(target)))
         ranked.append((fact, score))
-    ranked.sort(key=lambda pair: (-pair[1], -int((getattr(pair[0], "occurred_at", None).toordinal() if getattr(pair[0], "occurred_at", None) else 0)), str(getattr(pair[0], "id", ""))))
+    ranked.sort(key=lambda pair: (-pair[1], -int(getattr(pair[0], "occurred_at", None).toordinal() if getattr(pair[0], "occurred_at", None) else 0), str(getattr(pair[0], "id", ""))))
     return ranked[: max(0, min(limit, 50))]
 
 
 def numeric_claims(value: str) -> set[str]:
-    return {re.sub(r"[\s,$]", "", match.group(0)).casefold() for match in _NUMBER.finditer(value)}
+    return {
+        re.sub(r"[\s,]", "", match.group(0)).replace("−", "-").casefold()
+        for match in _NUMBER.finditer(value)
+    }
 
 
 def unsupported_numeric_claims(text: str, evidence: Iterable[str]) -> list[str]:

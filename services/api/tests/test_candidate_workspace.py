@@ -135,6 +135,7 @@ def test_workspace_recommendations_rank_before_selecting_top_page(client):
             title="Senior Data Engineering Manager",
             normalized_title="senior data engineering manager",
             description="Lead Python and SQL data platform work.",
+            search_document="Senior data engineering manager Python SQL lead",
             employment_type="FULL_TIME",
             seniority="SENIOR",
             status="ACTIVE",
@@ -195,6 +196,7 @@ def test_workspace_recommendations_rank_before_selecting_top_page(client):
     response = client.get("/api/v1/workspace/recommendations?limit=10")
     assert response.status_code == 200
     payload = response.json()
-    assert payload["ranking_scope"] == "ALL_ACTIVE_ELIGIBLE_JOBS_BEFORE_LIMIT"
+    assert payload["ranking_scope"] == "BOUNDED_RELEVANT_AND_RECENT_CANDIDATE_POOL"
+    assert payload["candidate_pool_limit"] == 1800
     assert payload["items"][0]["id"] == str(strong.id)
     assert payload["items"][0]["deterministic_score"] > payload["items"][1]["deterministic_score"]

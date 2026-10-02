@@ -2,12 +2,11 @@ import re
 import uuid
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from itertools import islice
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, select
+from sqlalchemy import case, delete, exists, func, literal, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
@@ -41,6 +40,8 @@ from app.jobs.remote_eligibility import (
 
 router = APIRouter(prefix="/workspace", tags=["candidate workspace"])
 TAILORING_PREFIX = "APPLYAI_RESUME_EDIT"
+RECOMMENDATION_CANDIDATE_LIMIT = 1_500
+RECOMMENDATION_RECENT_FALLBACK_LIMIT = 300
 
 
 class TailoringEditWrite(BaseModel):
@@ -442,10 +443,15 @@ def recommendation_rows(session: Session, user: User, limit: int) -> list[dict]:
     career_scores = {
         job_id: score
         for job_id, score in session.execute(
-            select(CareerMatch.job_id, CareerMatch.final_score).where(
+            select(CareerMatch.job_id, CareerMatch.final_score)
+            .join(Job, Job.id == CareerMatch.job_id)
+            .where(
                 CareerMatch.user_id == user.id,
                 CareerMatch.engine_version == "applyai-hybrid-fit-v2",
+                Job.status == "ACTIVE",
             )
+            .order_by(CareerMatch.final_score.desc(), CareerMatch.updated_at.desc())
+            .limit(RECOMMENDATION_CANDIDATE_LIMIT)
         )
     }
     applied_ids = set(
@@ -463,18 +469,71 @@ def recommendation_rows(session: Session, user: User, limit: int) -> list[dict]:
             )
         )
     )
-    ranked: list[dict] = []
-    active_jobs = session.scalars(
+    # Keep request-time work bounded. Select a SQL-ranked pool from indexed
+    # role/skill/career evidence, then add a small recency fallback for sparse
+    # profiles. The Python scorer can apply the full hard filters and exact
+    # explanations to this bounded pool without deserializing the global job
+    # inventory on every page load.
+    role_predicates = [
+        Job.search_vector.op("@@")(func.plainto_tsquery("english", token))
+        for token in sorted(context["role_tokens"])[:40]
+    ]
+    skill_match = exists(
+        select(JobSkill.id).where(
+            JobSkill.job_id == Job.id,
+            JobSkill.normalized_name.in_(sorted(context["skill_tokens"])[:100]),
+        )
+    ) if context["skill_tokens"] else None
+    career_match = CareerMatch.job_id.in_(tuple(career_scores)) if career_scores else None
+    saved_match = exists(
+        select(SavedJob.job_id).where(SavedJob.user_id == user.id, SavedJob.job_id == Job.id)
+    )
+    viewed_match = exists(
+        select(CandidateAnalyticsEvent.id).where(
+            CandidateAnalyticsEvent.user_id == user.id,
+            CandidateAnalyticsEvent.event_type == "JOB_VIEWED",
+            CandidateAnalyticsEvent.entity_type == "JOB",
+            CandidateAnalyticsEvent.entity_id == func.cast(Job.id, CandidateAnalyticsEvent.entity_id.type),
+            CandidateAnalyticsEvent.occurred_at >= viewed_since,
+        )
+    )
+    relevance_signals = [*role_predicates, saved_match, viewed_match]
+    if skill_match is not None:
+        relevance_signals.append(skill_match)
+    if career_match is not None:
+        relevance_signals.append(career_match)
+
+    relevance_score = case(career_scores, value=Job.id, else_=0) if career_scores else literal(0)
+    role_score = case((or_(*role_predicates), 1), else_=0) if role_predicates else literal(0)
+    skill_score = case((skill_match, 1), else_=0) if skill_match is not None else literal(0)
+    relevant_statement = (
         select(Job)
-        .where(Job.status == "ACTIVE")
+        .where(Job.status == "ACTIVE", or_(*relevance_signals))
         .order_by(
+            relevance_score.desc(),
+            role_score.desc(),
+            skill_score.desc(),
             Job.posted_at.desc().nullslast(),
             Job.last_seen_at.desc(),
             Job.id.asc(),
         )
-        .execution_options(yield_per=500)
+        .limit(RECOMMENDATION_CANDIDATE_LIMIT)
     )
-    while batch := list(islice(active_jobs, 500)):
+    relevant_jobs = list(session.scalars(relevant_statement))
+    selected_ids = {job.id for job in relevant_jobs}
+    fallback_jobs = list(
+        session.scalars(
+            select(Job)
+            .where(Job.status == "ACTIVE", Job.id.not_in(selected_ids))
+            .order_by(Job.posted_at.desc().nullslast(), Job.last_seen_at.desc(), Job.id.asc())
+            .limit(RECOMMENDATION_RECENT_FALLBACK_LIMIT)
+        )
+    )
+    candidate_jobs = relevant_jobs + fallback_jobs
+
+    ranked: list[dict] = []
+    for start in range(0, len(candidate_jobs), 500):
+        batch = candidate_jobs[start : start + 500]
         ranked.extend(
             _recommendation_batch(
                 session,
@@ -487,17 +546,16 @@ def recommendation_rows(session: Session, user: User, limit: int) -> list[dict]:
                 now=now,
             )
         )
-        ranked.sort(
-            key=lambda item: (
-                item["match_score"],
-                item["posted_at"] or item["last_seen_at"],
-                str(item["id"]),
-            ),
-            reverse=True,
-        )
-        del ranked[limit:]
+    ranked.sort(
+        key=lambda item: (
+            item["match_score"],
+            item["posted_at"] or item["last_seen_at"],
+            str(item["id"]),
+        ),
+        reverse=True,
+    )
 
-    return ranked
+    return ranked[:limit]
 
 
 @router.get("/recommendations")
@@ -510,7 +568,8 @@ def get_recommendations(
     profile: CandidateProfile | None = context["profile"]
     preference: CandidatePreference | None = context["preference"]
     return {
-        "ranking_scope": "ALL_ACTIVE_ELIGIBLE_JOBS_BEFORE_LIMIT",
+        "ranking_scope": "BOUNDED_RELEVANT_AND_RECENT_CANDIDATE_POOL",
+        "candidate_pool_limit": RECOMMENDATION_CANDIDATE_LIMIT + RECOMMENDATION_RECENT_FALLBACK_LIMIT,
         "profile_ready": profile is not None,
         "search_goal": {
             "target_roles": [role.title for role in context["roles"]],

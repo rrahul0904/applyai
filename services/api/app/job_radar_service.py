@@ -4,9 +4,10 @@ import re
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Protocol
+from typing import Literal, Protocol
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
@@ -26,6 +27,44 @@ _TRACKING_KEYS = {"source", "ref", "referrer", "tracking", "trk"}
 _ATS_SOURCE_TYPES = {"GREENHOUSE", "LEVER", "ASHBY", "SMARTRECRUITERS", "WORKABLE", "WORKDAY", "ICIMS", "ORACLE", "SUCCESSFACTORS", "JOBVITE", "UKG", "BAMBOOHR", "JAZZHR", "RECRUITEE", "TEAMTAILOR", "PINPOINT", "COMEET", "PERSONIO", "RIPPLING", "ADP", "PAYLOCITY", "DAYFORCE", "TALEO", "PAGEUP", "PEOPLEADMIN", "CORNERSTONE", "NEOGOV"}
 _EMPLOYER_SOURCE_TYPES = {"EMPLOYER_DIRECT", "CAREER_SITE", "JSON_LD", "EMPLOYER_JSONLD", "EMPLOYER_CAREER_SITE", "EMPLOYER_OFFICIAL_API"}
 _AGGREGATOR_SOURCE_TYPES = {"OPEN_JOBS", "AUTHORIZED_AGGREGATOR_FEED", "LICENSED_FEED", "RELIEFWEB", "GOVERNMENT_FEED"}
+
+
+class ScoringProfileSnapshot(BaseModel):
+    """Enqueue-time scoring inputs; frozen tuples never alias mutable profile lists."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    snapshot_version: Literal[1] = 1
+    profile_id: uuid.UUID
+    user_id: uuid.UUID
+    resume_version_id: uuid.UUID | None = None
+    target_titles: tuple[str, ...]
+    skills: tuple[str, ...]
+    years_experience: int | None = Field(default=None, ge=0, le=80)
+    seniority_preferences: tuple[str, ...]
+    preferred_locations: tuple[str, ...]
+    remote_policy: Literal["ANY", "REMOTE", "HYBRID", "ONSITE"]
+    salary_min: int | None = Field(default=None, ge=0, le=100_000_000)
+    salary_currency: str = Field(min_length=3, max_length=3)
+
+
+def snapshot_scoring_profile(profile: JobSearchProfile) -> dict:
+    return ScoringProfileSnapshot(
+        profile_id=profile.id,
+        user_id=profile.user_id,
+        resume_version_id=profile.resume_version_id,
+        target_titles=tuple(profile.target_titles),
+        skills=tuple(profile.skills),
+        years_experience=profile.years_experience,
+        seniority_preferences=tuple(profile.seniority_preferences),
+        preferred_locations=tuple(profile.preferred_locations),
+        remote_policy=profile.remote_policy,
+        salary_min=profile.salary_min,
+        salary_currency=profile.salary_currency,
+    ).model_dump(mode="json")
+
+
+ScoringProfile = JobSearchProfile | ScoringProfileSnapshot
 
 
 @dataclass(frozen=True)
@@ -288,13 +327,13 @@ def deduplicate_candidates(candidates: list[NormalizedJobCandidate]) -> list[Nor
     return result
 
 
-def _title_score(profile: JobSearchProfile, job: NormalizedJobCandidate) -> int | None:
+def _title_score(profile: ScoringProfile, job: NormalizedJobCandidate) -> int | None:
     job_tokens = _tokens(job.title)
     scores = [len(_tokens(title) & job_tokens) / len(_tokens(title)) for title in profile.target_titles if _tokens(title)]
     return round(max(scores) * 100) if scores else None
 
 
-def _skills_score(profile: JobSearchProfile, job: NormalizedJobCandidate) -> int | None:
+def _skills_score(profile: ScoringProfile, job: NormalizedJobCandidate) -> int | None:
     wanted = {value.strip().lower() for value in profile.skills if value.strip()}
     if not wanted:
         return None
@@ -303,7 +342,7 @@ def _skills_score(profile: JobSearchProfile, job: NormalizedJobCandidate) -> int
     return round(100 * matched / len(wanted))
 
 
-def _experience_score(profile: JobSearchProfile, job: NormalizedJobCandidate) -> int | None:
+def _experience_score(profile: ScoringProfile, job: NormalizedJobCandidate) -> int | None:
     if profile.years_experience is None or not job.seniority:
         return None
     thresholds = {"INTERN": 0, "ENTRY": 0, "JUNIOR": 1, "MID": 3, "SENIOR": 5, "LEAD": 7, "STAFF": 8, "PRINCIPAL": 10, "DIRECTOR": 10}
@@ -313,7 +352,7 @@ def _experience_score(profile: JobSearchProfile, job: NormalizedJobCandidate) ->
     return min(100, round(100 * profile.years_experience / required))
 
 
-def _location_score(profile: JobSearchProfile, job: NormalizedJobCandidate) -> int | None:
+def _location_score(profile: ScoringProfile, job: NormalizedJobCandidate) -> int | None:
     policy = (profile.remote_policy or "ANY").upper()
     if policy == "REMOTE":
         return None if job.work_mode is None else (100 if job.work_mode == "REMOTE" else 0)
@@ -324,7 +363,7 @@ def _location_score(profile: JobSearchProfile, job: NormalizedJobCandidate) -> i
     return 100 if any(value in current or current in value for value in locations) else 0
 
 
-def _salary_score(profile: JobSearchProfile, job: NormalizedJobCandidate) -> int | None:
+def _salary_score(profile: ScoringProfile, job: NormalizedJobCandidate) -> int | None:
     if profile.salary_min is None or job.salary is None:
         return None
     salary = job.salary
@@ -337,7 +376,7 @@ def _salary_score(profile: JobSearchProfile, job: NormalizedJobCandidate) -> int
     return 60 if salary.maximum is None or salary.maximum >= profile.salary_min else 0
 
 
-def deterministic_score(profile: JobSearchProfile, job: NormalizedJobCandidate) -> tuple[int, dict]:
+def deterministic_score(profile: ScoringProfile, job: NormalizedJobCandidate) -> tuple[int, dict]:
     signals = {
         "title": _title_score(profile, job),
         "skills": _skills_score(profile, job),
@@ -457,13 +496,23 @@ def run_job_scan(session: Session, *, scan_id: uuid.UUID, provider: JobRadarProv
     scan = session.get(JobScan, scan_id)
     if scan is None or scan.status == "COMPLETED":
         return True
-    profile = session.get(JobSearchProfile, scan.profile_id)
-    if profile is None or profile.user_id != scan.user_id:
-        if scan is not None:
-            scan.status, scan.error_code = "FAILED", "PROFILE_NOT_FOUND"
-            scan.error_detail = "The persisted search profile is no longer available."
-            scan.completed_at = datetime.now(timezone.utc)
-            session.commit()
+    # Legacy scans lack historical scoring inputs. Never pretend the current
+    # editable profile was the profile used to create their persisted query plan.
+    if scan.scoring_profile_snapshot is None:
+        scan.status, scan.error_code = "FAILED", "SCORING_PROFILE_SNAPSHOT_MISSING"
+        scan.error_detail = "This legacy scan has no scoring snapshot; start a new scan."
+        scan.completed_at = datetime.now(timezone.utc)
+        session.commit()
+        return True
+    try:
+        profile = ScoringProfileSnapshot.model_validate(scan.scoring_profile_snapshot)
+        if profile.profile_id != scan.profile_id or profile.user_id != scan.user_id:
+            raise ValueError("Snapshot ownership does not match scan")
+    except (ValidationError, ValueError):
+        scan.status, scan.error_code = "FAILED", "SCORING_PROFILE_SNAPSHOT_INVALID"
+        scan.error_detail = "The scoring snapshot is invalid; start a new scan."
+        scan.completed_at = datetime.now(timezone.utc)
+        session.commit()
         return True
 
     scan.status = "RUNNING"

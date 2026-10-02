@@ -52,3 +52,16 @@ Both readiness responses report API/database/storage/background-worker configura
 ## Verification boundary
 
 The last exact-head PR #80 certification recorded before this fresh state check is at `7fe52aec141180e86a5bdb70e939a474d845aec6`; its required GitHub checks passed, but its full-functional job explicitly ran with `REQUIRE_REAL_INVENTORY=0`. The candidate browser suite used test identities/data. These repository/Preview results do not establish production readiness, live provider operation, human UAT, production API/worker SHA alignment, or production migration state.
+
+## Subsequent release checkpoint — 2026-10-02 02:33 UTC
+
+| Item | Current evidence | Boundary |
+|---|---|---|
+| Release branch / PR #80 | `codex/applyai-release-mission` at `ca5714855beb80228b23d920b47e0c5b96d8342a`; PR remains open draft to `main` at `9798aa613c45cdf9d54f3e2c6c47481ca31d1852`; review is required | No merge or production promotion occurred |
+| Vercel Preview | Deployment `6799859834`, exact SHA `ca5714855beb80228b23d920b47e0c5b96d8342a`, URL [Preview](https://applyai-gnq662g1u-rrahul0904-5013s-projects.vercel.app) | `/api/readiness` returned HTTP 200, `runtime_ready=true`, `production_ready=false`; API/database/storage/background/auth checks true, Supabase active and instance matched, development auth false, `operator_configured=false` |
+| Exact-head backend/browser checks | GitHub Actions [ApplyAI CI](https://github.com/rrahul0904/applyai/actions/runs/36955782577): API tests **395 passed, 1 skipped**; migrations-from-zero/head validation passed; candidate Playwright **11 passed, 5 skipped**; web tests, typecheck, lint, production build, API and combined worker images passed | Evidence uses deterministic test identities/data, not real provider accounts |
+| Hosted scale/security checks | Search benchmark passed at 10k/50k/250k jobs; source scheduler passed at 1k/10k/50k sources; agent runtime passed at 1k/10k/50k runs; security scans, RLS/schema, workflow lint, Terraform and queue/R2 compatibility passed | Synthetic benchmark scale is not live inventory volume or provider operation |
+| Final exact-head workflows | Fresh-clone certification [run](https://github.com/rrahul0904/applyai/actions/runs/36955782616) passed in 8m51s; no-deploy predeploy certification [run](https://github.com/rrahul0904/applyai/actions/runs/36955782551) passed in 8m53s | Predeploy explicitly ran with `REQUIRE_REAL_INVENTORY=0`; bounded catalogue seed skipped |
+| Production and live data | Production remains deployed at main SHA `9798aa613c45cdf9d54f3e2c6c47481ca31d1852`; API/worker SHA and deployed migration revision remain unexposed; live-job counts/freshness remain unmeasured | No real-provider, production behavior, operator bootstrap, or human UAT claim |
+
+All observed PR #80 contexts for `ca5714855beb80228b23d920b47e0c5b96d8342a` completed successfully, except the intentionally skipped bounded catalogue seed and credential-gated Playwright cases. PR #80 is still draft and review-required; no merge or production deployment followed.

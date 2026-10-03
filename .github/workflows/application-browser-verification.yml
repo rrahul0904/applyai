@@ -1,0 +1,66 @@
+name: Application Browser Verification
+
+on:
+  pull_request:
+    paths:
+      - "services/api/scripts/application-browser-worker.mjs"
+      - "services/api/app/api/application_agent_completion_guard.py"
+      - "services/api/app/main.py"
+      - "services/api/tests/test_application_browser_worker_contract.py"
+      - "services/api/tests/test_application_agent_completion_guard.py"
+      - "services/api/Dockerfile.worker"
+      - ".github/workflows/application-browser-verification.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "services/api/scripts/application-browser-worker.mjs"
+      - "services/api/app/api/application_agent_completion_guard.py"
+      - "services/api/app/main.py"
+      - "services/api/tests/test_application_browser_worker_contract.py"
+      - "services/api/tests/test_application_agent_completion_guard.py"
+      - "services/api/Dockerfile.worker"
+      - ".github/workflows/application-browser-verification.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Verification contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12.11"
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          enable-cache: true
+      - name: Install locked API environment
+        working-directory: services/api
+        run: uv sync --group dev --locked
+      - name: Run focused verification tests
+        working-directory: services/api
+        run: >-
+          uv run pytest -q
+          tests/test_application_browser_worker_contract.py
+          tests/test_application_agent_completion_guard.py
+
+  worker-image:
+    name: Browser worker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Build exact worker image
+        run: docker build --pull --file services/api/Dockerfile.worker --tag applyai-worker:browser-verification services/api
+      - name: Syntax-check browser executor inside built image
+        run: >-
+          docker run --rm --entrypoint node
+          applyai-worker:browser-verification
+          --check /app/scripts/application-browser-worker.mjs
+      - name: Verify browser executor is supervised by production worker
+        run: |
+          docker run --rm --entrypoint /bin/bash applyai-worker:browser-verification -lc '
+            grep -F "application-browser-worker.mjs" /app/scripts/run_combined_worker.sh
+          '

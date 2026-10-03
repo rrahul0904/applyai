@@ -4,7 +4,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.api import application_agent_completion_guard as guard
-from app.api.application_agent import BrowserCompletionWrite
+from app.api.application_agent import BrowserCompletionWrite, complete_browser_execution
 from app.main import app
 
 
@@ -74,13 +74,10 @@ def test_non_terminal_outcomes_do_not_require_verification_receipt(monkeypatch, 
     assert len(calls) == 1
 
 
-def test_guarded_completion_route_is_registered_before_legacy_completion_route() -> None:
-    matching = [
-        route
-        for route in app.routes
-        if getattr(route, "path", None) == "/api/v1/internal/application-agent/executions/{execution_id}/complete"
-        and "POST" in (getattr(route, "methods", None) or set())
-    ]
+def test_guarded_completion_endpoint_is_registered_before_legacy_endpoint() -> None:
+    endpoints = [getattr(route, "endpoint", None) for route in app.routes]
 
-    assert len(matching) >= 2
-    assert matching[0].endpoint is guard.complete_verified_browser_execution
+    guard_index = endpoints.index(guard.complete_verified_browser_execution)
+    legacy_index = endpoints.index(complete_browser_execution)
+
+    assert guard_index < legacy_index

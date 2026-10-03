@@ -160,6 +160,66 @@ async function fillField(page, field) {
   return { field_id: field.field_id, status: "FILLED" };
 }
 
+function equivalentValue(expected, actual) {
+  const left = norm(expected);
+  const right = norm(actual);
+  const truthy = new Set(["true", "yes", "1", "checked", "on"]);
+  const falsy = new Set(["false", "no", "0", "unchecked", "off"]);
+  if (truthy.has(left) && truthy.has(right)) return true;
+  if (falsy.has(left) && falsy.has(right)) return true;
+  return left === right;
+}
+
+async function readBackField(page, field) {
+  const value = String(field.value ?? "");
+  if (String(field.field_type || "").toUpperCase() === "RADIO") {
+    const choice = page.getByLabel(value, { exact: false });
+    if (!(await choice.count())) return { readable: false, values: [] };
+    return { readable: true, values: [(await choice.first().isChecked()) ? value : ""] };
+  }
+
+  const control = await findControl(page, field);
+  if (!control || !(await control.isVisible().catch(() => false))) {
+    return { readable: false, values: [] };
+  }
+  const tag = await control.evaluate((element) => element.tagName.toLowerCase());
+  const type = norm(await control.getAttribute("type"));
+  if (type === "checkbox") {
+    return { readable: true, values: [(await control.isChecked()) ? "yes" : "no"] };
+  }
+  if (tag === "select") {
+    const selected = await control.evaluate((element) => {
+      const option = element.selectedOptions?.[0];
+      return option ? [option.value || "", option.textContent || ""] : [element.value || ""];
+    });
+    return { readable: true, values: selected };
+  }
+  return { readable: true, values: [await control.inputValue()] };
+}
+
+async function verifyPageFields(page, pageFields) {
+  const checked = [];
+  const mismatches = [];
+  for (const { field, result } of pageFields) {
+    if (result.status !== "FILLED") continue;
+    const actual = await readBackField(page, field);
+    const matched = actual.readable && actual.values.some((value) => equivalentValue(field.value, value));
+    if (!matched) {
+      mismatches.push({
+        field_id: field.field_id,
+        label: field.label,
+        expected: String(field.value ?? "").slice(0, 500),
+        observed: actual.values.map((value) => String(value).slice(0, 500)),
+        readable: actual.readable,
+      });
+      continue;
+    }
+    result.read_back_verified = true;
+    checked.push(field.field_id);
+  }
+  return { ok: mismatches.length === 0, checked, mismatches };
+}
+
 function classifyFileControl(hints, index) {
   const value = norm(hints);
   if (value.includes("cover") || value.includes("letter")) return "cover_letter";
@@ -293,6 +353,8 @@ async function executeOne(browser, execution) {
   const page = await context.newPage();
   const results = [];
   const uploadedDocuments = new Set();
+  const verifiedFieldIds = new Set();
+  const verificationPages = [];
   let submitted = false;
   try {
     await page.goto(execution.target_url, { waitUntil: "domcontentloaded", timeout: 45000 });
@@ -303,21 +365,40 @@ async function executeOne(browser, execution) {
         return human("SECURITY_CHALLENGE", "A CAPTCHA or security challenge requires manual completion. ApplyAI will not bypass access controls.", page, results, { page_number: pageNumber });
       }
 
+      for (const field of execution.fields) {
+        if (field.canonical_key !== "legal_attestation") continue;
+        const control = await findControl(page, field);
+        if (control && await control.isVisible().catch(() => false)) {
+          return human(
+            "LEGAL_ATTESTATION_REQUIRED",
+            "A certification, signature, or legal attestation must be completed by the candidate. ApplyAI will not sign or attest on the candidate's behalf.",
+            page,
+            results,
+            { field_id: field.field_id, label: field.label, page_number: pageNumber },
+          );
+        }
+      }
+
       const uploads = await uploadVerifiedDocuments(page, execution, uploadedDocuments);
       results.push(...uploads.results);
       if (uploads.humanAction) {
         return human(uploads.humanAction.reason, uploads.humanAction.message, page, results, uploads.humanAction);
       }
 
+      const pageFillResults = [];
       for (const field of execution.fields) {
+        if (field.canonical_key === "legal_attestation") continue;
         if (results.some((item) => item.field_id === field.field_id && item.status === "FILLED")) continue;
         const result = await fillField(page, field);
         if (result.status !== "OPTIONAL_NOT_FOUND") results.push(result);
+        if (result.status === "FILLED") pageFillResults.push({ field, result });
       }
 
-      const failedRequired = execution.fields.filter((field) => field.required).filter((field) =>
-        results.some((item) => item.field_id === field.field_id && ["MISSING_CONTROL", "OPTION_NOT_FOUND"].includes(item.status)),
-      );
+      const failedRequired = execution.fields
+        .filter((field) => field.required && field.canonical_key !== "legal_attestation")
+        .filter((field) =>
+          results.some((item) => item.field_id === field.field_id && ["MISSING_CONTROL", "OPTION_NOT_FOUND"].includes(item.status)),
+        );
       if (failedRequired.length) {
         return human("REQUIRED_FIELD_MAPPING_FAILED", "One or more required employer fields could not be mapped safely.", page, results, {
           fields: failedRequired.map((field) => ({ field_id: field.field_id, label: field.label })),
@@ -329,6 +410,19 @@ async function executeOne(browser, execution) {
         return human("UNMAPPED_REQUIRED_FIELDS", "The employer added required fields that ApplyAI does not have verified answers for.", page, results, { fields: unknownRequired });
       }
 
+      const verification = await verifyPageFields(page, pageFillResults);
+      verificationPages.push({ page_number: pageNumber, checked: verification.checked });
+      verification.checked.forEach((fieldId) => verifiedFieldIds.add(fieldId));
+      if (!verification.ok) {
+        return human(
+          "PRE_SUBMIT_VERIFICATION_FAILED",
+          "ApplyAI stopped because one or more employer form values did not match the candidate-approved values after filling.",
+          page,
+          results,
+          { page_number: pageNumber, mismatches: verification.mismatches },
+        );
+      }
+
       const priorUrl = page.url();
       const action = await nextAction(page);
       if (action === "NONE") break;
@@ -338,7 +432,13 @@ async function executeOne(browser, execution) {
         return {
           status: "CONFIRMED",
           field_results: results,
-          validation: { confirmation_signal: confirmation.signal, provider: execution.ats_provider },
+          validation: {
+            confirmation_signal: confirmation.signal,
+            provider: execution.ats_provider,
+            pre_submit_verified: true,
+            verified_field_ids: [...verifiedFieldIds].sort(),
+            verification_pages: verificationPages,
+          },
           confirmation_url: confirmation.url,
           confirmation_text: confirmation.text,
         };
@@ -347,7 +447,13 @@ async function executeOne(browser, execution) {
         return {
           status: "SUBMITTED",
           field_results: results,
-          validation: { confirmation_detected: false, provider: execution.ats_provider },
+          validation: {
+            confirmation_detected: false,
+            provider: execution.ats_provider,
+            pre_submit_verified: true,
+            verified_field_ids: [...verifiedFieldIds].sort(),
+            verification_pages: verificationPages,
+          },
           confirmation_url: confirmation.url,
           confirmation_text: confirmation.text,
         };
@@ -359,7 +465,7 @@ async function executeOne(browser, execution) {
     return {
       status: "FAILED",
       field_results: results,
-      validation: { submitted },
+      validation: { submitted, pre_submit_verified: false },
       error_code: "BROWSER_EXECUTION_FAILED",
       error_detail: error instanceof Error ? error.message.slice(0, 4000) : String(error).slice(0, 4000),
     };

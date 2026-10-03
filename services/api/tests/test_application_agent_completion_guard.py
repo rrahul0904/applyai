@@ -5,6 +5,7 @@ from fastapi import HTTPException
 
 from app.api import application_agent_completion_guard as guard
 from app.api.application_agent import BrowserCompletionWrite
+from app.main import app
 
 
 def _body(status: str, *, verified: bool | None = None) -> BrowserCompletionWrite:
@@ -71,3 +72,15 @@ def test_non_terminal_outcomes_do_not_require_verification_receipt(monkeypatch, 
 
     assert result == {"state": browser_status}
     assert len(calls) == 1
+
+
+def test_guarded_completion_route_is_registered_before_legacy_completion_route() -> None:
+    matching = [
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/api/v1/internal/application-agent/executions/{execution_id}/complete"
+        and "POST" in (getattr(route, "methods", None) or set())
+    ]
+
+    assert len(matching) >= 2
+    assert matching[0].endpoint is guard.complete_verified_browser_execution

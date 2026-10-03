@@ -2,9 +2,12 @@ import uuid
 
 import pytest
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 
 from app.api import application_agent_completion_guard as guard
-from app.api.application_agent import BrowserCompletionWrite, complete_browser_execution
+from app.api.application_agent import BrowserCompletionWrite
+from app.core.database import get_session
+from app.core.internal_auth import require_internal_api
 from app.main import app
 
 
@@ -74,10 +77,20 @@ def test_non_terminal_outcomes_do_not_require_verification_receipt(monkeypatch, 
     assert len(calls) == 1
 
 
-def test_guarded_completion_endpoint_is_registered_before_legacy_endpoint() -> None:
-    endpoints = [getattr(route, "endpoint", None) for route in app.routes]
+def test_internal_completion_route_rejects_terminal_status_without_receipt() -> None:
+    def session_override():
+        yield object()
 
-    guard_index = endpoints.index(guard.complete_verified_browser_execution)
-    legacy_index = endpoints.index(complete_browser_execution)
+    app.dependency_overrides[require_internal_api] = lambda: None
+    app.dependency_overrides[get_session] = session_override
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                f"/api/v1/internal/application-agent/executions/{uuid.uuid4()}/complete",
+                json={"status": "CONFIRMED", "validation": {}},
+            )
+    finally:
+        app.dependency_overrides.clear()
 
-    assert guard_index < legacy_index
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "PRE_SUBMIT_VERIFICATION_REQUIRED"

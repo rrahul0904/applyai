@@ -152,7 +152,11 @@ def test_application_agent_reuses_verified_answers_and_requires_confirmation(cli
         json={
             "status": "CONFIRMED",
             "field_results": [{"field_id": "email", "status": "FILLED"}],
-            "validation": {"confirmation_signal": "thank you for applying"},
+            "validation": {
+                "confirmation_signal": "thank you for applying",
+                "pre_submit_verified": True,
+                "verified_field_ids": ["email"],
+            },
             "confirmation_url": "https://jobs.applyai.test/confirmation/123",
             "confirmation_text": "Thank you for applying. We received your application.",
         },

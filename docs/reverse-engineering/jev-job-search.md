@@ -24,7 +24,7 @@ The Reddit discussion also raises a useful product constraint: optimizing for a 
 
 The donor's strongest design constraint is its explicit human boundary. ApplyAI should not create accounts, bypass CAPTCHAs or verification codes, sign or make legal attestations for a candidate, silently invent facts, or call a submission successful without evidence.
 
-The existing ApplyAI browser worker already stopped for CAPTCHA/security challenges, unverified documents, unmapped required fields, and missing controls. However, it previously selected the next/submit control immediately after filling. Candidate approval therefore did not prove that the employer form still contained the same values at click time.
+The existing ApplyAI browser worker already stopped for CAPTCHA/security challenges, unverified documents, unmapped required fields, and missing controls. However, it previously selected the next/submit control immediately after filling, and the API accepted a terminal browser status without independently requiring a read-back receipt. Candidate approval therefore did not prove that the employer form still contained the same values at click time or that a reported terminal outcome had passed verification.
 
 ## Candidate journey stages
 
@@ -41,15 +41,17 @@ Phase 1 on branch `feat/jev-verified-application-submit` adds:
 - fail-closed `PRE_SUBMIT_VERIFICATION_FAILED` handoff on mismatch/unreadable values;
 - explicit `LEGAL_ATTESTATION_REQUIRED` human handoff for certification/signature fields;
 - terminal browser evidence containing `pre_submit_verified`, `verified_field_ids`, and per-page verification receipts;
+- server-side rejection of `SUBMITTED` or `CONFIRMED` completion unless the browser supplies `pre_submit_verified=true`;
+- route-order regression coverage proving the guarded completion endpoint is registered before the legacy completion endpoint;
 - regression tests locking the ordering and human-only boundaries.
 
 Follow-on slices:
 
-1. Enforce the verification receipt server-side before accepting `SUBMITTED` or `CONFIRMED` browser completion.
-2. Add typed routing (`AUTO`, `MANUAL`, `SKIP`) as an explicit execution contract rather than inferring it only from workflow state.
-3. Add provider-specific browser fixtures for Greenhouse, Lever, Workday, Ashby, SmartRecruiters, iCIMS, and SuccessFactors.
-4. Add browser-level negative tests for read-back mismatch, dynamic field mutation, multi-page forms, legal attestation, and security challenges.
-5. Evaluate application-quality/ranking metrics separately from throughput.
+1. Add typed routing (`AUTO`, `MANUAL`, `SKIP`) as an explicit execution contract rather than inferring it only from workflow state.
+2. Add provider-specific browser fixtures for Greenhouse, Lever, Workday, Ashby, SmartRecruiters, iCIMS, and SuccessFactors.
+3. Add browser-level negative tests for read-back mismatch, dynamic field mutation, multi-page forms, legal attestation, and security challenges.
+4. Evaluate application-quality/ranking metrics separately from throughput.
+5. Add bounded one-job-at-a-time pacing and per-provider rate controls where runtime evidence shows they are required.
 
 ## Keep separate
 
@@ -67,4 +69,4 @@ Follow-on slices:
 
 `IMPLEMENTING`.
 
-Do not mark this donor `INTEGRATED` solely because this document, branch, or PR exists. Integration requires exact-head CI evidence and, where the changed runtime is deployed, deployment/runtime evidence. Until those gates are satisfied, the truthful status remains `IMPLEMENTING`.
+The Phase 1 repository slice now closes both sides of the verification contract: the worker verifies the employer form before navigation/submission, and the API refuses terminal success without that receipt. Do not mark this donor `INTEGRATED` solely because the document, branch, or PR exists. Integration still requires exact-head CI evidence and, because the changed path includes the browser worker, deployment/runtime evidence from the exact candidate SHA. Until those gates are satisfied, the truthful status remains `IMPLEMENTING`.

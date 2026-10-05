@@ -1,5 +1,5 @@
 {
-  "recorded_at": "2026-10-02T16:19:02Z",
+  "recorded_at": "2026-10-05T02:38:00Z",
   "repository": "rrahul0904/applyai",
   "source": {
     "branch": "codex/applyai-release-mission",
@@ -8,17 +8,17 @@
     "pull_request": "https://github.com/rrahul0904/applyai/pull/80",
     "main_sha": "9798aa613c45cdf9d54f3e2c6c47481ca31d1852",
     "migration_head": "d0v4z6s9w197",
-    "latest_evidence_checkpoint_sha": "ad38f3bc36d04ffcfc5e77ab7c3c418349291907"
+    "latest_evidence_checkpoint_sha": "33ce17fd8e579cf31d1028de386c9c14cca5f689"
   },
   "verification": {
     "environment": "GitHub Actions, local PostgreSQL/API tests, Vercel Preview",
     "status": "PASS_REPOSITORY_CONTROLLED",
     "exact_sha_checks": {
       "tested_code_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
-      "latest_pr_head": "ad38f3bc36d04ffcfc5e77ab7c3c418349291907",
+      "latest_pr_head": "33ce17fd8e579cf31d1028de386c9c14cca5f689",
       "required_contexts_passed": 21,
       "status": "PASS",
-      "summary": "All required contexts and the full hosted suite passed on latest documentation/evidence head; implementation code is unchanged from the already certified code SHA.",
+      "summary": "All 21 required contexts and full hosted suite passed on the latest evidence-only checkpoint; implementation code is unchanged from the tested code SHA.",
       "skipped": [
         "Seed bounded job catalogue (REQUIRE_REAL_INVENTORY=0)"
       ],
@@ -26,7 +26,7 @@
       "limitations": [
         "Catalogue seed skipped; live job inventory is not measured."
       ],
-      "latest_evidence_checkpoint": "ad38f3bc36d04ffcfc5e77ab7c3c418349291907"
+      "latest_evidence_checkpoint": "33ce17fd8e579cf31d1028de386c9c14cca5f689"
     },
     "local_result": "88 focused API tests passed across resume/auth/source/recommendation suites; two PDF UI tests, typecheck, scoped ESLint, Ruff, and visual PDF review reported passing by the implementation agent.",
     "limitations": [
@@ -34,13 +34,13 @@
       "Preview readiness is false; no authenticated candidate/operator journey was exercised."
     ],
     "workflow_runs": {
-      "ci": "https://github.com/rrahul0904/applyai/actions/runs/37027365669",
-      "security": "https://github.com/rrahul0904/applyai/actions/runs/37027365025",
-      "predeploy": "https://github.com/rrahul0904/applyai/actions/runs/37027364848",
-      "fresh_clone": "https://github.com/rrahul0904/applyai/actions/runs/37027365789",
-      "search_scale": "https://github.com/rrahul0904/applyai/actions/runs/37027365100",
-      "source_scheduler": "https://github.com/rrahul0904/applyai/actions/runs/37027365007",
-      "agent_runtime": "https://github.com/rrahul0904/applyai/actions/runs/37027365521"
+      "ci": "https://github.com/rrahul0904/applyai/actions/runs/37033691830",
+      "security": "https://github.com/rrahul0904/applyai/actions/runs/37033691881",
+      "predeploy": "https://github.com/rrahul0904/applyai/actions/runs/37033691864",
+      "fresh_clone": "https://github.com/rrahul0904/applyai/actions/runs/37033691941",
+      "search_scale": "https://github.com/rrahul0904/applyai/actions/runs/37033691885",
+      "source_scheduler": "https://github.com/rrahul0904/applyai/actions/runs/37033691828",
+      "agent_runtime": "https://github.com/rrahul0904/applyai/actions/runs/37033691859"
     }
   },
   "runtime": {
@@ -48,7 +48,7 @@
       "url": "https://applyai-gold.vercel.app",
       "deployment_id": "6593569358",
       "sha": "9798aa613c45cdf9d54f3e2c6c47481ca31d1852",
-      "observed_at": "2026-10-02T16:18:53Z",
+      "observed_at": "2026-10-05T02:37:38Z",
       "readiness_http": 503,
       "runtime_ready": false,
       "production_ready": false,
@@ -60,11 +60,11 @@
       "supabase_instance_match": false
     },
     "preview": {
-      "deployment_id": "6811997019",
-      "sha": "ad38f3bc36d04ffcfc5e77ab7c3c418349291907",
+      "deployment_id": "6813078014",
+      "sha": "33ce17fd8e579cf31d1028de386c9c14cca5f689",
       "implementation_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
-      "url": "https://applyai-9trkjoja0-rrahul0904-5013s-projects.vercel.app",
-      "observed_at": "2026-10-02T16:17:51Z",
+      "url": "https://applyai-64zp9f4c1-rrahul0904-5013s-projects.vercel.app",
+      "observed_at": "2026-10-05T02:37:58Z",
       "deployment_status": "success",
       "routes": {
         "/": 200,
@@ -86,8 +86,8 @@
   },
   "live_provider_probe": {
     "provider": "GitHub REST public API",
-    "environment_sha": "ad38f3bc36d04ffcfc5e77ab7c3c418349291907",
-    "observed_at": "2026-10-02T16:19:02Z",
+    "environment_sha": "33ce17fd8e579cf31d1028de386c9c14cca5f689",
+    "observed_at": "2026-10-05T02:38:00Z",
     "test_identity": "octocat",
     "request": "GET /api/proof-of-work/github?username=octocat&role=fullstack",
     "http_status": 200,

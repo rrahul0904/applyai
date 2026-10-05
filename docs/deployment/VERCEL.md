@@ -2,6 +2,13 @@
 
 Updated: 2026-08-31
 
+> **Historical deployment profile.** This file describes the earlier Vercel web
+> + Railway API + Clerk/R2 launch. The repository's current production workflow
+> targets Vercel web and API with Supabase. Follow
+> [`LEAN_PRODUCTION_ARCHITECTURE.md`](../LEAN_PRODUCTION_ARCHITECTURE.md) and
+> `.github/workflows/deploy-vercel-applyai*.yml` for the current contract. Do not
+> mix the environment variables or services from the two profiles.
+
 ## Deployment model
 
 Vercel hosts the **Next.js web application only**.

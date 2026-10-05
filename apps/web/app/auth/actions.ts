@@ -71,6 +71,7 @@ export async function signInAction(formData: FormData) {
 export async function signUpAction(formData: FormData) {
   if (!supabaseConfigured()) redirect("/sign-up?error=auth_not_configured");
   const { email, password } = normalizedCredentials(formData);
+  let sessionCreated = false;
   try {
     const origin = originFromHeaders(await headers());
     const result = await signUpWithPassword(
@@ -80,12 +81,12 @@ export async function signUpAction(formData: FormData) {
     );
     if ("access_token" in result && result.access_token && result.refresh_token) {
       await persistSupabaseSession(result as Parameters<typeof persistSupabaseSession>[0]);
-      redirect("/onboarding");
+      sessionCreated = true;
     }
   } catch (error) {
     redirect(`/sign-up?error=${safeErrorCode(error)}`);
   }
-  redirect("/sign-up?check_email=1");
+  redirect(sessionCreated ? "/onboarding" : "/sign-up?check_email=1");
 }
 
 export async function googleSignInAction() {

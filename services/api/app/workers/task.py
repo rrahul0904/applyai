@@ -25,6 +25,10 @@ def process_message(body: str, settings: Settings) -> bool:
         return process_resume_message(body, settings)
     if task_type in {"JOB_URL_IMPORT", "SOURCE_DISCOVERY"}:
         return process_discovery_message(body, settings)
+    if task_type == "JOB_RADAR_SCAN":
+        from app.workers.job_radar import process_message as process_job_radar_message
+
+        return process_job_radar_message(body, settings)
     if task_type == "AGENT_RUN":
         return process_agent_message(body, settings)
     logger.warning("task_worker_unsupported_task", extra={"task_type": task_type})

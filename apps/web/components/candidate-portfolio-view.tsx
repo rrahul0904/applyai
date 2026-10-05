@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { BriefcaseBusiness, FileText, MapPin, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowRight, BriefcaseBusiness, FileText, Github, MapPin, ShieldCheck, Sparkles } from "lucide-react";
 import Link from "next/link";
 
 import { ResumeShareIntelligenceView } from "@/components/resume-share-intelligence-view";
@@ -74,6 +74,18 @@ export function CandidatePortfolioView() {
           {value.location_text ? <Badge><MapPin size={13} />{value.location_text}</Badge> : null}
           {value.work_modes?.map((mode) => <Badge key={mode}>{mode}</Badge>)}
         </div>
+      </Card>
+
+      <Card className="detail-section">
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">Proof of work</p>
+            <h2>Turn public project signals into career evidence</h2>
+          </div>
+          <Github size={20} aria-hidden="true" />
+        </div>
+        <p className="muted">Review deterministic signals from a bounded set of public GitHub repositories, compare them with a target role, and get a concrete next-build idea. The prototype does not read source-code bodies or assign a proficiency score.</p>
+        <Link className="ui-button ui-button-secondary" href="/proof-of-work">Explore proof of work <ArrowRight size={16} /></Link>
       </Card>
 
       <div className="detail-grid">

@@ -126,9 +126,7 @@ export function JobsView() {
             placeholder="Title, company, skill, or keyword"
           />
         </div>
-        <NativeSelect aria-label="Sort jobs" defaultValue="recent">
-          <option value="recent">Newest first</option>
-        </NativeSelect>
+        <span className="cx-jobs-order">Newest first</span>
         <Button className="filter-mobile-button" variant="secondary" size="icon" aria-label="Open job filters" onClick={() => setFiltersOpen(true)}>
           <SlidersHorizontal size={18} />
         </Button>

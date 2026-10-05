@@ -1,0 +1,20 @@
+{
+  "recorded_at": "2026-10-02T15:27:37Z",
+  "source_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+  "environment": "local API/UI tests and GitHub Actions exact-head CI",
+  "commands": [
+    "services/api/.venv/bin/pytest -q tests/test_resume_pdf_export.py tests/test_resume_evidence.py tests/test_auth_providers.py tests/test_job_source_adapters.py tests/test_partner_feed.py tests/test_remote_source_authority.py tests/test_job_radar_opportunity_evidence.py",
+    "services/api/.venv/bin/pytest -q tests/test_candidate_workspace.py",
+    "CandidateResumeStudioView PDF UI tests (2 passed); web typecheck/lint/build/tests on exact SHA via GitHub Actions"
+  ],
+  "result": {
+    "api_tests_passed": 88,
+    "pdf_ui_tests_passed": 2,
+    "pdf_render_review": "one-page and multi-page outputs visually reviewed; no truncation or layout overlap"
+  },
+  "limitations": [
+    "PDF overflow is surfaced for review; one-page composition mode and DOCX export are not implemented.",
+    "Unsupported glyphs return 422 with text fallback.",
+    "No authenticated hosted resume journey or universal ATS acceptance claim."
+  ]
+}

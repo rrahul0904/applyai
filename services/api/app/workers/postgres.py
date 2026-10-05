@@ -16,6 +16,7 @@ from app.core.outbox import publish_outbox_once
 from app.core.queue import (
     AGENT_TASK_TYPES,
     AI_TASK_TYPES,
+    JOB_RADAR_TASK_TYPES,
     RESUME_TASK_TYPES,
     SOURCE_TASK_TYPES,
     Task,
@@ -121,6 +122,10 @@ def dispatch_task(task: Task, settings: Settings) -> bool:
         return process_message(body, settings)
     if task.task_type in AGENT_TASK_TYPES:
         from app.workers.agent import process_message
+
+        return process_message(body, settings)
+    if task.task_type in JOB_RADAR_TASK_TYPES:
+        from app.workers.job_radar import process_message
 
         return process_message(body, settings)
     if task.task_type in RESUME_TASK_TYPES:

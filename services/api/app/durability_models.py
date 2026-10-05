@@ -139,6 +139,10 @@ class JobIngestionRun(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     duration_ms: Mapped[int | None] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="RUNNING")
+    coverage_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="INCONCLUSIVE"
+    )
+    coverage_details: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 
     fetched: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     valid: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

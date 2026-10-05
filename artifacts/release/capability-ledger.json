@@ -1,0 +1,294 @@
+{
+  "recorded_at": "2026-10-05T02:38:00Z",
+  "repository": "rrahul0904/applyai",
+  "source_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+  "tracker_access": "HTTP 401 AUTH_REQUIRED; no external rows read or changed",
+  "capabilities": [
+    {
+      "tracker_id": "RE-001",
+      "donor": "Pinloop / Job Radar",
+      "candidate_journey_stage": "Mapped in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md",
+      "applyai_destination": "Canonical ApplyAI candidate/job/career/interview/governance workflows",
+      "state": "PARTIAL_IMPLEMENTATION",
+      "exact_evidence": "Canonical Radar scans/watches and persistence; hosted scheduled source execution remains unverified.",
+      "current_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+      "live_provider_verified": false,
+      "production_verified": false,
+      "known_gaps": [
+        "See exact donor row in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md; tracker access returns 401."
+      ],
+      "next_action": "Complete documented external/provider/browser/UAT gates when credentials and operator access are available."
+    },
+    {
+      "tracker_id": "RE-012",
+      "donor": "Pinloop / Job Radar duplicate donor row",
+      "candidate_journey_stage": "Mapped in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md",
+      "applyai_destination": "Canonical ApplyAI candidate/job/career/interview/governance workflows",
+      "state": "RESEARCH_ONLY",
+      "exact_evidence": "Same capability family as RE-001; do not implement twice.",
+      "current_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+      "live_provider_verified": false,
+      "production_verified": false,
+      "known_gaps": [
+        "See exact donor row in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md; tracker access returns 401."
+      ],
+      "next_action": "Complete documented external/provider/browser/UAT gates when credentials and operator access are available."
+    },
+    {
+      "tracker_id": "RE-002",
+      "donor": "Dreamwork",
+      "candidate_journey_stage": "Mapped in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md",
+      "applyai_destination": "Canonical ApplyAI candidate/job/career/interview/governance workflows",
+      "state": "REPOSITORY_VERIFIED",
+      "exact_evidence": "Candidate-scoped MCP code exists; external client handshake/OAuth unverified.",
+      "current_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+      "live_provider_verified": false,
+      "production_verified": false,
+      "known_gaps": [
+        "See exact donor row in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md; tracker access returns 401."
+      ],
+      "next_action": "Complete documented external/provider/browser/UAT gates when credentials and operator access are available."
+    },
+    {
+      "tracker_id": "RE-003",
+      "donor": "Websumes",
+      "candidate_journey_stage": "Mapped in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md",
+      "applyai_destination": "Canonical ApplyAI candidate/job/career/interview/governance workflows",
+      "state": "RESEARCH_ONLY",
+      "exact_evidence": "Shared resume/profile code exists; donor-specific workflow mapping and hosted acceptance incomplete.",
+      "current_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+      "live_provider_verified": false,
+      "production_verified": false,
+      "known_gaps": [
+        "See exact donor row in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md; tracker access returns 401."
+      ],
+      "next_action": "Complete documented external/provider/browser/UAT gates when credentials and operator access are available."
+    },
+    {
+      "tracker_id": "RE-004",
+      "donor": "JAN / Recruiter Lens",
+      "candidate_journey_stage": "Mapped in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md",
+      "applyai_destination": "Canonical ApplyAI candidate/job/career/interview/governance workflows",
+      "state": "REPOSITORY_VERIFIED",
+      "exact_evidence": "Evidence-backed repository workflow; authenticated hosted journey unverified.",
+      "current_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+      "live_provider_verified": false,
+      "production_verified": false,
+      "known_gaps": [
+        "See exact donor row in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md; tracker access returns 401."
+      ],
+      "next_action": "Complete documented external/provider/browser/UAT gates when credentials and operator access are available."
+    },
+    {
+      "tracker_id": "RE-005",
+      "donor": "ResumeShareIQ",
+      "candidate_journey_stage": "Mapped in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md",
+      "applyai_destination": "Canonical ApplyAI candidate/job/career/interview/governance workflows",
+      "state": "PARTIAL_IMPLEMENTATION",
+      "exact_evidence": "Persisted share/event code exists; separate-session privacy/analytics acceptance unverified.",
+      "current_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+      "live_provider_verified": false,
+      "production_verified": false,
+      "known_gaps": [
+        "See exact donor row in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md; tracker access returns 401."
+      ],
+      "next_action": "Complete documented external/provider/browser/UAT gates when credentials and operator access are available."
+    },
+    {
+      "tracker_id": "RE-006",
+      "donor": "Skilize",
+      "candidate_journey_stage": "Mapped in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md",
+      "applyai_destination": "Canonical ApplyAI candidate/job/career/interview/governance workflows",
+      "state": "REPOSITORY_VERIFIED",
+      "exact_evidence": "Prepare/Career skill-gap workflows exist; hosted candidate acceptance unverified.",
+      "current_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+      "live_provider_verified": false,
+      "production_verified": false,
+      "known_gaps": [
+        "See exact donor row in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md; tracker access returns 401."
+      ],
+      "next_action": "Complete documented external/provider/browser/UAT gates when credentials and operator access are available."
+    },
+    {
+      "tracker_id": "RE-007",
+      "donor": "Hirecast",
+      "candidate_journey_stage": "Mapped in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md",
+      "applyai_destination": "Canonical ApplyAI candidate/job/career/interview/governance workflows",
+      "state": "PARTIAL_IMPLEMENTATION",
+      "exact_evidence": "Interview transcript privacy contracts exist; live capture/STT provider acceptance absent.",
+      "current_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+      "live_provider_verified": false,
+      "production_verified": false,
+      "known_gaps": [
+        "See exact donor row in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md; tracker access returns 401."
+      ],
+      "next_action": "Complete documented external/provider/browser/UAT gates when credentials and operator access are available."
+    },
+    {
+      "tracker_id": "RE-008",
+      "donor": "Hack2Hire",
+      "candidate_journey_stage": "Mapped in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md",
+      "applyai_destination": "Canonical ApplyAI candidate/job/career/interview/governance workflows",
+      "state": "PARTIAL_IMPLEMENTATION",
+      "exact_evidence": "Prepare question-bank and workspace code exists; human practice UAT absent.",
+      "current_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+      "live_provider_verified": false,
+      "production_verified": false,
+      "known_gaps": [
+        "See exact donor row in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md; tracker access returns 401."
+      ],
+      "next_action": "Complete documented external/provider/browser/UAT gates when credentials and operator access are available."
+    },
+    {
+      "tracker_id": "RE-009",
+      "donor": "ai-job-search",
+      "candidate_journey_stage": "Mapped in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md",
+      "applyai_destination": "Canonical ApplyAI candidate/job/career/interview/governance workflows",
+      "state": "REPOSITORY_VERIFIED",
+      "exact_evidence": "Canonical job supply/application preparation exists; live provider inventory unmeasured.",
+      "current_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+      "live_provider_verified": false,
+      "production_verified": false,
+      "known_gaps": [
+        "See exact donor row in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md; tracker access returns 401."
+      ],
+      "next_action": "Complete documented external/provider/browser/UAT gates when credentials and operator access are available."
+    },
+    {
+      "tracker_id": "RE-010",
+      "donor": "Jobber",
+      "candidate_journey_stage": "Mapped in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md",
+      "applyai_destination": "Canonical ApplyAI candidate/job/career/interview/governance workflows",
+      "state": "REPOSITORY_VERIFIED",
+      "exact_evidence": "Candidate-controlled application preparation/handoff exists; employer submission not claimed.",
+      "current_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+      "live_provider_verified": false,
+      "production_verified": false,
+      "known_gaps": [
+        "See exact donor row in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md; tracker access returns 401."
+      ],
+      "next_action": "Complete documented external/provider/browser/UAT gates when credentials and operator access are available."
+    },
+    {
+      "tracker_id": "RE-011",
+      "donor": "Camouflet / Terum Skills",
+      "candidate_journey_stage": "Mapped in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md",
+      "applyai_destination": "Canonical ApplyAI candidate/job/career/interview/governance workflows",
+      "state": "REPOSITORY_VERIFIED",
+      "exact_evidence": "Deterministic evaluation gates exist; real model baseline/cost/latency evidence absent.",
+      "current_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+      "live_provider_verified": false,
+      "production_verified": false,
+      "known_gaps": [
+        "See exact donor row in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md; tracker access returns 401."
+      ],
+      "next_action": "Complete documented external/provider/browser/UAT gates when credentials and operator access are available."
+    },
+    {
+      "tracker_id": "RE-208",
+      "donor": "ChannelPulse OSS",
+      "candidate_journey_stage": "Mapped in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md",
+      "applyai_destination": "Canonical ApplyAI candidate/job/career/interview/governance workflows",
+      "state": "PARTIAL_IMPLEMENTATION",
+      "exact_evidence": "Interview consent/retention/ownership/deletion phase exists; native capture/live STT incomplete.",
+      "current_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+      "live_provider_verified": false,
+      "production_verified": false,
+      "known_gaps": [
+        "See exact donor row in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md; tracker access returns 401."
+      ],
+      "next_action": "Complete documented external/provider/browser/UAT gates when credentials and operator access are available."
+    },
+    {
+      "tracker_id": "RE-216 / #74",
+      "donor": "European Tech Opportunities 2027",
+      "candidate_journey_stage": "Mapped in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md",
+      "applyai_destination": "Canonical ApplyAI candidate/job/career/interview/governance workflows",
+      "state": "REPOSITORY_IMPLEMENTED",
+      "exact_evidence": "Conservative source/lifecycle contracts exist; no live source receipt.",
+      "current_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+      "live_provider_verified": false,
+      "production_verified": false,
+      "known_gaps": [
+        "See exact donor row in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md; tracker access returns 401."
+      ],
+      "next_action": "Complete documented external/provider/browser/UAT gates when credentials and operator access are available."
+    },
+    {
+      "tracker_id": "RE-225",
+      "donor": "RemoteITJobs.net",
+      "candidate_journey_stage": "Mapped in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md",
+      "applyai_destination": "Canonical ApplyAI candidate/job/career/interview/governance workflows",
+      "state": "REPOSITORY_VERIFIED",
+      "exact_evidence": "ATS/authorized-feed evidence propagation and pre-scoring remote gate; 45 source tests + 3 endpoint tests; no live source receipt.",
+      "current_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+      "live_provider_verified": false,
+      "production_verified": false,
+      "known_gaps": [
+        "See exact donor row in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md; tracker access returns 401."
+      ],
+      "next_action": "Complete documented external/provider/browser/UAT gates when credentials and operator access are available."
+    },
+    {
+      "tracker_id": "RE-347 / #77",
+      "donor": "Openbound",
+      "candidate_journey_stage": "Mapped in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md",
+      "applyai_destination": "Canonical ApplyAI candidate/job/career/interview/governance workflows",
+      "state": "PARTIAL_IMPLEMENTATION",
+      "exact_evidence": "Sponsorship evidence phase-A contracts exist; live DOL ingestion and candidate correction journey unverified.",
+      "current_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+      "live_provider_verified": false,
+      "production_verified": false,
+      "known_gaps": [
+        "See exact donor row in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md; tracker access returns 401."
+      ],
+      "next_action": "Complete documented external/provider/browser/UAT gates when credentials and operator access are available."
+    },
+    {
+      "tracker_id": "RE-355 / #79",
+      "donor": "TexhPulze",
+      "candidate_journey_stage": "Mapped in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md",
+      "applyai_destination": "Canonical ApplyAI candidate/job/career/interview/governance workflows",
+      "state": "PARTIAL_IMPLEMENTATION",
+      "exact_evidence": "Evidence-locked claims and paginated PDF export; 27 backend + 2 UI tests; DOCX/hosted resume journey incomplete.",
+      "current_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+      "live_provider_verified": false,
+      "production_verified": false,
+      "known_gaps": [
+        "See exact donor row in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md; tracker access returns 401."
+      ],
+      "next_action": "Complete documented external/provider/browser/UAT gates when credentials and operator access are available."
+    },
+    {
+      "tracker_id": "JobPrime / #75",
+      "donor": "Job Radar autonomous discovery",
+      "candidate_journey_stage": "Mapped in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md",
+      "applyai_destination": "Canonical ApplyAI candidate/job/career/interview/governance workflows",
+      "state": "PARTIAL_IMPLEMENTATION",
+      "exact_evidence": "Persisted profiles/scans and durable workers; scheduled hosted receipts/live provider coverage unverified.",
+      "current_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+      "live_provider_verified": false,
+      "production_verified": false,
+      "known_gaps": [
+        "See exact donor row in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md; tracker access returns 401."
+      ],
+      "next_action": "Complete documented external/provider/browser/UAT gates when credentials and operator access are available."
+    },
+    {
+      "tracker_id": "RE-370 / #81",
+      "donor": "Workmark",
+      "candidate_journey_stage": "Mapped in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md",
+      "applyai_destination": "Canonical ApplyAI candidate/job/career/interview/governance workflows",
+      "state": "HOSTED_PREVIEW_VERIFIED",
+      "exact_evidence": "Bounded public GitHub metadata route on Preview; no private repo consent/persistence or production verification.",
+      "current_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+      "live_provider_verified": true,
+      "production_verified": false,
+      "known_gaps": [
+        "See exact donor row in docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md; tracker access returns 401."
+      ],
+      "next_action": "Complete documented external/provider/browser/UAT gates when credentials and operator access are available."
+    }
+  ],
+  "latest_evidence_checkpoint_sha": "33ce17fd8e579cf31d1028de386c9c14cca5f689"
+}

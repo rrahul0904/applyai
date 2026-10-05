@@ -15,7 +15,9 @@ from app.jobs.contracts import (
     JobSourceType,
     RawJobPosting,
     SourceTrustLevel,
+    normalize_facets,
     normalize_employment_type,
+    normalize_seniority,
     normalize_workplace_type,
 )
 from app.jobs.web_security import CrawlBudget, SafeHttpFetcher
@@ -89,7 +91,27 @@ DEFAULT_FIELD_MAP = {
     "salary_currency": "salary_currency",
     "salary_interval": "salary_interval",
     "requisition_id": "requisition_id",
+    "seniority": "seniority",
+    "tags": "tags",
+    "remote_scope": "remote_scope",
+    "eligible_countries": "eligible_countries",
+    "eligible_regions": "eligible_regions",
+    "source_updated_at": "source_updated_at",
 }
+
+
+def _string_values(value: Any) -> tuple[str, ...]:
+    if isinstance(value, str):
+        values = value.split(",")
+    elif isinstance(value, (tuple, list, set)):
+        values = value
+    else:
+        return ()
+    return tuple(
+        " ".join(item.split())[:120]
+        for item in values
+        if isinstance(item, str) and item.strip()
+    )[:40]
 
 
 class PartnerFeedConnector(JobSourceConnector):
@@ -242,6 +264,42 @@ class PartnerFeedConnector(JobSourceConnector):
             location_text = str(location_value or "").strip()
             locations = (location_text,) if location_text else ()
         requisition = str(_field(payload, self.field_map["requisition_id"]) or identifier).strip()
+        scope_value = _field(payload, self.field_map["remote_scope"])
+        scope = str(scope_value).strip().upper() if isinstance(scope_value, str) else None
+        if scope not in {"WORLDWIDE", "COUNTRY_RESTRICTED", "REGION_RESTRICTED", "UNKNOWN"}:
+            scope = None
+        countries = _string_values(_field(payload, self.field_map["eligible_countries"]))
+        regions = _string_values(_field(payload, self.field_map["eligible_regions"]))
+        tags = normalize_facets(_field(payload, self.field_map["tags"]))
+        source_updated_at = _parse_datetime(
+            _field(payload, self.field_map["source_updated_at"])
+            or payload.get("updated_at")
+            or payload.get("updatedAt")
+        )
+        trust_level = self.trust_level.value
+        source_metadata = {
+            "provider_key": self.provider_key,
+            "trust_level": trust_level,
+            "feed_format": self.feed_format,
+            "authorized_feed": True,
+            "work_mode": normalize_workplace_type(
+                str(_field(payload, self.field_map["workplace_type"]) or ""), locations
+            ),
+            "location": locations[0] if locations else None,
+            "remote_scope": scope,
+            "eligible_countries": countries,
+            "eligible_regions": regions,
+            "tags": tags,
+            "source_url": source_url,
+            "application_url": apply_url,
+            "source_updated_at": source_updated_at.isoformat() if source_updated_at else None,
+            "remote_restriction_provenance": {
+                "source_field": self.field_map["remote_scope"],
+                "country_field": self.field_map["eligible_countries"],
+                "region_field": self.field_map["eligible_regions"],
+                "authority": trust_level,
+            },
+        }
         return RawJobPosting(
             source_type=self.source_type,
             source_name=self.provider_key,
@@ -259,6 +317,9 @@ class PartnerFeedConnector(JobSourceConnector):
             employment_type=normalize_employment_type(
                 str(_field(payload, self.field_map["employment_type"]) or "")
             ),
+            seniority=normalize_seniority(
+                str(_field(payload, self.field_map["seniority"]) or "")
+            ),
             workplace_type=normalize_workplace_type(
                 str(_field(payload, self.field_map["workplace_type"]) or ""), locations
             ),
@@ -269,14 +330,10 @@ class PartnerFeedConnector(JobSourceConnector):
             salary_provenance="SOURCE_REPORTED",
             date_posted=_parse_datetime(_field(payload, self.field_map["posted_at"])),
             valid_through=_parse_datetime(_field(payload, self.field_map["valid_through"])),
+            source_updated_at=source_updated_at,
             fetched_at=_parse_datetime(payload.get("_applyai_fetched_at")),
             raw_payload=payload,
-            source_metadata={
-                "provider_key": self.provider_key,
-                "trust_level": self.trust_level.value,
-                "feed_format": self.feed_format,
-                "authorized_feed": True,
-            },
+            source_metadata=source_metadata,
         )
 
     def normalize(self, payload: dict[str, Any]) -> NormalizedJob:

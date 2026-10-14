@@ -3,7 +3,7 @@
   "product": "ApplyAI",
   "source_sha": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab",
   "branch": "codex/applyai-release-mission",
-  "recorded_at": "2026-10-13",
+  "recorded_at": "2026-10-14",
   "release_status": "NOT_PRODUCTION_READY",
   "production": {
     "web": "https://applyai-gold.vercel.app",
@@ -14,12 +14,18 @@
     "readiness": "HTTP 503"
   },
   "preview": {
-    "deployment_id": null,
-    "sha": "b2719b0efe41ad8cb85929912c8a7a9c3745dc06",
-    "url": null,
-    "represents_current_sha": false,
-    "status": "DEPLOYMENT_RATE_LIMITED",
-    "error": "Vercel deployment rate limited \u2014 retry in 24 hours."
+    "deployment_id": "CMvFHLeLpKokqXGJDnLdUEXmoRYa",
+    "sha": "fcda353f50e9217d3de1a0d51a9d0515f4fdeaa8",
+    "url": "https://applyai-git-codex-applyai-rele-f33155-rrahul0904-5013s-projects.vercel.app",
+    "represents_current_sha": true,
+    "deployment_status": "READY",
+    "root_http_status": 200,
+    "readiness_http_status": 200,
+    "runtime_ready": false,
+    "api_failure_class": "INVALID_READINESS_PAYLOAD",
+    "database_reachable": false,
+    "storage_configured": false,
+    "background_worker_configured": false
   },
   "migration_head_local": "d0v4z6s9w197",
   "promotion_authorized": false,
@@ -29,8 +35,9 @@
     "high": 0,
     "critical": 0
   },
-  "preview_build_status": "FAILED_RATE_LIMIT_CURRENT_HEAD",
-  "preview_build_attempt_sha": "b2719b0efe41ad8cb85929912c8a7a9c3745dc06",
+  "preview_build_status": "DEPLOYED_NOT_RUNTIME_READY",
+  "preview_build_attempt_sha": "fcda353f50e9217d3de1a0d51a9d0515f4fdeaa8",
   "integration_sha": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab",
-  "latest_preview_observed_sha": "ed571165194185c4b89a675dd5005a2f02c904e6"
+  "latest_preview_observed_sha": "fcda353f50e9217d3de1a0d51a9d0515f4fdeaa8",
+  "preview_build_error": null
 }

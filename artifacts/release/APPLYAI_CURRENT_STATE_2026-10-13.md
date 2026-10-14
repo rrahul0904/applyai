@@ -1,12 +1,12 @@
 # ApplyAI current release state
 
-Observed: 2026-10-14 local date; production probes returned HTTP dates 2026-10-14 02:12 UTC. Implementation code commit: `dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab` on `codex/applyai-release-mission`; local full API tests pass. PR #80 is being updated; fresh hosted checks/Preview pending.
+Observed: 2026-10-14 local date; production probes returned HTTP dates 2026-10-14 02:12 UTC. Implementation code commit: `dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab` on `codex/applyai-release-mission`; local full API tests pass. PR #80 evidence-tip `b2719b0efe41ad8cb85929912c8a7a9c3745dc06` has completed hosted code checks; its Vercel Preview is blocked by the project rate limit.
 
 ## Release truth
 
 ApplyAI is not production-ready. The latest observed successful Vercel Production deployment is GitHub deployment `6992311376`, source SHA `406ee1031158f5a108107df293e1100e0d0b4fcb`, branch `release/vercel-services`, URL `https://applyai-i07405rc8-rrahul0904-5013s-projects.vercel.app`. The configured web domain is `https://applyai-gold.vercel.app`. That production SHA is not `main` and this record does not establish a protected-main release.
 
-The latest observed integration Preview is Vercel deployment for exact PR head `ed571165194185c4b89a675dd5005a2f02c904e6` (alias `https://applyai-git-codex-applyai-rele-f33155-rrahul0904-5013s-projects.vercel.app`); it is not the newly updated candidate. The earlier inspected Preview deployment was GitHub deployment `7030380097`, source SHA `f2d12e51fca978d4ebeafb380ac7fa517b84868b`, PR #92 documentation branch, URL `https://applyai-ei37tx72f-rrahul0904-5013s-projects.vercel.app`. It does not represent the current implementation branch. The last exact PR #80 candidate head previously checked was `f4a36d0810ba67603a3eff1334aae6db1675a1a9`; it was open, non-draft, and required an independent approval. Its previous green checks do not certify subsequent source changes. The locally tested candidate `d9530a632af91fe3a7608240644bb42a20174c95` includes a follow-up patch for the three high-severity web dependency findings surfaced on the earlier exact head. PR #80 remote head before this update is `ed571165194185c4b89a675dd5005a2f02c904e6`; this candidate adds the verified browser-submission safety slice. PR #80 is open, non-draft, and `REVIEW_REQUIRED`.
+The latest observed integration Preview is Vercel deployment for older PR head `ed571165194185c4b89a675dd5005a2f02c904e6` (alias `https://applyai-git-codex-applyai-rele-f33155-rrahul0904-5013s-projects.vercel.app`); it is not the current candidate. The earlier inspected Preview deployment was GitHub deployment `7030380097`, source SHA `f2d12e51fca978d4ebeafb380ac7fa517b84868b`, PR #92 documentation branch, URL `https://applyai-ei37tx72f-rrahul0904-5013s-projects.vercel.app`. It does not represent the current implementation branch. The last exact PR #80 candidate head previously checked was `f4a36d0810ba67603a3eff1334aae6db1675a1a9`; it was open, non-draft, and required an independent approval. Its previous green checks do not certify subsequent source changes. The locally tested candidate `d9530a632af91fe3a7608240644bb42a20174c95` includes a follow-up patch for the three high-severity web dependency findings surfaced on the earlier exact head. PR #80 remote head before the implementation push was `ed571165194185c4b89a675dd5005a2f02c904e6`; implementation code is `dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab`, followed by evidence tip `b2719b0efe41ad8cb85929912c8a7a9c3745dc06`. Exact-head checks on that tip passed except the Vercel Preview deployment, which was rate limited. PR #80 remains open, non-draft, and `REVIEW_REQUIRED`.
 
 ## Live probes
 
@@ -14,7 +14,7 @@ At 2026-10-14 02:12 UTC, on the prior code head `ed571165194185c4b89a675dd5005a2
 
 - `GET https://applyai-gold.vercel.app/api/readiness` returned HTTP 503. JSON reported `runtime_ready=false`, `production_ready=false`, database and storage false, worker configuration false, Supabase instance mismatch, and operator configuration false. It reported `api_reachable=true`.
 - `GET https://applyai-api.vercel.app/ready` returned HTTP 503 with `NOT_READY`.
-- The disagreement means the deployed readiness route does not validate the upstream health contract correctly. A fail-closed schema/status validation fix is present in the working tree; it still needs exact-SHA Preview deployment and hosted verification.
+- The disagreement means the deployed readiness route does not validate the upstream health contract correctly. A fail-closed schema/status validation fix is present in the candidate source and passed exact-head hosted verification. The new candidate Preview was not deployed because Vercel returned its 24-hour rate-limit failure.
 - Production API commit, Alembic head, durable worker version/health, database provider identity, real authorized source inventory, authenticated candidate identity and human UAT are not exposed by the probes and remain unverified.
 
 ## Implementation changes under verification
@@ -43,7 +43,10 @@ The source-controlled target is Vercel web and API plus Supabase Auth/PostgreSQL
 1. Restore a healthy production API/database connection and confirm migrations at `d0v4z6s9w197` or newer on the production database.
 2. Configure and verify the matching Supabase project, private storage, production auth, and operator role through the owner-controlled Vercel/Supabase environments.
 3. Deploy an exact reviewed SHA to Preview, verify readiness and real authorized source ingestion, then complete authenticated candidate/operator journeys and human UAT.
-4. The earlier Vercel rate limit at `7700fe3a25466e9209402389dda8a33f08175958` was followed by a successful Preview deployment for `ed571165194185c4b89a675dd5005a2f02c904e6`. Push the current candidate to obtain a Preview for the browser-verification changes; its readiness must still be checked.
+4. Vercel returned “Deployment rate limited — retry in 24 hours” for current PR #80 evidence tip `b2719b0efe41ad8cb85929912c8a7a9c3745dc06`. After the account limit clears, deploy and verify this candidate Preview, including readiness and browser-worker runtime.
 5. Obtain the independent approval required by PR #80 branch protection before merge or production promotion.
 
 No credentials or provider state are inferred from repository files. No release or production promotion is authorized by this evidence record.
+
+
+Exact-head hosted validation on `b2719b0efe41ad8cb85929912c8a7a9c3745dc06`: all GitHub checks passed except Vercel; one bounded catalogue seed check was intentionally skipped. Browser verification contract/image, API tests/security, Playwright, fresh-clone certification, no-deploy predeploy certification, migrations, web build/tests/typecheck/lint, dependency audits, RLS, SAST, and scale checks passed. Vercel reported its 24-hour deployment rate limit. The current local evidence update records this result.

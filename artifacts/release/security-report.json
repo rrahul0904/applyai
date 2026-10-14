@@ -1,5 +1,5 @@
 {
-  "SAST": "PASS on preceding hosted head 7700fe3; reruns on new head pending",
+  "SAST": "PASS exact PR #80 head b2719b0; Python SAST passed.",
   "automated_tests": "API test suite includes SSRF, owner scoping, auth and privacy regression tests; full suite passed.",
   "dependency_audit": {
     "advisories": [],
@@ -22,14 +22,16 @@
   },
   "production_security_smoke": "NOT_RUN",
   "recorded_at": "2026-10-13",
-  "secret_scan": "PASS on preceding hosted head 7700fe3; reruns on new head pending",
+  "secret_scan": "PASS exact PR #80 head b2719b0; high-confidence secret pattern gate passed.",
   "source_sha": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab",
-  "status": "LOCAL_DEPENDENCY_AUDIT_PASS; HOSTED_GATES_PENDING",
+  "status": "LOCAL_AND_HOSTED_CODE_GATES_PASS; PREVIEW_BLOCKED_BY_VERCEL_RATE_LIMIT",
   "application_execution_security_tests": {
     "status": "PASS",
     "tested_sha": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab",
     "focused_tests": 11,
     "full_api_suite_passed": 450,
     "skipped": 1
-  }
+  },
+  "hosted_head": "b2719b0efe41ad8cb85929912c8a7a9c3745dc06",
+  "preview_deployment": "BLOCKED_RATE_LIMITED"
 }

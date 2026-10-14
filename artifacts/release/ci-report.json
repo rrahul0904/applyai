@@ -10,7 +10,7 @@
       "skipped": 1,
       "failed": 0,
       "database": "local PostgreSQL applyai_test at migration head d0v4z6s9w197",
-      "note": "Full suite completed on candidate code commit dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab; pytest collected 451 tests and reported one skip."
+      "note": "Full suite completed locally on implementation code commit dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab; pytest collected 451 tests and reported one skip."
     },
     {
       "name": "API focused ingestion regressions",
@@ -88,9 +88,20 @@
       "notes": "Exact-head API/web/security/scale workflows and Preview deployment passed. Preview readiness returned 200 but runtime_ready=false; API returned 200 with INVALID_READINESS_PAYLOAD."
     },
     {
-      "head_sha": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab",
-      "status": "PENDING_PUSH",
-      "notes": "Candidate source commit is local; push triggers exact-head hosted workflows and Preview deployment."
+      "head_sha": "b2719b0efe41ad8cb85929912c8a7a9c3745dc06",
+      "status": "PASS_WITH_VERCEL_PREVIEW_RATE_LIMIT",
+      "checks": {
+        "FAILURE": 1,
+        "SKIPPED": 1,
+        "SUCCESS": 37
+      },
+      "note": "Exact-head API, browser verification, web, security, clean-room, predeploy and scale checks passed. Vercel failed because the project is rate limited for 24 hours; no Preview for this head was created. Candidate source code SHA is dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab."
     }
-  ]
+  ],
+  "latest_hosted_head": "b2719b0efe41ad8cb85929912c8a7a9c3745dc06",
+  "latest_hosted_summary": {
+    "FAILURE": 1,
+    "SKIPPED": 1,
+    "SUCCESS": 37
+  }
 }

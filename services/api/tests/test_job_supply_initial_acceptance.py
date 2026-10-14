@@ -57,3 +57,21 @@ def test_initial_supply_acceptance_uses_cycle_receipt_for_bounded_source():
 
     assert report["status"] == "PASS"
     assert report["claim"] == "INITIAL_PRODUCTION_JOB_SUPPLY_VERIFIED"
+
+
+def test_missing_provenance_is_not_reported_as_employer_identity_collapse():
+    evidence = {
+        "database_schema_present": True,
+        "open_jobs_source_active": False,
+        "successful_open_jobs_run": False,
+        "completed_open_jobs_cycle": False,
+        "real_canonical_jobs": 0,
+        "latest_open_jobs_failed": 0,
+        "open_jobs_source_postings": 0,
+        "company_identity_preserved": False,
+    }
+
+    report = evaluate_initial_acceptance(evidence, min_jobs=1)
+
+    assert "No Open Jobs posting provenance was persisted." in report["blocking_dependencies"]
+    assert not any("identities appear collapsed" in item for item in report["blocking_dependencies"])

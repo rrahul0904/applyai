@@ -51,7 +51,7 @@ def evaluate_initial_acceptance(evidence: dict[str, Any], *, min_jobs: int) -> d
         blockers.append("The latest Open Jobs run contains failed postings.")
     if evidence["open_jobs_source_postings"] <= 0:
         blockers.append("No Open Jobs posting provenance was persisted.")
-    if not evidence["company_identity_preserved"]:
+    if evidence["open_jobs_source_postings"] > 0 and not evidence["company_identity_preserved"]:
         blockers.append("Open Jobs employer identities appear collapsed during canonicalization.")
 
     return {

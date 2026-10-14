@@ -209,7 +209,10 @@ class RegisteredSourceIngestionPipeline:
             "closed": 0,
         }
         try:
-            payloads = connector.fetch(None)
+            previous_checkpoint = dict(
+                (source.configuration or {}).get("connector_checkpoint") or {}
+            )
+            payloads = connector.fetch(previous_checkpoint or None)
         except Exception as exc:
             self._record_source_failure(source, run, exc, started_monotonic)
             raise
@@ -317,13 +320,36 @@ class RegisteredSourceIngestionPipeline:
                         "source_coverage_status": coverage.status.value,
                     },
                 )
-            run.status = "COMPLETED"
-            source.health_status = SourceHealthStatus.HEALTHY.value
-            source.consecutive_failures = 0
-            source.last_success_at = utcnow()
-            source.last_failure_at = None
-            source.last_error_category = None
-            source.last_error_summary = None
+            if coverage.status is CoverageStatus.COMPLETE:
+                run.status = "COMPLETED"
+                source.health_status = SourceHealthStatus.HEALTHY.value
+                source.consecutive_failures = 0
+                source.last_success_at = utcnow()
+                source.last_failure_at = None
+                source.last_error_category = None
+                source.last_error_summary = None
+            elif coverage.status is CoverageStatus.PARTIAL:
+                run.status = "PARTIAL"
+                source.health_status = SourceHealthStatus.DEGRADED.value
+                source.consecutive_failures += 1
+                source.last_failure_at = utcnow()
+                source.last_error_category = "INCOMPLETE_SOURCE_COVERAGE"
+                source.last_error_summary = "Source did not prove complete coverage"
+            elif coverage.status is CoverageStatus.FAILED:
+                run.status = "FAILED"
+                source.health_status = SourceHealthStatus.DEGRADED.value
+                source.consecutive_failures += 1
+                source.last_failure_at = utcnow()
+                source.last_error_category = "SOURCE_COVERAGE_FAILED"
+                source.last_error_summary = "Source reported failed coverage"
+            else:
+                run.status = "INCONCLUSIVE"
+                source.health_status = SourceHealthStatus.HEALTHY.value
+                source.consecutive_failures = 0
+                source.last_success_at = utcnow()
+                source.last_failure_at = None
+                source.last_error_category = None
+                source.last_error_summary = None
         else:
             run.status = "PARTIAL"
             source.health_status = SourceHealthStatus.DEGRADED.value
@@ -336,6 +362,13 @@ class RegisteredSourceIngestionPipeline:
         configuration = dict(source.configuration or {})
         coverage_details = coverage.as_dict()
         coverage_at = utcnow().isoformat()
+        if connector.checkpoint_advance_safe(
+            coverage_status=coverage.status.value,
+            processing_failures=counts["failed"],
+        ):
+            next_checkpoint = connector.checkpoint()
+            if isinstance(next_checkpoint, dict):
+                configuration["connector_checkpoint"] = dict(next_checkpoint)
         configuration["last_source_completeness"] = completeness.value
         configuration["last_source_completeness_at"] = coverage_at
         if coverage.status is CoverageStatus.COMPLETE:
@@ -348,7 +381,11 @@ class RegisteredSourceIngestionPipeline:
         self._finish_run(run, counts, started_monotonic)
         self.session.commit()
         logger.info(
-            "job_ingestion_completed" if run.status == "COMPLETED" else "job_ingestion_partial",
+            "job_ingestion_completed"
+            if run.status == "COMPLETED"
+            else "job_ingestion_inconclusive"
+            if run.status == "INCONCLUSIVE"
+            else "job_ingestion_partial",
             extra={
                 "source_id": str(source.id),
                 "run_id": str(run.id),

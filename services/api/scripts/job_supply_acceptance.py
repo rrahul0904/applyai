@@ -31,6 +31,17 @@ REPRESENTATIVE_PROVIDER_TYPES = {
 NON_LIVE_JOB_ORIGINS = {"DEVELOPMENT_SEED", "DEVELOPMENT_DATA"}
 
 
+def verified_provider_types(runs) -> set[str]:
+    return {
+        str(run.source_type or "").upper()
+        for run in runs
+        if run.status == "COMPLETED"
+        and run.coverage_status == "COMPLETE"
+        and run.fetched > 0
+        and run.valid > 0
+    }
+
+
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -102,16 +113,13 @@ def collect_evidence() -> dict[str, Any]:
                 .where(
                     JobIngestionRun.source_id.is_not(None),
                     JobIngestionRun.status == "COMPLETED",
+                    JobIngestionRun.coverage_status == "COMPLETE",
                     JobIngestionRun.source_type != "DEVELOPMENT_SEED",
                 )
                 .order_by(JobIngestionRun.started_at.desc())
             )
         )
-        provider_types_verified = {
-            str(run.source_type or "").upper()
-            for run in completed_runs
-            if run.fetched > 0 and run.valid > 0
-        }
+        provider_types_verified = verified_provider_types(completed_runs)
         real_canonical_jobs = int(
             session.scalar(
                 select(func.count(Job.id)).where(

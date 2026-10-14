@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { backendReadiness } from "./backend-readiness";
 import { clerkPublishableKeyInstanceFingerprint } from "@/lib/auth/clerk-instance";
 import { supabaseProjectFingerprint } from "@/lib/auth/supabase-instance";
 import {
@@ -13,63 +14,6 @@ function keyMode(value: string | undefined, livePrefix: string, testPrefix: stri
   return "unknown" as const;
 }
 
-async function backendReadiness(apiUrl: string | undefined) {
-  const empty = {
-    reachable: false,
-    databaseReachable: false,
-    operatorConfigured: false,
-    operatorAuthLocation: "",
-    storageConfigured: false,
-    backgroundWorkerConfigured: false,
-    authProvider: "",
-    clerkFingerprint: "",
-    supabaseFingerprint: "",
-  };
-  if (!apiUrl) return empty;
-  try {
-    const response = await fetch(new URL("/ready", apiUrl), {
-      cache: "no-store",
-      signal: AbortSignal.timeout(3_000),
-    });
-    if (!response.ok) return empty;
-    const payload = (await response.json().catch(() => null)) as
-      | {
-          database_reachable?: boolean;
-          operator_auth_configured?: boolean;
-          operator_auth_location?: string;
-          storage_configured?: boolean;
-          background_worker_configured?: boolean;
-          auth_provider?: string;
-          clerk_instance_fingerprint?: string;
-          supabase_project_fingerprint?: string;
-        }
-      | null;
-    return {
-      reachable: true,
-      databaseReachable: payload?.database_reachable === true,
-      operatorConfigured: payload?.operator_auth_configured === true,
-      operatorAuthLocation:
-        typeof payload?.operator_auth_location === "string"
-          ? payload.operator_auth_location
-          : "",
-      storageConfigured: payload?.storage_configured === true,
-      backgroundWorkerConfigured:
-        payload?.background_worker_configured === true,
-      authProvider:
-        typeof payload?.auth_provider === "string" ? payload.auth_provider : "",
-      clerkFingerprint:
-        typeof payload?.clerk_instance_fingerprint === "string"
-          ? payload.clerk_instance_fingerprint
-          : "",
-      supabaseFingerprint:
-        typeof payload?.supabase_project_fingerprint === "string"
-          ? payload.supabase_project_fingerprint
-          : "",
-    };
-  } catch {
-    return empty;
-  }
-}
 
 export async function GET() {
   const apiConfigured = Boolean(process.env.APPLYAI_API_URL);
@@ -144,6 +88,9 @@ export async function GET() {
       checks: {
         api_configured: apiConfigured,
         api_reachable: backend.reachable,
+        api_contract_valid: backend.contractValid,
+        api_upstream_status: backend.upstreamStatus,
+        api_failure_class: backend.failureClass,
         database_reachable: backend.databaseReachable,
         storage_configured: backend.storageConfigured,
         background_worker_configured: backend.backgroundWorkerConfigured,

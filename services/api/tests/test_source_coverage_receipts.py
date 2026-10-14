@@ -51,6 +51,21 @@ class InconclusiveConnector(JobSourceConnector):
         return ConnectorHealth(True, datetime.now(timezone.utc), "synthetic")
 
 
+class CheckpointConnector(InconclusiveConnector):
+    key = "synthetic-ats-checkpoint"
+    authoritative_snapshot = True
+
+    def __init__(self):
+        self.received_checkpoint = None
+
+    def fetch(self, checkpoint):
+        self.received_checkpoint = checkpoint
+        return []
+
+    def checkpoint(self):
+        return {"etag": '"next"', "last_modified": "Tue, 13 Oct 2026 12:00:00 GMT"}
+
+
 class FailedConnector(InconclusiveConnector):
     key = "synthetic-ats-failed"
 
@@ -132,6 +147,8 @@ def test_partial_or_inconclusive_fetch_cannot_expire_unseen_jobs(database_url, c
                 session,
                 source_key=connector.key,
             )
+            registry.configuration = {"connector_checkpoint": {"etag": '"previous"'}}
+            session.flush()
             counts = RegisteredSourceIngestionPipeline(session).run(registry, connector)
 
             assert counts["closed"] == 0
@@ -148,6 +165,44 @@ def test_partial_or_inconclusive_fetch_cannot_expire_unseen_jobs(database_url, c
             assert run.coverage_status == expected.value
             assert run.coverage_details["status"] == expected.value
             assert registry.configuration["last_source_coverage"]["status"] == expected.value
+            assert registry.configuration["connector_checkpoint"] == {"etag": '"previous"'}
+            assert run.status == ("PARTIAL" if expected is CoverageStatus.PARTIAL else "INCONCLUSIVE")
+    finally:
+        engine.dispose()
+
+
+def test_complete_fetch_uses_saved_checkpoint_and_persists_next_checkpoint(database_url):
+    engine = create_engine(database_url)
+    try:
+        with Session(engine) as session:
+            connector = CheckpointConnector()
+            registry = JobSourceRegistry(
+                source_type="CAREER_SITE",
+                source_name="Checkpoint test",
+                source_identity="checkpoint.example",
+                configuration={"connector_checkpoint": {"etag": '"previous"'}},
+                trust_level="EMPLOYER_CAREER_SITE",
+                enabled=True,
+                crawl_allowed=True,
+                health_status="HEALTHY",
+                crawl_interval_seconds=21_600,
+                min_interval_seconds=900,
+                max_interval_seconds=604_800,
+            )
+            session.add(registry)
+            session.commit()
+
+            RegisteredSourceIngestionPipeline(session).run(registry, connector)
+
+            assert connector.received_checkpoint == {"etag": '"previous"'}
+            assert registry.configuration["connector_checkpoint"] == {
+                "etag": '"next"',
+                "last_modified": "Tue, 13 Oct 2026 12:00:00 GMT",
+            }
+            run = session.scalar(
+                select(JobIngestionRun).where(JobIngestionRun.source_id == registry.id)
+            )
+            assert run is not None and run.status == "COMPLETED"
     finally:
         engine.dispose()
 

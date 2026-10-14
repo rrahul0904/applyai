@@ -224,6 +224,9 @@ class PartnerFeedConnector(JobSourceConnector):
         if result.status_code == 304:
             self._last_fetch_at = datetime.now(timezone.utc)
             self._last_count = 0
+            self._last_final_url = result.final_url
+            self._last_etag = result.etag or checkpoint.get("etag")
+            self._last_modified = result.last_modified or checkpoint.get("last_modified")
             return []
         if result.status_code >= 400:
             raise ValueError(f"Partner feed returned HTTP {result.status_code}")
@@ -372,6 +375,20 @@ class PartnerFeedConnector(JobSourceConnector):
             "last_modified": self._last_modified,
             "authoritative_snapshot": self._authoritative_snapshot,
         }
+
+    def checkpoint_advance_safe(
+        self,
+        *,
+        coverage_status: str,
+        processing_failures: int,
+    ) -> bool:
+        # Partner feeds are non-authoritative for closure by default, but a fully parsed
+        # response (including HTTP 304) is a safe point to persist its HTTP validators.
+        # Known partial coverage or record-processing failures must keep the old validators.
+        return (
+            coverage_status in {"COMPLETE", "INCONCLUSIVE"}
+            and processing_failures == 0
+        )
 
     def health(self) -> ConnectorHealth:
         return ConnectorHealth(

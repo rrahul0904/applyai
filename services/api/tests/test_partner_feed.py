@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -77,6 +78,43 @@ def test_authorized_json_feed_maps_configured_fields_and_provenance():
     assert normalized.raw_payload["data_origin"] == "AUTHORIZED_LICENSED_FEED"
     assert connector.authoritative_snapshot is True
     assert connector.checkpoint()["etag"] == '"v1"'
+
+
+def test_not_modified_feed_preserves_validators_for_safe_checkpoint_advance():
+    class NotModifiedFetcher:
+        def fetch(self, url, **kwargs):
+            self.url = url
+            self.headers = kwargs
+            return SimpleNamespace(
+                status_code=304,
+                final_url=url,
+                etag=None,
+                last_modified=None,
+            )
+
+        def close(self):
+            pass
+
+    fetcher = NotModifiedFetcher()
+    connector = PartnerFeedConnector(
+        feed_url="https://feeds.example.com/jobs.json",
+        source_identity="example-feed",
+        provider_key="partner-example",
+        fetcher=fetcher,
+    )
+    previous = {"etag": '"v1"', "last_modified": "Mon, 12 Oct 2026 12:00:00 GMT"}
+
+    assert connector.fetch(previous) == []
+    checkpoint = connector.checkpoint()
+
+    assert fetcher.headers["etag"] == '"v1"'
+    assert fetcher.headers["last_modified"] == previous["last_modified"]
+    assert checkpoint["etag"] == previous["etag"]
+    assert checkpoint["last_modified"] == previous["last_modified"]
+    assert connector.checkpoint_advance_safe(
+        coverage_status="INCONCLUSIVE",
+        processing_failures=0,
+    )
 
 
 def test_authorized_xml_feed_parses_rss_items():

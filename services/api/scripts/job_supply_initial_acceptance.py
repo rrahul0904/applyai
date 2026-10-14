@@ -115,6 +115,7 @@ def collect_evidence() -> dict[str, Any]:
             "successful_open_jobs_run": bool(
                 latest_run
                 and latest_run.status == "COMPLETED"
+                and latest_run.coverage_status == "COMPLETE"
                 and latest_run.fetched > 0
                 and latest_run.valid > 0
                 and latest_run.failed == 0

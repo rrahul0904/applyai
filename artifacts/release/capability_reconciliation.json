@@ -1,0 +1,1101 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-10-13",
+  "repository": "rrahul0904/applyai",
+  "integration_base_sha": "406ee1031158f5a108107df293e1100e0d0b4fcb",
+  "working_tree_changes_uncommitted_at_recording": false,
+  "production_release_ready": false,
+  "records": [
+    {
+      "source": "Pinloop / Job Radar",
+      "references": [
+        "RE-001",
+        "RE-012"
+      ],
+      "evidence": {
+        "summary": "canonical Radar scans, watches and persistence; scheduled live inventory unverified",
+        "references": [
+          "artifacts/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md",
+          "services/api/app/jobs/"
+        ]
+      },
+      "repository_implementation": {
+        "status": "PARTIAL",
+        "paths": [
+          "services/api/app/jobs/",
+          "apps/web/app/"
+        ],
+        "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+      },
+      "api": {
+        "status": "see_repository_evidence"
+      },
+      "ui": {
+        "status": "see_repository_evidence"
+      },
+      "tests": [
+        "repository tests recorded in evidence documents"
+      ],
+      "deployed_verification": {
+        "status": "NOT_VERIFIED",
+        "production_verified": false,
+        "preview_sha_verified": false
+      },
+      "decision": "MATCH",
+      "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+    },
+    {
+      "source": "DreamworkHQ",
+      "references": [
+        "RE-002"
+      ],
+      "evidence": {
+        "summary": "Candidate-scoped MCP and guarded workflows exist; external OAuth handshake not hosted-verified",
+        "references": [
+          "docs/reverse-engineering/dreamwork.md"
+        ]
+      },
+      "repository_implementation": {
+        "status": "PARTIAL",
+        "paths": [
+          "services/api/app/agents/",
+          "apps/web/app/api/"
+        ],
+        "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+      },
+      "api": {
+        "status": "see_repository_evidence"
+      },
+      "ui": {
+        "status": "see_repository_evidence"
+      },
+      "tests": [
+        "repository tests recorded in evidence documents"
+      ],
+      "deployed_verification": {
+        "status": "NOT_VERIFIED",
+        "production_verified": false,
+        "preview_sha_verified": false
+      },
+      "decision": "MATCH",
+      "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+    },
+    {
+      "source": "Websumes",
+      "references": [
+        "RE-003"
+      ],
+      "evidence": {
+        "summary": "Unified candidate career workspace and resume/application workflow",
+        "references": [
+          "artifacts/release/capability-ledger.json"
+        ]
+      },
+      "repository_implementation": {
+        "status": "PARTIAL",
+        "paths": [
+          "apps/web/app/",
+          "services/api/app/"
+        ],
+        "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+      },
+      "api": {
+        "status": "see_repository_evidence"
+      },
+      "ui": {
+        "status": "see_repository_evidence"
+      },
+      "tests": [
+        "repository tests recorded in evidence documents"
+      ],
+      "deployed_verification": {
+        "status": "NOT_VERIFIED",
+        "production_verified": false,
+        "preview_sha_verified": false
+      },
+      "decision": "MATCH",
+      "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+    },
+    {
+      "source": "JAN",
+      "references": [
+        "RE-004"
+      ],
+      "evidence": {
+        "summary": "Evidence-backed Recruiter Lens criteria",
+        "references": [
+          "artifacts/release/capability-ledger.json"
+        ]
+      },
+      "repository_implementation": {
+        "status": "PARTIAL",
+        "paths": [
+          "apps/web/app/",
+          "services/api/app/"
+        ],
+        "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+      },
+      "api": {
+        "status": "see_repository_evidence"
+      },
+      "ui": {
+        "status": "see_repository_evidence"
+      },
+      "tests": [
+        "repository tests recorded in evidence documents"
+      ],
+      "deployed_verification": {
+        "status": "NOT_VERIFIED",
+        "production_verified": false,
+        "preview_sha_verified": false
+      },
+      "decision": "MATCH",
+      "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+    },
+    {
+      "source": "ResumeShareIQ",
+      "references": [
+        "RE-005"
+      ],
+      "evidence": {
+        "summary": "Privacy-preserving resume sharing and engagement signals",
+        "references": [
+          "artifacts/release/capability-ledger.json"
+        ]
+      },
+      "repository_implementation": {
+        "status": "PARTIAL",
+        "paths": [
+          "apps/web/app/",
+          "services/api/app/"
+        ],
+        "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+      },
+      "api": {
+        "status": "see_repository_evidence"
+      },
+      "ui": {
+        "status": "see_repository_evidence"
+      },
+      "tests": [
+        "repository tests recorded in evidence documents"
+      ],
+      "deployed_verification": {
+        "status": "NOT_VERIFIED",
+        "production_verified": false,
+        "preview_sha_verified": false
+      },
+      "decision": "MATCH",
+      "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+    },
+    {
+      "source": "Skilize",
+      "references": [
+        "RE-006"
+      ],
+      "evidence": {
+        "summary": "Skill gap and readiness preparation surfaces",
+        "references": [
+          "artifacts/release/capability-ledger.json"
+        ]
+      },
+      "repository_implementation": {
+        "status": "PARTIAL",
+        "paths": [
+          "apps/web/app/",
+          "services/api/app/"
+        ],
+        "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+      },
+      "api": {
+        "status": "see_repository_evidence"
+      },
+      "ui": {
+        "status": "see_repository_evidence"
+      },
+      "tests": [
+        "repository tests recorded in evidence documents"
+      ],
+      "deployed_verification": {
+        "status": "NOT_VERIFIED",
+        "production_verified": false,
+        "preview_sha_verified": false
+      },
+      "decision": "MATCH",
+      "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+    },
+    {
+      "source": "Hirecast",
+      "references": [
+        "RE-007"
+      ],
+      "evidence": {
+        "summary": "Interview session and preparation flows",
+        "references": [
+          "artifacts/release/capability-ledger.json"
+        ]
+      },
+      "repository_implementation": {
+        "status": "PARTIAL",
+        "paths": [
+          "apps/web/app/",
+          "services/api/app/"
+        ],
+        "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+      },
+      "api": {
+        "status": "see_repository_evidence"
+      },
+      "ui": {
+        "status": "see_repository_evidence"
+      },
+      "tests": [
+        "repository tests recorded in evidence documents"
+      ],
+      "deployed_verification": {
+        "status": "NOT_VERIFIED",
+        "production_verified": false,
+        "preview_sha_verified": false
+      },
+      "decision": "MATCH",
+      "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+    },
+    {
+      "source": "Hack2Hire",
+      "references": [
+        "RE-008"
+      ],
+      "evidence": {
+        "summary": "Coding/interview practice capabilities",
+        "references": [
+          "artifacts/release/capability-ledger.json"
+        ]
+      },
+      "repository_implementation": {
+        "status": "PARTIAL",
+        "paths": [
+          "apps/web/app/",
+          "services/api/app/"
+        ],
+        "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+      },
+      "api": {
+        "status": "see_repository_evidence"
+      },
+      "ui": {
+        "status": "see_repository_evidence"
+      },
+      "tests": [
+        "repository tests recorded in evidence documents"
+      ],
+      "deployed_verification": {
+        "status": "NOT_VERIFIED",
+        "production_verified": false,
+        "preview_sha_verified": false
+      },
+      "decision": "MATCH",
+      "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+    },
+    {
+      "source": "ai-job-search",
+      "references": [
+        "RE-009"
+      ],
+      "evidence": {
+        "summary": "Job discovery, ingestion and matching concepts; original repository provenance only",
+        "references": [
+          "artifacts/release/capability-ledger.json"
+        ]
+      },
+      "repository_implementation": {
+        "status": "PARTIAL",
+        "paths": [
+          "services/api/app/jobs/",
+          "apps/web/app/"
+        ],
+        "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+      },
+      "api": {
+        "status": "see_repository_evidence"
+      },
+      "ui": {
+        "status": "see_repository_evidence"
+      },
+      "tests": [
+        "repository tests recorded in evidence documents"
+      ],
+      "deployed_verification": {
+        "status": "NOT_VERIFIED",
+        "production_verified": false,
+        "preview_sha_verified": false
+      },
+      "decision": "MATCH",
+      "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+    },
+    {
+      "source": "jobber",
+      "references": [
+        "RE-010"
+      ],
+      "evidence": {
+        "summary": "Opportunity and application lifecycle concepts in canonical ApplyAI workflows",
+        "references": [
+          "artifacts/release/capability-ledger.json"
+        ]
+      },
+      "repository_implementation": {
+        "status": "PARTIAL",
+        "paths": [
+          "services/api/app/",
+          "apps/web/app/"
+        ],
+        "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+      },
+      "api": {
+        "status": "see_repository_evidence"
+      },
+      "ui": {
+        "status": "see_repository_evidence"
+      },
+      "tests": [
+        "repository tests recorded in evidence documents"
+      ],
+      "deployed_verification": {
+        "status": "NOT_VERIFIED",
+        "production_verified": false,
+        "preview_sha_verified": false
+      },
+      "decision": "MATCH",
+      "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+    },
+    {
+      "source": "Camouflet Skills / Terum",
+      "references": [
+        "RE-011"
+      ],
+      "evidence": {
+        "summary": "Governed skill/evaluation/provenance contracts",
+        "references": [
+          "artifacts/release/capability-ledger.json"
+        ]
+      },
+      "repository_implementation": {
+        "status": "PARTIAL",
+        "paths": [
+          "services/api/app/",
+          "artifacts/release/"
+        ],
+        "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+      },
+      "api": {
+        "status": "see_repository_evidence"
+      },
+      "ui": {
+        "status": "see_repository_evidence"
+      },
+      "tests": [
+        "repository tests recorded in evidence documents"
+      ],
+      "deployed_verification": {
+        "status": "NOT_VERIFIED",
+        "production_verified": false,
+        "preview_sha_verified": false
+      },
+      "decision": "MATCH",
+      "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+    },
+    {
+      "source": "RemoteITJobs.net",
+      "references": [
+        "RE-225"
+      ],
+      "evidence": {
+        "summary": "Remote eligibility and source provenance contracts; no live donor crawl",
+        "references": [
+          "docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md",
+          "artifacts/release/remote-eligibility.json"
+        ]
+      },
+      "repository_implementation": {
+        "status": "PARTIAL",
+        "paths": [
+          "services/api/app/jobs/"
+        ],
+        "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+      },
+      "api": {
+        "status": "see_repository_evidence"
+      },
+      "ui": {
+        "status": "see_repository_evidence"
+      },
+      "tests": [
+        "repository tests recorded in evidence documents"
+      ],
+      "deployed_verification": {
+        "status": "NOT_VERIFIED",
+        "production_verified": false,
+        "preview_sha_verified": false
+      },
+      "decision": "MATCH",
+      "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+    },
+    {
+      "source": "Openbound",
+      "references": [
+        "RE-347",
+        "Issue #77",
+        "PR #78"
+      ],
+      "evidence": {
+        "summary": "Sponsorship evidence contracts and synthetic tests; live DOL source and correction journey unverified",
+        "references": [
+          "docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md"
+        ]
+      },
+      "repository_implementation": {
+        "status": "PARTIAL",
+        "paths": [
+          "services/api/app/"
+        ],
+        "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+      },
+      "api": {
+        "status": "see_repository_evidence"
+      },
+      "ui": {
+        "status": "see_repository_evidence"
+      },
+      "tests": [
+        "repository tests recorded in evidence documents"
+      ],
+      "deployed_verification": {
+        "status": "NOT_VERIFIED",
+        "production_verified": false,
+        "preview_sha_verified": false
+      },
+      "decision": "MATCH",
+      "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585",
+      "source_head_sha": "bb402e74556b465785cd0878a21c887113bf2f44"
+    },
+    {
+      "source": "TexhPulze / Flash Resume",
+      "references": [
+        "RE-355",
+        "Issue #79"
+      ],
+      "evidence": {
+        "summary": "Evidence-locked tailoring and PDF behavior; DOCX/full entailment/hosted journey remain gaps",
+        "references": [
+          "docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md",
+          "artifacts/release/resume-tailoring.json"
+        ]
+      },
+      "repository_implementation": {
+        "status": "PARTIAL",
+        "paths": [
+          "services/api/app/",
+          "apps/web/app/"
+        ],
+        "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+      },
+      "api": {
+        "status": "see_repository_evidence"
+      },
+      "ui": {
+        "status": "see_repository_evidence"
+      },
+      "tests": [
+        "repository tests recorded in evidence documents"
+      ],
+      "deployed_verification": {
+        "status": "NOT_VERIFIED",
+        "production_verified": false,
+        "preview_sha_verified": false
+      },
+      "decision": "MATCH",
+      "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+    },
+    {
+      "source": "JobPrime",
+      "references": [
+        "Issue #75",
+        "PR #76"
+      ],
+      "evidence": {
+        "summary": "Persisted scan/profile and deterministic provider contract; live provider search and scheduled delivery unverified",
+        "references": [
+          "docs/reverse-engineering/JOBPRIME_JOB_RADAR.md"
+        ]
+      },
+      "repository_implementation": {
+        "status": "PARTIAL",
+        "paths": [
+          "services/api/app/",
+          "apps/web/app/"
+        ],
+        "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+      },
+      "api": {
+        "status": "see_repository_evidence"
+      },
+      "ui": {
+        "status": "see_repository_evidence"
+      },
+      "tests": [
+        "repository tests recorded in evidence documents"
+      ],
+      "deployed_verification": {
+        "status": "NOT_VERIFIED",
+        "production_verified": false,
+        "preview_sha_verified": false
+      },
+      "decision": "MATCH",
+      "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585",
+      "source_head_sha": "4c8a0fce91aecd0aedc6ad3611eae2ed5496110a"
+    },
+    {
+      "source": "European Tech Opportunities",
+      "references": [
+        "RE-216",
+        "Issue #74"
+      ],
+      "evidence": {
+        "summary": "Lifecycle/provenance contracts; live authorized source receipt absent",
+        "references": [
+          "docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md"
+        ]
+      },
+      "repository_implementation": {
+        "status": "PARTIAL",
+        "paths": [
+          "services/api/app/jobs/"
+        ],
+        "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+      },
+      "api": {
+        "status": "see_repository_evidence"
+      },
+      "ui": {
+        "status": "see_repository_evidence"
+      },
+      "tests": [
+        "repository tests recorded in evidence documents"
+      ],
+      "deployed_verification": {
+        "status": "NOT_VERIFIED",
+        "production_verified": false,
+        "preview_sha_verified": false
+      },
+      "decision": "MATCH",
+      "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+    },
+    {
+      "source": "ChannelPulse",
+      "references": [
+        "PR #73",
+        "RE-208"
+      ],
+      "evidence": [
+        "docs/reverse-engineering/channelpulse.md",
+        "PR #73"
+      ],
+      "repository_implementation": {
+        "status": "PARTIAL",
+        "paths": "Session/privacy research is represented in integration candidate; native audio/screen capture is not included; clean-room boundaries retained",
+        "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+      },
+      "api": {
+        "status": "see_repository_evidence"
+      },
+      "ui": {
+        "status": "see_repository_evidence"
+      },
+      "tests": [
+        "services/api/app/",
+        "apps/web/app/"
+      ],
+      "deployed_verification": {
+        "status": "406ee1031158f5a108107df293e1100e0d0b4fcb",
+        "production_verified": false,
+        "preview_sha_verified": false
+      },
+      "decision": "OMIT_NATIVE_CAPTURE; MATCH_SESSION_CONTRACT",
+      "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585",
+      "source_head_sha": "a0d580231d3e2e5be1a11c0529dcb1fb8db7e6a2"
+    },
+    {
+      "source": "Workmark",
+      "references": [
+        "Issue #81",
+        "PR #82",
+        "RE-370"
+      ],
+      "evidence": [
+        "PR #82",
+        "docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md"
+      ],
+      "repository_implementation": {
+        "status": "PARTIAL",
+        "paths": "Bounded public GitHub metadata scan/UI/API in integration candidate; persistence/private consent/full matching absent",
+        "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585"
+      },
+      "api": {
+        "status": "see_repository_evidence"
+      },
+      "ui": {
+        "status": "see_repository_evidence"
+      },
+      "tests": [
+        "services/api/app/",
+        "apps/web/app/"
+      ],
+      "deployed_verification": {
+        "status": "406ee1031158f5a108107df293e1100e0d0b4fcb",
+        "production_verified": false,
+        "preview_sha_verified": false
+      },
+      "decision": "MATCH",
+      "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585",
+      "source_head_sha": "f7321e8cb330da5c0102a0fe3ea48e95f71a1ae5"
+    },
+    {
+      "source": "Verified browser submission",
+      "references": [
+        "PR #83"
+      ],
+      "evidence": [
+        "PR #83",
+        "origin/feat/jev-verified-application-submit"
+      ],
+      "repository_implementation": {
+        "status": "NOT_INTEGRATED",
+        "paths": "Candidate-approved read-back and AUTO/MANUAL/SKIP guards exist on donor branch, absent from integration candidate; no live provider execution",
+        "exact_commit": [],
+        "source_commit": "f611c8fd43e20a5ae8893b0b9b61d244812f6cca"
+      },
+      "api": {
+        "status": "not_integrated"
+      },
+      "ui": {
+        "status": "not_integrated"
+      },
+      "tests": [
+        "services/api/app/applications/",
+        "apps/web/app/"
+      ],
+      "deployed_verification": {
+        "status": null,
+        "production_verified": false,
+        "preview_sha_verified": false
+      },
+      "decision": "NEEDS_REIMPLEMENTATION",
+      "exact_commit": [],
+      "source_head_sha": "f611c8fd43e20a5ae8893b0b9b61d244812f6cca"
+    },
+    {
+      "source": "OpenApplyr",
+      "references": [
+        "Issue #84",
+        "PR #85"
+      ],
+      "evidence": [
+        "PR #85",
+        "Issue #84"
+      ],
+      "repository_implementation": {
+        "status": "DOCUMENTATION_ONLY",
+        "paths": "No integrated factuality/eligibility/routing/pacing/dedupe/receipt delta certified",
+        "exact_commit": []
+      },
+      "api": {
+        "status": "not_integrated"
+      },
+      "ui": {
+        "status": "not_integrated"
+      },
+      "tests": [
+        "docs/",
+        "artifacts/release/"
+      ],
+      "deployed_verification": {
+        "status": null,
+        "production_verified": false,
+        "preview_sha_verified": false
+      },
+      "decision": "OMIT_DUPLICATE_PRODUCT; GAP_REVIEW_REQUIRED",
+      "exact_commit": [],
+      "source_head_sha": "f41f01eb652c0ddf93f947d19f6fdfb19ab68b45"
+    },
+    {
+      "source": "Rezumite",
+      "references": [
+        "Issue #87",
+        "PR #88"
+      ],
+      "evidence": [
+        "PR #88",
+        "Issue #87"
+      ],
+      "repository_implementation": {
+        "status": "DOCUMENTATION_ONLY",
+        "paths": "Career Site publish workflow not implemented by donor PR; no verified integration",
+        "exact_commit": []
+      },
+      "api": {
+        "status": "not_integrated"
+      },
+      "ui": {
+        "status": "not_integrated"
+      },
+      "tests": [
+        "docs/",
+        "apps/web/app/"
+      ],
+      "deployed_verification": {
+        "status": null,
+        "production_verified": false,
+        "preview_sha_verified": false
+      },
+      "decision": "DEFER",
+      "exact_commit": [],
+      "source_head_sha": "021002df3b013f72001654a1d9bb12b0abe87810"
+    },
+    {
+      "source": "Applied",
+      "references": [
+        "PR #89"
+      ],
+      "evidence": [
+        "PR #89"
+      ],
+      "repository_implementation": {
+        "status": "DOCUMENTATION_ONLY",
+        "paths": "No distinct integrated capability delta verified",
+        "exact_commit": []
+      },
+      "api": {
+        "status": "not_integrated"
+      },
+      "ui": {
+        "status": "not_integrated"
+      },
+      "tests": [
+        "docs/",
+        "artifacts/release/"
+      ],
+      "deployed_verification": {
+        "status": null,
+        "production_verified": false,
+        "preview_sha_verified": false
+      },
+      "decision": "OMIT_DUPLICATE_PRODUCT; GAP_REVIEW_REQUIRED",
+      "exact_commit": [],
+      "source_head_sha": "0f8f19dd91de2ec7e4a3f5437a7552f06134378e"
+    },
+    {
+      "source": "LucidCV",
+      "references": [],
+      "evidence": [
+        "# LucidCV donor in mission"
+      ],
+      "repository_implementation": {
+        "status": "NOT_VERIFIED",
+        "paths": "Resume lineage/rendering capabilities require separate evidence and implementation audit",
+        "exact_commit": []
+      },
+      "api": {
+        "status": "not_integrated"
+      },
+      "ui": {
+        "status": "not_integrated"
+      },
+      "tests": [],
+      "deployed_verification": {
+        "status": null,
+        "production_verified": false,
+        "preview_sha_verified": false
+      },
+      "decision": "GAP_REVIEW_REQUIRED",
+      "exact_commit": []
+    },
+    {
+      "source": "Aidemy / AI interview-practice donors",
+      "references": [],
+      "evidence": [
+        "# Aidemy donor in mission"
+      ],
+      "repository_implementation": {
+        "status": "NOT_VERIFIED",
+        "paths": "Existing Hirecast/Hack2Hire/Skilize overlap not yet demonstrated as a distinct gap",
+        "exact_commit": []
+      },
+      "api": {
+        "status": "not_integrated"
+      },
+      "ui": {
+        "status": "not_integrated"
+      },
+      "tests": [],
+      "deployed_verification": {
+        "status": null,
+        "production_verified": false,
+        "preview_sha_verified": false
+      },
+      "decision": "DEFER_UNTIL_GAP_AUDIT",
+      "exact_commit": []
+    },
+    {
+      "source": "RE-394 decision-maker intelligence",
+      "references": [
+        "RE-394"
+      ],
+      "evidence": [
+        "# RE-394 donor in mission"
+      ],
+      "repository_implementation": {
+        "status": "NOT_VERIFIED",
+        "paths": "No private contact scraping; evidence-backed decision-maker mapping not production verified",
+        "exact_commit": []
+      },
+      "api": {
+        "status": "not_integrated"
+      },
+      "ui": {
+        "status": "not_integrated"
+      },
+      "tests": [],
+      "deployed_verification": {
+        "status": null,
+        "production_verified": false,
+        "preview_sha_verified": false
+      },
+      "decision": "GAP_REVIEW_REQUIRED",
+      "exact_commit": []
+    },
+    {
+      "source": "European Tech Opportunities lifecycle",
+      "references": [
+        "RE-216",
+        "Issue #74"
+      ],
+      "evidence": [
+        "docs/release/APPLYAI_FINAL_CONVERGENCE_REPORT.md"
+      ],
+      "repository_implementation": {
+        "status": "PARTIAL",
+        "paths": "Single canonical job lifecycle/provenance; no second job system",
+        "exact_commit": []
+      },
+      "api": {
+        "status": "see_repository_evidence"
+      },
+      "ui": {
+        "status": "see_repository_evidence"
+      },
+      "tests": [
+        "services/api/app/jobs/"
+      ],
+      "deployed_verification": {
+        "status": "406ee1031158f5a108107df293e1100e0d0b4fcb",
+        "production_verified": false,
+        "preview_sha_verified": false
+      },
+      "decision": "MATCH",
+      "exact_commit": []
+    },
+    {
+      "source": "PR #80 integration candidate",
+      "references": [
+        "PR #80"
+      ],
+      "evidence": [
+        "https://github.com/rrahul0904/applyai/pull/80"
+      ],
+      "repository_implementation": {
+        "status": "PARTIAL",
+        "paths": "Open non-draft integration candidate; earlier exact-head CI green at f4a36d0 is stale for the current source and does not certify this checkout",
+        "exact_commit": []
+      },
+      "api": {
+        "status": "see_repository_evidence"
+      },
+      "ui": {
+        "status": "see_repository_evidence"
+      },
+      "tests": [
+        "all"
+      ],
+      "deployed_verification": {
+        "status": "406ee1031158f5a108107df293e1100e0d0b4fcb",
+        "production_verified": false,
+        "preview_sha_verified": false
+      },
+      "decision": "CONTINUE_INTEGRATION; PUSH NEW EXACT-HEAD FOR CI; INDEPENDENT_APPROVAL_REQUIRED",
+      "exact_commit": "538c231d51c05e70b55a616457d0facdd6fb7585",
+      "source_head_sha": "f4a36d0810ba67603a3eff1334aae6db1675a1a9",
+      "remote_pr_head_at_recording": "f4a36d0810ba67603a3eff1334aae6db1675a1a9"
+    },
+    {
+      "source": "PR #92 release runbook",
+      "references": [
+        "PR #92"
+      ],
+      "evidence": [
+        "PR #92"
+      ],
+      "repository_implementation": {
+        "status": "DOCUMENTATION_ONLY",
+        "paths": "Runbook only; not a runtime fix",
+        "exact_commit": [],
+        "source_commit": "f2d12e51fca978d4ebeafb380ac7fa517b84868b"
+      },
+      "api": {
+        "status": "not_integrated"
+      },
+      "ui": {
+        "status": "not_integrated"
+      },
+      "tests": [
+        "docs/"
+      ],
+      "deployed_verification": {
+        "status": "f2d12e51fca978d4ebeafb380ac7fa517b84868b",
+        "production_verified": false,
+        "preview_sha_verified": false
+      },
+      "decision": "DOCUMENTATION_ONLY",
+      "exact_commit": [],
+      "source_head_sha": "f2d12e51fca978d4ebeafb380ac7fa517b84868b"
+    }
+  ],
+  "pr_issue_status": [
+    {
+      "id": "PR #73",
+      "decision": "DOCUMENTATION/RESEARCH ONLY; inspect clean-room session delta",
+      "integration_state": "partial evidence only",
+      "head_sha": "a0d580231d3e2e5be1a11c0529dcb1fb8db7e6a2",
+      "state": "OPEN",
+      "draft": true
+    },
+    {
+      "id": "PR #76",
+      "decision": "PARTIAL JobPrime contracts in PR #80; live provider and schedule missing",
+      "integration_state": "not in main",
+      "head_sha": "4c8a0fce91aecd0aedc6ad3611eae2ed5496110a",
+      "state": "OPEN",
+      "draft": true
+    },
+    {
+      "id": "PR #78",
+      "decision": "PARTIAL Openbound contracts in PR #80; live evidence missing",
+      "integration_state": "not in main",
+      "head_sha": "bb402e74556b465785cd0878a21c887113bf2f44",
+      "state": "OPEN",
+      "draft": true
+    },
+    {
+      "id": "PR #80",
+      "decision": "integration candidate, open, independent approval required",
+      "integration_state": "unmerged",
+      "head_sha": "f4a36d0810ba67603a3eff1334aae6db1675a1a9",
+      "state": "OPEN",
+      "draft": false,
+      "review_decision": "REVIEW_REQUIRED",
+      "remote_head_sha": "f4a36d0810ba67603a3eff1334aae6db1675a1a9",
+      "local_implementation_sha": "538c231d51c05e70b55a616457d0facdd6fb7585"
+    },
+    {
+      "id": "PR #82",
+      "decision": "bounded Workmark slice represented in candidate; full workflow incomplete",
+      "integration_state": "unmerged source lineage",
+      "head_sha": "f7321e8cb330da5c0102a0fe3ea48e95f71a1ae5",
+      "state": "OPEN",
+      "draft": true
+    },
+    {
+      "id": "PR #83",
+      "decision": "candidate-approved verified-submit guards absent; reimplement narrow safety delta after P0",
+      "integration_state": "donor branch only",
+      "head_sha": "f611c8fd43e20a5ae8893b0b9b61d244812f6cca"
+    },
+    {
+      "id": "PR #85",
+      "decision": "documentation only; evaluate only missing execution deltas",
+      "integration_state": "no certified implementation",
+      "head_sha": "f41f01eb652c0ddf93f947d19f6fdfb19ab68b45",
+      "state": "OPEN",
+      "draft": true
+    },
+    {
+      "id": "PR #88",
+      "decision": "documentation only; defer Career Site publishing",
+      "integration_state": "no certified implementation",
+      "head_sha": "021002df3b013f72001654a1d9bb12b0abe87810",
+      "state": "OPEN",
+      "draft": true
+    },
+    {
+      "id": "PR #89",
+      "decision": "documentation only; no separate product",
+      "integration_state": "no certified implementation",
+      "head_sha": "0f8f19dd91de2ec7e4a3f5437a7552f06134378e",
+      "state": "OPEN",
+      "draft": true
+    },
+    {
+      "id": "PR #92",
+      "decision": "documentation/runbook only",
+      "integration_state": "no runtime fix",
+      "head_sha": "f2d12e51fca978d4ebeafb380ac7fa517b84868b",
+      "state": "OPEN",
+      "draft": true
+    },
+    {
+      "id": "Issue #74",
+      "decision": "partial canonical lifecycle/provenance contracts; no live authorized receipt",
+      "integration_state": "partial"
+    },
+    {
+      "id": "Issue #75",
+      "decision": "partial JobPrime scan contracts; live provider/scheduled delivery missing",
+      "integration_state": "partial"
+    },
+    {
+      "id": "Issue #77",
+      "decision": "partial Openbound evidence contracts; authorized live source/correction journey missing",
+      "integration_state": "partial"
+    },
+    {
+      "id": "Issue #79",
+      "decision": "partial resume evidence lock/PDF; DOCX and hosted journey missing",
+      "integration_state": "partial"
+    },
+    {
+      "id": "Issue #81",
+      "decision": "partial public GitHub proof-of-work scan; persistence/consent/matching missing",
+      "integration_state": "partial"
+    },
+    {
+      "id": "Issue #84",
+      "decision": "review deltas only; avoid duplicate execution product",
+      "integration_state": "not certified"
+    },
+    {
+      "id": "Issue #87",
+      "decision": "defer Rezumite/Career Site publish capability",
+      "integration_state": "not certified"
+    },
+    {
+      "id": "Issue #90",
+      "decision": "production blocked; readiness probes HTTP 503",
+      "integration_state": "blocked by runtime evidence"
+    },
+    {
+      "id": "Issue #91",
+      "decision": "plan/runbook only, no runtime fix",
+      "integration_state": "documentation only"
+    }
+  ],
+  "implementation_sha": "538c231d51c05e70b55a616457d0facdd6fb7585"
+}

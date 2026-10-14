@@ -1,0 +1,10 @@
+{
+  "source_sha": "538c231d51c05e70b55a616457d0facdd6fb7585",
+  "recorded_at": "2026-10-13",
+  "status": "NOT_VERIFIED",
+  "stripe_mode": null,
+  "checkout": "NOT_RUN",
+  "webhook": "NOT_RUN",
+  "entitlement": "NOT_RUN",
+  "portal": "NOT_RUN"
+}

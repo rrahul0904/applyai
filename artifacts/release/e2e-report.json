@@ -1,0 +1,15 @@
+{
+  "source_sha": "538c231d51c05e70b55a616457d0facdd6fb7585",
+  "recorded_at": "2026-10-13",
+  "status": "NOT_VERIFIED",
+  "authenticated_candidate_journeys": {
+    "signup_login": "NOT_RUN",
+    "resume_upload": "NOT_RUN",
+    "job_match": "NOT_RUN",
+    "application": "NOT_RUN",
+    "interview": "NOT_RUN",
+    "tracking": "NOT_RUN"
+  },
+  "operator_journey": "NOT_RUN",
+  "reason": "Production readiness is HTTP 503; no authenticated hosted Preview candidate matching this source SHA was verified."
+}

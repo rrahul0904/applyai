@@ -11,7 +11,7 @@ Updated: 2026-08-31
 
 ## Purpose
 
-Railway is the launch runtime for ApplyAI's lean production profile. AWS remains an optional scale profile and is not required for this deployment.
+This section describes an unverified historical/alternate profile. Railway is not established as ApplyAI's current launch runtime. The source-controlled target uses Vercel and Supabase; consult [`LEAN_PRODUCTION_ARCHITECTURE.md`](LEAN_PRODUCTION_ARCHITECTURE.md) for current deployment evidence.
 
 Target Railway project:
 

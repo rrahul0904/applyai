@@ -1,0 +1,10 @@
+{
+  "source_sha": "538c231d51c05e70b55a616457d0facdd6fb7585",
+  "recorded_at": "2026-10-13",
+  "status": "PARTIAL",
+  "automated_tests": "API test suite includes SSRF, owner scoping, auth and privacy regression tests; full suite passed.",
+  "dependency_audit": "NOT_RUN",
+  "secret_scan": "NOT_RUN",
+  "SAST": "NOT_RUN",
+  "production_security_smoke": "NOT_RUN"
+}

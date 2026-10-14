@@ -7,53 +7,28 @@ The repository deliberately separates **source/platform completion** from **real
 and provider acceptance**. Cloud accounts, provider secrets, signing identities and store
 publication are never fabricated from repository source.
 
-## Production architecture
+## Production architecture and current status
 
-The canonical first production launch is the **lean profile**:
+The repository's current deployment contract is Vercel for the Next.js web and FastAPI services, with Supabase Auth, PostgreSQL, and private Storage. PostgreSQL also backs durable tasks; request-triggered task processing is configured, while a separately verified long-running worker is not part of the observed deployment.
 
 ```text
-Candidate Web: Next.js App Router + Clerk on Vercel
-Candidate Mobile: Expo / React Native + Clerk
-Browser Extension: Manifest V3 public-job URL handoff
-
-                         HTTPS
-                           |
-                           v
-                    Railway / FastAPI
-                           |
-          +----------------+----------------+
-          |                |                |
-          v                v                v
- Railway PostgreSQL   Cloudflare R2      task_outbox
-                                            |
-                                            v
-                                      postgres_tasks
-                                            |
-                                  Railway durable worker
-                                  /        |        \
-                                 v         v         v
-                              resume     source      AI/agent
-                              tasks      tasks       tasks
+Browser -> Vercel Next.js (`apps/web`) -> Vercel FastAPI (`services/api`)
+                                      -> Supabase Auth + PostgreSQL + Storage
+                                      -> PostgreSQL task queue
 ```
 
-The backend remains a modular monolith. ApplyAI does not add Kafka, Kubernetes, Redis or a
-microservice split merely to simulate scale.
+This describes the current source-controlled deployment target. It does not certify production health. The latest production readiness probe returned HTTP 503: database reachability, storage configuration, Supabase instance match, and operator configuration were false. The API `/ready` endpoint also returned HTTP 503. See [`docs/LEAN_PRODUCTION_ARCHITECTURE.md`](docs/LEAN_PRODUCTION_ARCHITECTURE.md) and [`artifacts/release/APPLYAI_CURRENT_STATE_2026-10-13.md`](artifacts/release/APPLYAI_CURRENT_STATE_2026-10-13.md) for observed deployment evidence and the exact status.
 
-`DEPLOYMENT_PROFILE=lean` is the launch profile. It uses one PostgreSQL database for canonical
-application data and durable background-task state. The transactional outbox remains the first
-commit boundary, while workers claim `postgres_tasks` with `FOR UPDATE SKIP LOCKED`, leases,
-heartbeat, retry/backoff, dead-task visibility and crash recovery.
+The AWS ECS/Fargate, Aurora, S3, and SQS configuration is an optional scale profile. Railway + Clerk + R2 documents describe an older profile and are not the current deployment contract. The Vercel root configuration at `vercel.json` declares both web and API services.
 
-The existing AWS infrastructure is preserved as `DEPLOYMENT_PROFILE=aws` for future scale or
-enterprise needs. It continues to support ALB/ECS/Fargate, Aurora PostgreSQL, private S3, SQS,
-EventBridge and CloudWatch, but AWS is **not required** to launch the lean production product.
+The backend remains a modular monolith. ApplyAI does not add Kafka, Kubernetes, Redis or a microservice split merely to simulate scale.
 
 See:
 
 - [`docs/LEAN_PRODUCTION_ARCHITECTURE.md`](docs/LEAN_PRODUCTION_ARCHITECTURE.md)
-- [`DEPLOYMENT.md`](DEPLOYMENT.md)
-- [`docs/RAILWAY_DEPLOYMENT.md`](docs/RAILWAY_DEPLOYMENT.md)
-- [`docs/R2_STORAGE.md`](docs/R2_STORAGE.md)
+- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
+- [`docs/RAILWAY_DEPLOYMENT.md`](docs/RAILWAY_DEPLOYMENT.md) (historical/alternate)
+- [`docs/deployment/VERCEL.md`](docs/deployment/VERCEL.md) (historical profile notes)
 - [`docs/PRODUCTION_RELEASE_CHECKLIST.md`](docs/PRODUCTION_RELEASE_CHECKLIST.md)
 - [`docs/PRODUCTION_RUNBOOK.md`](docs/PRODUCTION_RUNBOOK.md)
 

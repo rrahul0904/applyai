@@ -1,6 +1,6 @@
 # ApplyAI production deployment architecture
 
-Updated: 2026-10-01
+Updated: 2026-10-13 (live evidence observed 2026-10-14 02:12 UTC)
 
 ## Repository release target
 
@@ -19,6 +19,8 @@ Candidate
 This is the repository's deployment target, not proof that the currently hosted
 services run this topology or a particular commit. The production readiness
 workflow checks Vercel + Supabase at `https://applyai-gold.vercel.app`.
+
+The root `vercel.json` also declares the web and API services for Vercel multi-service deployment. The per-service GitHub workflows remain in the repository; their existence does not certify that a hosted project is currently serving the exact source SHA.
 
 The corresponding guarded workflows are:
 
@@ -46,11 +48,28 @@ web production workflows. The production workflow requires
 private storage configuration, disabled dev auth, and task processing
 configuration. A successful HTTP status alone is insufficient.
 
-The current observed production probe is HTTP 503 with
-`production_ready=false` and `operator_configured=false`. No exact deployed web,
-API, or worker SHA is exposed by the readiness response. Do not promote until
-the owner actions in `artifacts/release/HOSTED_DEPLOYMENT_HANDOFF.md` are
-complete and recorded against the release SHA.
+## Observed production state (2026-10-14 02:12 UTC)
+
+The latest observed successful Vercel Production deployment is GitHub deployment
+`6992311376`, SHA `406ee1031158f5a108107df293e1100e0d0b4fcb`, branch
+`release/vercel-services`, URL
+`https://applyai-i07405rc8-rrahul0904-5013s-projects.vercel.app`. The configured
+production domain `https://applyai-gold.vercel.app/api/readiness` returned HTTP
+503. Its body reported `runtime_ready=false`, `production_ready=false`,
+`database_reachable=false`, `storage_configured=false`,
+`background_worker_configured=false`, `supabase_instance_match=false`, and
+`operator_configured=false`. It reported the API as reachable, but the direct
+`https://applyai-api.vercel.app/ready` probe returned HTTP 503 with `NOT_READY`.
+This is an observed disagreement in the deployed readiness contract, not proof
+that the API is healthy. The API deployment SHA, migration head, and any worker
+version are not exposed by these endpoints.
+
+The readiness contract change in this integration checkout validates the API
+payload and records the upstream HTTP status. It has not yet been deployed or
+verified against production. Do not promote until database, storage, auth,
+operator and task-processing checks are healthy on one exact reviewed release
+SHA, and the owner actions in `artifacts/release/HOSTED_DEPLOYMENT_HANDOFF.md`
+are complete and recorded.
 
 ## Alternate and historical profiles
 

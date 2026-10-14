@@ -1,0 +1,8 @@
+{
+  "source_sha": "538c231d51c05e70b55a616457d0facdd6fb7585",
+  "recorded_at": "2026-10-13",
+  "status": "BLOCKED",
+  "candidate_journeys_completed": 0,
+  "operator_journeys_completed": 0,
+  "reason": "No healthy hosted runtime, real authenticated candidate, or authorized live job inventory verified."
+}

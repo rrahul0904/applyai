@@ -1,0 +1,46 @@
+{
+  "source_sha": "538c231d51c05e70b55a616457d0facdd6fb7585",
+  "recorded_at": "2026-10-13",
+  "checks": [
+    {
+      "name": "API full pytest",
+      "status": "PASS",
+      "passed": 440,
+      "skipped": 1,
+      "failed": 0,
+      "database": "local PostgreSQL applyai_test at migration head d0v4z6s9w197"
+    },
+    {
+      "name": "Web tests",
+      "status": "PASS",
+      "passed": 79,
+      "files": 26
+    },
+    {
+      "name": "Web typecheck",
+      "status": "PASS",
+      "command": "tsc --noEmit -p tsconfig.json"
+    },
+    {
+      "name": "Web lint",
+      "status": "PASS_WITH_WARNINGS",
+      "errors": 0,
+      "warnings": 4
+    },
+    {
+      "name": "Web production build",
+      "status": "PASS",
+      "bundler": "webpack",
+      "note": "Turbopack build attempt was interrupted after no progress; webpack production build completed."
+    },
+    {
+      "name": "Alembic drift check",
+      "status": "PASS",
+      "databases": [
+        "applyai",
+        "applyai_test"
+      ],
+      "head": "d0v4z6s9w197"
+    }
+  ]
+}

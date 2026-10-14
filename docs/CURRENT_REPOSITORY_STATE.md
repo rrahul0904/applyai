@@ -1,3 +1,5 @@
+> Historical snapshot: this document was last updated 2026-08-31 and describes the earlier Clerk/Railway/R2 target. For current deployment topology and evidence, see [LEAN_PRODUCTION_ARCHITECTURE.md](LEAN_PRODUCTION_ARCHITECTURE.md) and [the 2026-10-13 release state](../artifacts/release/APPLYAI_CURRENT_STATE_2026-10-13.md).
+
 # Current Repository State
 
 Updated: 2026-08-31

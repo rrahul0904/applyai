@@ -1,0 +1,10 @@
+{
+  "source_sha": "538c231d51c05e70b55a616457d0facdd6fb7585",
+  "recorded_at": "2026-10-13",
+  "status": "NOT_RUN",
+  "live_jobs_per_day": null,
+  "p50_p95_p99": null,
+  "throughput_benchmark": null,
+  "database_load_test": null,
+  "reason": "No real authorized inventory or healthy hosted worker/source is available for representative benchmarking."
+}

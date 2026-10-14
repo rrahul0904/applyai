@@ -2,12 +2,7 @@
 
 Updated: 2026-08-31
 
-> **Historical deployment profile.** This file describes the earlier Vercel web
-> + Railway API + Clerk/R2 launch. The repository's current production workflow
-> targets Vercel web and API with Supabase. Follow
-> [`LEAN_PRODUCTION_ARCHITECTURE.md`](../LEAN_PRODUCTION_ARCHITECTURE.md) and
-> `.github/workflows/deploy-vercel-applyai*.yml` for the current contract. Do not
-> mix the environment variables or services from the two profiles.
+> **Historical Vercel web + Railway API + Clerk/R2 profile.** The current source-controlled target is Vercel web + API with Supabase; the current production deployment is unhealthy (readiness HTTP 503). This file contains old setup examples and is not an operational runbook. Follow [`LEAN_PRODUCTION_ARCHITECTURE.md`](../LEAN_PRODUCTION_ARCHITECTURE.md) for the current contract and observed state.
 
 ## Deployment model
 

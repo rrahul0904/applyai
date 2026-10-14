@@ -1,28 +1,35 @@
 {
-  "source_sha": "d9530a632af91fe3a7608240644bb42a20174c95",
-  "recorded_at": "2026-10-13",
-  "status": "LOCAL_DEPENDENCY_AUDIT_PASS; HOSTED_GATES_PENDING",
+  "SAST": "PASS on preceding hosted head 7700fe3; reruns on new head pending",
   "automated_tests": "API test suite includes SSRF, owner scoping, auth and privacy regression tests; full suite passed.",
   "dependency_audit": {
-    "status": "PASS",
-    "tested_sha": "d9530a632af91fe3a7608240644bb42a20174c95",
-    "command": "pnpm audit --prod --audit-level high --json",
-    "high": 0,
-    "critical": 0,
     "advisories": [],
+    "command": "pnpm audit --prod --audit-level high --json",
+    "critical": 0,
     "fixed_packages": {
-      "next": "16.3.6 -> 16.3.8",
       "eslint-config-next": "16.3.6 -> 16.3.8",
-      "source-map-js": "1.2.1 -> 1.2.2",
-      "sharp": "0.35.4 -> 0.35.5"
-    }
+      "next": "16.3.6 -> 16.3.8",
+      "sharp": "0.35.4 -> 0.35.5",
+      "source-map-js": "1.2.1 -> 1.2.2"
+    },
+    "high": 0,
+    "status": "PASS",
+    "tested_sha": "d9530a632af91fe3a7608240644bb42a20174c95"
   },
-  "secret_scan": "PASS on preceding hosted head 7700fe3; reruns on new head pending",
-  "SAST": "PASS on preceding hosted head 7700fe3; reruns on new head pending",
-  "production_security_smoke": "NOT_RUN",
   "dependency_audit_pre_fix": {
-    "tested_sha": "7700fe3a25466e9209402389dda8a33f08175958",
+    "critical": 0,
     "high_findings": 3,
-    "critical": 0
+    "tested_sha": "7700fe3a25466e9209402389dda8a33f08175958"
+  },
+  "production_security_smoke": "NOT_RUN",
+  "recorded_at": "2026-10-13",
+  "secret_scan": "PASS on preceding hosted head 7700fe3; reruns on new head pending",
+  "source_sha": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab",
+  "status": "LOCAL_DEPENDENCY_AUDIT_PASS; HOSTED_GATES_PENDING",
+  "application_execution_security_tests": {
+    "status": "PASS",
+    "tested_sha": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab",
+    "focused_tests": 11,
+    "full_api_suite_passed": 450,
+    "skipped": 1
   }
 }

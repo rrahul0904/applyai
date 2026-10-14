@@ -67,6 +67,6 @@ Follow-on slices:
 
 ## Implementation status
 
-`IMPLEMENTING`.
+`PARTIAL_INTEGRATION` in candidate source commit `dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab`.
 
-The Phase 1 repository slice now closes both sides of the verification contract: the worker verifies the employer form before navigation/submission, and the API refuses terminal success without that receipt. Do not mark this donor `INTEGRATED` solely because the document, branch, or PR exists. Integration still requires exact-head CI evidence and, because the changed path includes the browser worker, deployment/runtime evidence from the exact candidate SHA. Until those gates are satisfied, the truthful status remains `IMPLEMENTING`.
+The Phase 1 repository slice now closes both sides of the verification contract: the worker verifies the employer form before navigation/submission, and the API refuses terminal success without that receipt. Do not mark this donor `INTEGRATED` solely because the document, branch, or PR exists. Integration still requires exact-head CI evidence and, because the changed path includes the browser worker, deployment/runtime evidence from the exact candidate SHA. Exact-head hosted checks and the matching Preview are pending push. Until those gates are satisfied, the truthful status remains `PARTIAL_INTEGRATION` in candidate source commit `dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab`.

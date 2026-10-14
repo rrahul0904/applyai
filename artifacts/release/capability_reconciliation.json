@@ -25,7 +25,7 @@
           "services/api/app/jobs/",
           "apps/web/app/"
         ],
-        "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+        "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
       },
       "api": {
         "status": "see_repository_evidence"
@@ -42,7 +42,7 @@
         "preview_sha_verified": false
       },
       "decision": "MATCH",
-      "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+      "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
     },
     {
       "source": "DreamworkHQ",
@@ -61,7 +61,7 @@
           "services/api/app/agents/",
           "apps/web/app/api/"
         ],
-        "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+        "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
       },
       "api": {
         "status": "see_repository_evidence"
@@ -78,7 +78,7 @@
         "preview_sha_verified": false
       },
       "decision": "MATCH",
-      "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+      "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
     },
     {
       "source": "Websumes",
@@ -97,7 +97,7 @@
           "apps/web/app/",
           "services/api/app/"
         ],
-        "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+        "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
       },
       "api": {
         "status": "see_repository_evidence"
@@ -114,7 +114,7 @@
         "preview_sha_verified": false
       },
       "decision": "MATCH",
-      "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+      "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
     },
     {
       "source": "JAN",
@@ -133,7 +133,7 @@
           "apps/web/app/",
           "services/api/app/"
         ],
-        "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+        "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
       },
       "api": {
         "status": "see_repository_evidence"
@@ -150,7 +150,7 @@
         "preview_sha_verified": false
       },
       "decision": "MATCH",
-      "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+      "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
     },
     {
       "source": "ResumeShareIQ",
@@ -169,7 +169,7 @@
           "apps/web/app/",
           "services/api/app/"
         ],
-        "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+        "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
       },
       "api": {
         "status": "see_repository_evidence"
@@ -186,7 +186,7 @@
         "preview_sha_verified": false
       },
       "decision": "MATCH",
-      "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+      "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
     },
     {
       "source": "Skilize",
@@ -205,7 +205,7 @@
           "apps/web/app/",
           "services/api/app/"
         ],
-        "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+        "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
       },
       "api": {
         "status": "see_repository_evidence"
@@ -222,7 +222,7 @@
         "preview_sha_verified": false
       },
       "decision": "MATCH",
-      "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+      "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
     },
     {
       "source": "Hirecast",
@@ -241,7 +241,7 @@
           "apps/web/app/",
           "services/api/app/"
         ],
-        "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+        "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
       },
       "api": {
         "status": "see_repository_evidence"
@@ -258,7 +258,7 @@
         "preview_sha_verified": false
       },
       "decision": "MATCH",
-      "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+      "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
     },
     {
       "source": "Hack2Hire",
@@ -277,7 +277,7 @@
           "apps/web/app/",
           "services/api/app/"
         ],
-        "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+        "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
       },
       "api": {
         "status": "see_repository_evidence"
@@ -294,7 +294,7 @@
         "preview_sha_verified": false
       },
       "decision": "MATCH",
-      "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+      "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
     },
     {
       "source": "ai-job-search",
@@ -313,7 +313,7 @@
           "services/api/app/jobs/",
           "apps/web/app/"
         ],
-        "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+        "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
       },
       "api": {
         "status": "see_repository_evidence"
@@ -330,7 +330,7 @@
         "preview_sha_verified": false
       },
       "decision": "MATCH",
-      "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+      "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
     },
     {
       "source": "jobber",
@@ -349,7 +349,7 @@
           "services/api/app/",
           "apps/web/app/"
         ],
-        "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+        "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
       },
       "api": {
         "status": "see_repository_evidence"
@@ -366,7 +366,7 @@
         "preview_sha_verified": false
       },
       "decision": "MATCH",
-      "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+      "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
     },
     {
       "source": "Camouflet Skills / Terum",
@@ -385,7 +385,7 @@
           "services/api/app/",
           "artifacts/release/"
         ],
-        "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+        "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
       },
       "api": {
         "status": "see_repository_evidence"
@@ -402,7 +402,7 @@
         "preview_sha_verified": false
       },
       "decision": "MATCH",
-      "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+      "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
     },
     {
       "source": "RemoteITJobs.net",
@@ -421,7 +421,7 @@
         "paths": [
           "services/api/app/jobs/"
         ],
-        "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+        "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
       },
       "api": {
         "status": "see_repository_evidence"
@@ -438,7 +438,7 @@
         "preview_sha_verified": false
       },
       "decision": "MATCH",
-      "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+      "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
     },
     {
       "source": "Openbound",
@@ -458,7 +458,7 @@
         "paths": [
           "services/api/app/"
         ],
-        "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+        "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
       },
       "api": {
         "status": "see_repository_evidence"
@@ -475,7 +475,7 @@
         "preview_sha_verified": false
       },
       "decision": "MATCH",
-      "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95",
+      "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab",
       "source_head_sha": "bb402e74556b465785cd0878a21c887113bf2f44"
     },
     {
@@ -497,7 +497,7 @@
           "services/api/app/",
           "apps/web/app/"
         ],
-        "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+        "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
       },
       "api": {
         "status": "see_repository_evidence"
@@ -514,7 +514,7 @@
         "preview_sha_verified": false
       },
       "decision": "MATCH",
-      "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+      "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
     },
     {
       "source": "JobPrime",
@@ -534,7 +534,7 @@
           "services/api/app/",
           "apps/web/app/"
         ],
-        "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+        "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
       },
       "api": {
         "status": "see_repository_evidence"
@@ -551,7 +551,7 @@
         "preview_sha_verified": false
       },
       "decision": "MATCH",
-      "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95",
+      "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab",
       "source_head_sha": "4c8a0fce91aecd0aedc6ad3611eae2ed5496110a"
     },
     {
@@ -571,7 +571,7 @@
         "paths": [
           "services/api/app/jobs/"
         ],
-        "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+        "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
       },
       "api": {
         "status": "see_repository_evidence"
@@ -588,7 +588,7 @@
         "preview_sha_verified": false
       },
       "decision": "MATCH",
-      "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+      "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
     },
     {
       "source": "ChannelPulse",
@@ -603,7 +603,7 @@
       "repository_implementation": {
         "status": "PARTIAL",
         "paths": "Session/privacy research is represented in integration candidate; native audio/screen capture is not included; clean-room boundaries retained",
-        "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+        "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
       },
       "api": {
         "status": "see_repository_evidence"
@@ -621,7 +621,7 @@
         "preview_sha_verified": false
       },
       "decision": "OMIT_NATIVE_CAPTURE; MATCH_SESSION_CONTRACT",
-      "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95",
+      "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab",
       "source_head_sha": "a0d580231d3e2e5be1a11c0529dcb1fb8db7e6a2"
     },
     {
@@ -638,7 +638,7 @@
       "repository_implementation": {
         "status": "PARTIAL",
         "paths": "Bounded public GitHub metadata scan/UI/API in integration candidate; persistence/private consent/full matching absent",
-        "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+        "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
       },
       "api": {
         "status": "see_repository_evidence"
@@ -656,7 +656,7 @@
         "preview_sha_verified": false
       },
       "decision": "MATCH",
-      "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95",
+      "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab",
       "source_head_sha": "f7321e8cb330da5c0102a0fe3ea48e95f71a1ae5"
     },
     {
@@ -669,28 +669,33 @@
         "origin/feat/jev-verified-application-submit"
       ],
       "repository_implementation": {
-        "status": "NOT_INTEGRATED",
-        "paths": "Candidate-approved read-back and AUTO/MANUAL/SKIP guards exist on donor branch, absent from integration candidate; no live provider execution",
-        "exact_commit": [],
+        "status": "PARTIAL",
+        "paths": [
+          "services/api/app/api/application_agent_completion_guard.py",
+          "services/api/scripts/application-browser-worker.mjs",
+          "services/api/app/main.py"
+        ],
+        "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab",
         "source_commit": "f611c8fd43e20a5ae8893b0b9b61d244812f6cca"
       },
       "api": {
-        "status": "not_integrated"
+        "status": "implemented; terminal completion requires a coherent receipt bound to candidate-approved field IDs"
       },
       "ui": {
-        "status": "not_integrated"
+        "status": "existing candidate approval and manual handoff; provider coverage incomplete"
       },
       "tests": [
-        "services/api/app/applications/",
-        "apps/web/app/"
+        "services/api/tests/test_application_agent_completion_guard.py",
+        "services/api/tests/test_application_browser_worker_contract.py",
+        "services/api/tests/test_application_agent.py"
       ],
       "deployed_verification": {
-        "status": null,
+        "status": "NOT_VERIFIED",
         "production_verified": false,
         "preview_sha_verified": false
       },
-      "decision": "NEEDS_REIMPLEMENTATION",
-      "exact_commit": [],
+      "decision": "PARTIAL_INTEGRATION; LIVE ATS EXECUTION STILL UNVERIFIED",
+      "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab",
       "source_head_sha": "f611c8fd43e20a5ae8893b0b9b61d244812f6cca"
     },
     {
@@ -915,7 +920,7 @@
       "repository_implementation": {
         "status": "PARTIAL",
         "paths": "Open non-draft integration candidate; earlier exact-head CI green at f4a36d0 is stale for the current source and does not certify this checkout",
-        "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95"
+        "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
       },
       "api": {
         "status": "see_repository_evidence"
@@ -932,7 +937,7 @@
         "preview_sha_verified": false
       },
       "decision": "CONTINUE_INTEGRATION; PUSH NEW EXACT-HEAD FOR CI; INDEPENDENT_APPROVAL_REQUIRED",
-      "exact_commit": "d9530a632af91fe3a7608240644bb42a20174c95",
+      "exact_commit": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab",
       "source_head_sha": "f4a36d0810ba67603a3eff1334aae6db1675a1a9",
       "remote_pr_head_at_recording": "f4a36d0810ba67603a3eff1334aae6db1675a1a9"
     },
@@ -1015,9 +1020,10 @@
     },
     {
       "id": "PR #83",
-      "decision": "candidate-approved verified-submit guards absent; reimplement narrow safety delta after P0",
-      "integration_state": "donor branch only",
-      "head_sha": "f611c8fd43e20a5ae8893b0b9b61d244812f6cca"
+      "decision": "PARTIAL SAFETY SLICE IMPLEMENTED IN PR #80; source PR remains open; live ATS/browser verification remains",
+      "integration_state": "partial in candidate",
+      "head_sha": "f611c8fd43e20a5ae8893b0b9b61d244812f6cca",
+      "local_integration_sha": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
     },
     {
       "id": "PR #85",
@@ -1097,5 +1103,5 @@
       "integration_state": "documentation only"
     }
   ],
-  "implementation_sha": "d9530a632af91fe3a7608240644bb42a20174c95"
+  "implementation_sha": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
 }

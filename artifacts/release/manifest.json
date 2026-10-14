@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "product": "ApplyAI",
-  "source_sha": "d9530a632af91fe3a7608240644bb42a20174c95",
+  "source_sha": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab",
   "branch": "codex/applyai-release-mission",
   "recorded_at": "2026-10-13",
   "release_status": "NOT_PRODUCTION_READY",
@@ -14,20 +14,24 @@
     "readiness": "HTTP 503"
   },
   "preview": {
-    "deployment_id": "7030380097",
-    "sha": "f2d12e51fca978d4ebeafb380ac7fa517b84868b",
-    "url": "https://applyai-ei37tx72f-rrahul0904-5013s-projects.vercel.app",
-    "represents_current_sha": false
+    "deployment_id": "latest PR #80 Preview deployment associated with ed571165194185c4b89a675dd5005a2f02c904e6",
+    "sha": "ed571165194185c4b89a675dd5005a2f02c904e6",
+    "url": "https://applyai-git-codex-applyai-rele-f33155-rrahul0904-5013s-projects.vercel.app",
+    "represents_current_sha": false,
+    "readiness_http_status": 200,
+    "runtime_ready": false,
+    "api_failure_class": "INVALID_READINESS_PAYLOAD"
   },
   "migration_head_local": "d0v4z6s9w197",
   "promotion_authorized": false,
-  "previous_remote_head": "7700fe3a25466e9209402389dda8a33f08175958",
+  "previous_remote_head": "ed571165194185c4b89a675dd5005a2f02c904e6",
   "web_dependency_audit": {
     "status": "PASS_LOCAL",
     "high": 0,
     "critical": 0
   },
-  "preview_build_status": "FAILED_RATE_LIMIT_24H",
-  "preview_build_attempt_sha": "7700fe3a25466e9209402389dda8a33f08175958",
-  "preview_build_error": "Vercel deployment rate limited \u2014 retry in 24 hours."
+  "preview_build_status": "SUCCESSFUL_PREVIOUS_HEAD",
+  "preview_build_attempt_sha": "ed571165194185c4b89a675dd5005a2f02c904e6",
+  "integration_sha": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab",
+  "latest_preview_observed_sha": "ed571165194185c4b89a675dd5005a2f02c904e6"
 }

@@ -1,17 +1,17 @@
 {
-  "source_sha": "d9530a632af91fe3a7608240644bb42a20174c95",
-  "recorded_at": "2026-10-13",
   "local_databases": {
     "acceptance": {
-      "alembic_current": "d0v4z6s9w197 (head)",
       "alembic_check_exit_code": 0,
-      "alembic_check_output": "No new upgrade operations detected."
+      "alembic_check_output": "No new upgrade operations detected.",
+      "alembic_current": "d0v4z6s9w197 (head)"
     },
     "test": {
-      "alembic_current": "d0v4z6s9w197 (head)",
       "alembic_check_exit_code": 0,
-      "alembic_check_output": "No new upgrade operations detected."
+      "alembic_check_output": "No new upgrade operations detected.",
+      "alembic_current": "d0v4z6s9w197 (head)"
     }
   },
-  "production_database": "NOT_VERIFIED"
+  "production_database": "NOT_VERIFIED",
+  "recorded_at": "2026-10-13",
+  "source_sha": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab"
 }

@@ -1,29 +1,29 @@
 {
-  "source_sha": "d9530a632af91fe3a7608240644bb42a20174c95",
-  "recorded_at": "2026-10-13",
-  "status": "BLOCKED_RUNTIME",
+  "authenticated_candidate_flow": "NOT_VERIFIED",
+  "deployed_contract_disagreement": true,
+  "operator_flow": "NOT_VERIFIED",
   "probes": [
     {
-      "url": "https://applyai-gold.vercel.app/api/readiness",
-      "observed_at": "2026-10-14T02:12:22Z",
-      "http_status": 503,
-      "runtime_ready": false,
-      "production_ready": false,
-      "database_reachable": false,
-      "storage_configured": false,
+      "api_reachable_reported": true,
       "background_worker_configured": false,
-      "supabase_instance_match": false,
+      "database_reachable": false,
+      "http_status": 503,
+      "observed_at": "2026-10-14T02:12:22Z",
       "operator_configured": false,
-      "api_reachable_reported": true
+      "production_ready": false,
+      "runtime_ready": false,
+      "storage_configured": false,
+      "supabase_instance_match": false,
+      "url": "https://applyai-gold.vercel.app/api/readiness"
     },
     {
-      "url": "https://applyai-api.vercel.app/ready",
-      "observed_at": "2026-10-14T02:12:28Z",
+      "error_code": "NOT_READY",
       "http_status": 503,
-      "error_code": "NOT_READY"
+      "observed_at": "2026-10-14T02:12:28Z",
+      "url": "https://applyai-api.vercel.app/ready"
     }
   ],
-  "authenticated_candidate_flow": "NOT_VERIFIED",
-  "operator_flow": "NOT_VERIFIED",
-  "deployed_contract_disagreement": true
+  "recorded_at": "2026-10-13",
+  "source_sha": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab",
+  "status": "BLOCKED_RUNTIME"
 }

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "product": "ApplyAI",
-  "source_sha": "538c231d51c05e70b55a616457d0facdd6fb7585",
+  "source_sha": "d9530a632af91fe3a7608240644bb42a20174c95",
   "branch": "codex/applyai-release-mission",
   "recorded_at": "2026-10-13",
   "release_status": "NOT_PRODUCTION_READY",
@@ -20,5 +20,14 @@
     "represents_current_sha": false
   },
   "migration_head_local": "d0v4z6s9w197",
-  "promotion_authorized": false
+  "promotion_authorized": false,
+  "previous_remote_head": "7700fe3a25466e9209402389dda8a33f08175958",
+  "web_dependency_audit": {
+    "status": "PASS_LOCAL",
+    "high": 0,
+    "critical": 0
+  },
+  "preview_build_status": "FAILED_RATE_LIMIT_24H",
+  "preview_build_attempt_sha": "7700fe3a25466e9209402389dda8a33f08175958",
+  "preview_build_error": "Vercel deployment rate limited \u2014 retry in 24 hours."
 }

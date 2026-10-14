@@ -1,10 +1,28 @@
 {
-  "source_sha": "538c231d51c05e70b55a616457d0facdd6fb7585",
+  "source_sha": "d9530a632af91fe3a7608240644bb42a20174c95",
   "recorded_at": "2026-10-13",
-  "status": "PARTIAL",
+  "status": "LOCAL_DEPENDENCY_AUDIT_PASS; HOSTED_GATES_PENDING",
   "automated_tests": "API test suite includes SSRF, owner scoping, auth and privacy regression tests; full suite passed.",
-  "dependency_audit": "NOT_RUN",
-  "secret_scan": "NOT_RUN",
-  "SAST": "NOT_RUN",
-  "production_security_smoke": "NOT_RUN"
+  "dependency_audit": {
+    "status": "PASS",
+    "tested_sha": "d9530a632af91fe3a7608240644bb42a20174c95",
+    "command": "pnpm audit --prod --audit-level high --json",
+    "high": 0,
+    "critical": 0,
+    "advisories": [],
+    "fixed_packages": {
+      "next": "16.3.6 -> 16.3.8",
+      "eslint-config-next": "16.3.6 -> 16.3.8",
+      "source-map-js": "1.2.1 -> 1.2.2",
+      "sharp": "0.35.4 -> 0.35.5"
+    }
+  },
+  "secret_scan": "PASS on preceding hosted head 7700fe3; reruns on new head pending",
+  "SAST": "PASS on preceding hosted head 7700fe3; reruns on new head pending",
+  "production_security_smoke": "NOT_RUN",
+  "dependency_audit_pre_fix": {
+    "tested_sha": "7700fe3a25466e9209402389dda8a33f08175958",
+    "high_findings": 3,
+    "critical": 0
+  }
 }

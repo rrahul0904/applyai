@@ -1,46 +1,96 @@
 {
-  "source_sha": "538c231d51c05e70b55a616457d0facdd6fb7585",
+  "source_sha": "d9530a632af91fe3a7608240644bb42a20174c95",
   "recorded_at": "2026-10-13",
   "checks": [
     {
       "name": "API full pytest",
       "status": "PASS",
+      "tested_sha": "538c231d51c05e70b55a616457d0facdd6fb7585",
       "passed": 440,
       "skipped": 1,
       "failed": 0,
-      "database": "local PostgreSQL applyai_test at migration head d0v4z6s9w197"
+      "database": "local PostgreSQL applyai_test at migration head d0v4z6s9w197",
+      "note": "No API source files changed in the dependency-only follow-up."
+    },
+    {
+      "name": "API focused ingestion regressions",
+      "status": "PASS",
+      "tested_sha": "d9530a632af91fe3a7608240644bb42a20174c95",
+      "files": [
+        "tests/test_partner_feed.py",
+        "tests/test_source_coverage_receipts.py",
+        "tests/test_job_supply_acceptance.py",
+        "tests/test_job_source_registry.py"
+      ],
+      "passed": 19
     },
     {
       "name": "Web tests",
       "status": "PASS",
+      "tested_sha": "d9530a632af91fe3a7608240644bb42a20174c95",
       "passed": 79,
       "files": 26
     },
     {
       "name": "Web typecheck",
       "status": "PASS",
+      "tested_sha": "d9530a632af91fe3a7608240644bb42a20174c95",
       "command": "tsc --noEmit -p tsconfig.json"
     },
     {
       "name": "Web lint",
       "status": "PASS_WITH_WARNINGS",
+      "tested_sha": "d9530a632af91fe3a7608240644bb42a20174c95",
       "errors": 0,
       "warnings": 4
     },
     {
       "name": "Web production build",
       "status": "PASS",
-      "bundler": "webpack",
-      "note": "Turbopack build attempt was interrupted after no progress; webpack production build completed."
+      "tested_sha": "d9530a632af91fe3a7608240644bb42a20174c95",
+      "bundler": "webpack"
+    },
+    {
+      "name": "Web production dependency audit",
+      "status": "PASS",
+      "tested_sha": "d9530a632af91fe3a7608240644bb42a20174c95",
+      "high": 0,
+      "critical": 0,
+      "advisories": []
     },
     {
       "name": "Alembic drift check",
       "status": "PASS",
+      "tested_sha": "d9530a632af91fe3a7608240644bb42a20174c95",
       "databases": [
         "applyai",
         "applyai_test"
       ],
       "head": "d0v4z6s9w197"
+    }
+  ],
+  "hosted_runs": [
+    {
+      "head_sha": "7700fe3a25466e9209402389dda8a33f08175958",
+      "checks_observed": {
+        "API container build": "PASS",
+        "API migration validation": "PASS",
+        "API security regressions": "PASS",
+        "OpenAPI contract drift": "PASS",
+        "Web production build": "PASS",
+        "Web tests": "PASS",
+        "Web typecheck": "PASS",
+        "Web lint": "PASS",
+        "Python dependency audit": "PASS",
+        "Python SAST": "PASS",
+        "Supabase RLS/schema contract": "PASS",
+        "Web dependency audit": "FAIL: 3 high findings; fixed in d9530a6"
+      },
+      "vercel_preview": "FAILED: deployment rate limited; retry in 24 hours"
+    },
+    {
+      "head_sha": "d9530a632af91fe3a7608240644bb42a20174c95",
+      "status": "PENDING_AFTER_PUSH"
     }
   ]
 }

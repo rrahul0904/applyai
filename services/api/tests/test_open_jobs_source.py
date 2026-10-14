@@ -7,6 +7,7 @@ import httpx
 from app.jobs.adapter_factory import create_source_adapter
 from app.jobs.contracts import JobSourceType, SourceTrustLevel
 from app.jobs.open_jobs import OpenJobsConnector
+from app.jobs.source_completeness import CoverageStatus, observed_coverage
 
 
 BASE = "https://open-jobs.test/data"
@@ -98,11 +99,42 @@ def test_open_jobs_connector_reads_bounded_leaf_groups_and_advances_checkpoint()
     assert first_checkpoint["last_leaf_id"] == "1"
     assert first_checkpoint["manifest_jobs"] == 3
     assert first_checkpoint["cycle_complete"] is False
+    assert connector.completeness_checks()["cycle_complete"] is False
 
     second = connector.fetch(first_checkpoint)
     assert [row["company"] for row in second] == ["Gamma AI"]
     assert connector.checkpoint()["last_leaf_id"] == "2"
     assert connector.checkpoint()["cycle_complete"] is True
+    assert connector.completeness_checks()["cycle_complete"] is True
+    receipt = observed_coverage(
+        connector,
+        {"fetched": 1, "failed": 0},
+    )
+    assert receipt.status is CoverageStatus.PARTIAL
+    assert dict(receipt.completeness_checks)["cycle_complete"] is True
+
+
+def test_open_jobs_restarts_traversal_when_manifest_recipe_changes() -> None:
+    connector = OpenJobsConnector(
+        data_base_url=BASE,
+        max_groups_per_run=1,
+        client=_client(),
+    )
+
+    rows = connector.fetch(
+        {
+            "last_leaf_id": "2",
+            "manifest_recipe": "older:1536:v1",
+            "manifest_leaves": 2,
+        }
+    )
+
+    assert len(rows) == 2
+    assert connector.checkpoint()["last_leaf_id"] == "1"
+    assert connector.completeness_checks() == {
+        "cycle_complete": False,
+        "cycle_restarted_for_manifest_change": True,
+    }
 
 
 def test_open_jobs_mapping_preserves_employer_board_identity_and_low_authority_metadata() -> None:

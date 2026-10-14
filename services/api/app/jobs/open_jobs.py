@@ -88,6 +88,7 @@ class OpenJobsConnector(JobSourceConnector):
         self._manifest_recipe: str | None = None
         self._manifest_jobs: int | None = None
         self._manifest_leaves: int | None = None
+        self._cycle_restarted = False
         self._groups_processed = 0
         self._jobs_seen = 0
         self._cycle_complete = False
@@ -161,9 +162,13 @@ class OpenJobsConnector(JobSourceConnector):
         self._manifest_jobs = int(manifest.get("jobs") or 0) or None
         self._manifest_leaves = int(manifest.get("leaves") or len(leaves))
         committed = self._committed_checkpoint(checkpoint)
+        committed_recipe = str(committed.get("manifest_recipe") or "") or None
+        self._cycle_restarted = bool(
+            committed_recipe and self._manifest_recipe and committed_recipe != self._manifest_recipe
+        )
         previous_leaf = str(committed.get("last_leaf_id") or "")
         start = 0
-        if previous_leaf:
+        if previous_leaf and not self._cycle_restarted:
             try:
                 start = leaves.index(previous_leaf) + 1
             except ValueError:
@@ -320,6 +325,18 @@ class OpenJobsConnector(JobSourceConnector):
             "groups_processed": self._groups_processed,
             "jobs_seen": self._jobs_seen,
             "cycle_complete": self._cycle_complete,
+        }
+
+    def completeness_checks(self) -> dict[str, bool]:
+        """Report cycle traversal without upgrading this discovery feed to a snapshot.
+
+        A true cycle receipt proves that the bounded cursor reached the end of the
+        current manifest. ``source_completeness`` remains PARTIAL so this source can
+        never expire unseen jobs or claim an authoritative snapshot.
+        """
+        return {
+            "cycle_complete": self._cycle_complete,
+            "cycle_restarted_for_manifest_change": self._cycle_restarted,
         }
 
     def health(self) -> ConnectorHealth:

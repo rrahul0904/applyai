@@ -16,14 +16,33 @@ from app.models import Job, JobSource, JobSourceLink
 NON_LIVE_JOB_ORIGINS = {"DEVELOPMENT_SEED", "DEVELOPMENT_DATA"}
 
 
+def completed_open_jobs_cycle(run: JobIngestionRun | None) -> bool:
+    """Accept a completed multi-run CC0 discovery sweep without claiming a snapshot.
+
+    Open Jobs is deliberately non-authoritative: each bounded ingestion run stays
+    PARTIAL, and its jobs cannot be closed based on absence from that slice. The
+    connector's durable cursor only advances across failure-free runs, so a final
+    cycle receipt proves traversal while preserving those closure semantics.
+    """
+    if run is None or run.status != "PARTIAL" or run.coverage_status != "PARTIAL":
+        return False
+    if int(run.failed or 0) > 0 or int(run.fetched or 0) <= 0 or int(run.valid or 0) <= 0:
+        return False
+    details = run.coverage_details if isinstance(run.coverage_details, dict) else {}
+    checks = details.get("completeness_checks")
+    return isinstance(checks, dict) and checks.get("cycle_complete") is True
+
+
 def evaluate_initial_acceptance(evidence: dict[str, Any], *, min_jobs: int) -> dict[str, Any]:
     blockers: list[str] = []
     if not evidence["database_schema_present"]:
         blockers.append("Alembic migration state is not present in the production database.")
     if not evidence["open_jobs_source_active"]:
         blockers.append("The Open Jobs real source is not active.")
-    if not evidence["successful_open_jobs_run"]:
-        blockers.append("No successful Open Jobs ingestion run has completed.")
+    if not (evidence["successful_open_jobs_run"] or evidence["completed_open_jobs_cycle"]):
+        blockers.append(
+            "No successful Open Jobs ingestion run or complete discovery cycle has completed."
+        )
     if evidence["real_canonical_jobs"] < min_jobs:
         blockers.append(
             f"Real canonical job count {evidence['real_canonical_jobs']} is below required minimum {min_jobs}."
@@ -120,6 +139,7 @@ def collect_evidence() -> dict[str, Any]:
                 and latest_run.valid > 0
                 and latest_run.failed == 0
             ),
+            "completed_open_jobs_cycle": completed_open_jobs_cycle(latest_run),
             "latest_open_jobs_status": latest_run.status if latest_run else None,
             "latest_open_jobs_fetched": int(latest_run.fetched) if latest_run else 0,
             "latest_open_jobs_valid": int(latest_run.valid) if latest_run else 0,

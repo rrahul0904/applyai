@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { backendReadiness } from "./backend-readiness";
+import { authInstanceMatches, backendReadiness } from "./backend-readiness";
 import { clerkPublishableKeyInstanceFingerprint } from "@/lib/auth/clerk-instance";
 import { supabaseProjectFingerprint } from "@/lib/auth/supabase-instance";
 import {
@@ -24,10 +24,9 @@ export async function GET() {
   const supabasePublishableKey = configuredSupabasePublishableKey();
   const useSupabase = Boolean(supabaseUrl || supabasePublishableKey);
   const webSupabaseFingerprint = supabaseProjectFingerprint(supabaseUrl);
-  const supabaseInstanceMatch = Boolean(
-    webSupabaseFingerprint &&
-      backend.supabaseFingerprint &&
-      webSupabaseFingerprint === backend.supabaseFingerprint,
+  const supabaseInstanceMatch = authInstanceMatches(
+    webSupabaseFingerprint,
+    backend.supabaseFingerprint,
   );
 
   const clerkPublishableMode = keyMode(
@@ -43,10 +42,9 @@ export async function GET() {
   const webClerkFingerprint = clerkPublishableKeyInstanceFingerprint(
     process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
   );
-  const clerkInstanceMatch = Boolean(
-    webClerkFingerprint &&
-      backend.clerkFingerprint &&
-      webClerkFingerprint === backend.clerkFingerprint,
+  const clerkInstanceMatch = authInstanceMatches(
+    webClerkFingerprint,
+    backend.clerkFingerprint,
   );
 
   const providerReady = useSupabase
@@ -54,13 +52,16 @@ export async function GET() {
         supabaseUrl &&
           supabasePublishableKey &&
           backend.authProvider === "supabase" &&
-          backend.backgroundWorkerConfigured &&
+          backend.authConfigured &&
+          backend.authInstanceMatch &&
           supabaseInstanceMatch,
       )
     : Boolean(
         clerkPublishableMode !== "missing" &&
           clerkSecretMode !== "missing" &&
           backend.authProvider === "clerk" &&
+          backend.authConfigured &&
+          backend.authInstanceMatch &&
           clerkInstanceMatch,
       );
 
@@ -68,7 +69,12 @@ export async function GET() {
     apiConfigured &&
     backend.reachable &&
     backend.databaseReachable &&
+    backend.databaseMigrationsCurrent &&
     backend.storageConfigured &&
+    backend.storageReachable &&
+    backend.taskQueueConfigured &&
+    backend.backgroundWorkerConfigured &&
+    backend.backgroundWorkerHealthy &&
     providerReady &&
     !devAuthEnabled;
 
@@ -92,8 +98,15 @@ export async function GET() {
         api_upstream_status: backend.upstreamStatus,
         api_failure_class: backend.failureClass,
         database_reachable: backend.databaseReachable,
+        database_migrations_current: backend.databaseMigrationsCurrent,
         storage_configured: backend.storageConfigured,
+        storage_reachable: backend.storageReachable,
+        auth_configured: backend.authConfigured,
+        auth_instance_match: backend.authInstanceMatch,
+        task_queue_configured: backend.taskQueueConfigured,
         background_worker_configured: backend.backgroundWorkerConfigured,
+        background_worker_healthy: backend.backgroundWorkerHealthy,
+        api_deployment_sha: backend.deploymentSha,
         auth_provider: backend.authProvider,
         supabase_auth_configured: Boolean(
           supabaseUrl && supabasePublishableKey,

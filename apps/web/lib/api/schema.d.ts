@@ -1380,6 +1380,50 @@ export interface components {
             /** Task Type */
             task_type: string;
         };
+        /** APIReadiness */
+        APIReadiness: {
+            /** Auth Configured */
+            auth_configured: boolean;
+            /** Auth Instance Match */
+            auth_instance_match: boolean;
+            /**
+             * Auth Provider
+             * @enum {string}
+             */
+            auth_provider: "clerk" | "supabase" | "dev-test" | "unknown";
+            /** Background Worker Configured */
+            background_worker_configured: boolean;
+            /** Background Worker Healthy */
+            background_worker_healthy: boolean;
+            /** Clerk Instance Fingerprint */
+            clerk_instance_fingerprint: string;
+            /** Database Migrations Current */
+            database_migrations_current: boolean;
+            /** Database Reachable */
+            database_reachable: boolean;
+            /** Deployment Sha */
+            deployment_sha: string;
+            /** Operator Auth Configured */
+            operator_auth_configured: boolean;
+            /**
+             * Operator Auth Location
+             * @enum {string}
+             */
+            operator_auth_location: "database" | "api" | "";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ready" | "not_ready";
+            /** Storage Configured */
+            storage_configured: boolean;
+            /** Storage Reachable */
+            storage_reachable: boolean;
+            /** Supabase Project Fingerprint */
+            supabase_project_fingerprint: string;
+            /** Task Queue Configured */
+            task_queue_configured: boolean;
+        };
         /** AnalyticsEventWrite */
         AnalyticsEventWrite: {
             /** Entity Id */
@@ -5613,9 +5657,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string | boolean;
-                    };
+                    "application/json": components["schemas"]["APIReadiness"];
                 };
             };
         };

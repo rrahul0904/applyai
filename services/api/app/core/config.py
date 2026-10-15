@@ -98,6 +98,7 @@ class Settings(BaseSettings):
     postgres_task_max_attempts: int = Field(default=5, ge=1, le=100)
     postgres_task_retry_base_seconds: int = Field(default=5, ge=1, le=300)
     postgres_worker_poll_seconds: float = Field(default=1.0, ge=0.1, le=30.0)
+    worker_runtime_heartbeat_seconds: int = Field(default=30, ge=5, le=300)
     radar_watch_poll_seconds: float = Field(default=30.0, ge=1.0, le=300.0)
     radar_watch_lease_seconds: int = Field(default=300, ge=60, le=3600)
     request_triggered_tasks_enabled: bool = False

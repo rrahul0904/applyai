@@ -22,6 +22,7 @@ from app.core.queue import (
     Task,
 )
 from app.postgres_queue_models import PostgresTask
+from app.worker_runtime import current_deployment_sha, record_worker_heartbeat
 
 logger = logging.getLogger("applyai.postgres_worker")
 
@@ -33,6 +34,26 @@ def utcnow() -> datetime:
 def claim_task(settings: Settings, *, worker_id: str) -> uuid.UUID | None:
     now = utcnow()
     with SessionLocal() as session:
+        # A worker can disappear during its final permitted attempt. Once that
+        # lease expires there is no attempt left to grant, so move the task to
+        # DEAD before considering any work for this claim cycle.
+        session.execute(
+            update(PostgresTask)
+            .where(
+                PostgresTask.status == "RUNNING",
+                PostgresTask.lease_expires_at.is_not(None),
+                PostgresTask.lease_expires_at < now,
+                PostgresTask.attempt_count >= settings.postgres_task_max_attempts,
+            )
+            .values(
+                status="DEAD",
+                lease_owner=None,
+                leased_at=None,
+                lease_expires_at=None,
+                last_error="LEASE_EXPIRED_MAX_ATTEMPTS",
+            )
+        )
+        session.commit()
         row = session.scalar(
             select(PostgresTask)
             .where(
@@ -45,6 +66,7 @@ def claim_task(settings: Settings, *, worker_id: str) -> uuid.UUID | None:
                         PostgresTask.status == "RUNNING",
                         PostgresTask.lease_expires_at.is_not(None),
                         PostgresTask.lease_expires_at < now,
+                        PostgresTask.attempt_count < settings.postgres_task_max_attempts,
                     ),
                 )
             )
@@ -73,6 +95,7 @@ def extend_lease(task_id: uuid.UUID, *, worker_id: str, settings: Settings) -> b
                 PostgresTask.id == task_id,
                 PostgresTask.status == "RUNNING",
                 PostgresTask.lease_owner == worker_id,
+                PostgresTask.lease_expires_at >= now,
             )
             .values(lease_expires_at=now + timedelta(seconds=settings.postgres_task_lease_seconds))
         )
@@ -97,6 +120,29 @@ def _heartbeat(
             logger.exception(
                 "postgres_worker_lease_extension_failed", extra={"task_id": str(task_id)}
             )
+            return
+
+
+def _runtime_heartbeat(
+    *,
+    settings: Settings,
+    worker_id: str,
+    stop: threading.Event,
+) -> None:
+    while not stop.is_set():
+        try:
+            record_worker_heartbeat(
+                environment=settings.app_env,
+                worker_type="combined_worker",
+                worker_id=worker_id,
+                deployment_sha=current_deployment_sha(),
+            )
+        except Exception:
+            logger.exception(
+                "postgres_worker_runtime_heartbeat_failed",
+                extra={"worker_id": worker_id},
+            )
+        if stop.wait(settings.worker_runtime_heartbeat_seconds):
             return
 
 
@@ -303,10 +349,22 @@ def run_worker(settings: Settings | None = None) -> None:
         raise RuntimeError("PostgreSQL worker requires TASK_QUEUE_PROVIDER=postgres")
     worker_id = f"{socket.gethostname()}:{uuid.uuid4()}"
     logger.info("postgres_worker_started", extra={"worker_id": worker_id})
-    while True:
-        worked = run_once(settings, worker_id=worker_id)
-        if not worked:
-            time.sleep(settings.postgres_worker_poll_seconds)
+    heartbeat_stop = threading.Event()
+    heartbeat = threading.Thread(
+        target=_runtime_heartbeat,
+        kwargs={"settings": settings, "worker_id": worker_id, "stop": heartbeat_stop},
+        name="worker-runtime-heartbeat",
+        daemon=True,
+    )
+    heartbeat.start()
+    try:
+        while True:
+            worked = run_once(settings, worker_id=worker_id)
+            if not worked:
+                time.sleep(settings.postgres_worker_poll_seconds)
+    finally:
+        heartbeat_stop.set()
+        heartbeat.join(timeout=2)
 
 
 if __name__ == "__main__":

@@ -23,6 +23,7 @@ from app.workers.postgres import (
     cancel_task,
     claim_task,
     dispatch_task,
+    extend_lease,
     retry_or_dead_task,
     utcnow,
 )
@@ -271,6 +272,62 @@ def test_postgres_queue_recovers_expired_lease(database_url) -> None:
         assert row is not None
         assert row.attempt_count == 2
         assert row.lease_owner == "worker-b"
+
+
+def test_postgres_queue_marks_expired_final_attempt_dead(database_url) -> None:
+    del database_url
+    settings = Settings(
+        task_queue_provider="postgres",
+        postgres_task_lease_seconds=30,
+        postgres_task_max_attempts=1,
+    )
+    PostgresTaskQueue().enqueue(
+        Task(task_type="RESUME_PARSE", payload={}, idempotency_key="lean:test:final-lease")
+    )
+    task_id = claim_task(settings, worker_id="worker-a")
+    assert task_id is not None
+
+    with SessionLocal() as session:
+        row = session.get(PostgresTask, task_id)
+        assert row is not None
+        row.lease_expires_at = utcnow() - timedelta(seconds=1)
+        session.commit()
+
+    assert claim_task(settings, worker_id="worker-b") is None
+    with SessionLocal() as session:
+        row = session.get(PostgresTask, task_id)
+        assert row is not None
+        assert row.status == "DEAD"
+        assert row.attempt_count == 1
+        assert row.lease_owner is None
+        assert row.lease_expires_at is None
+        assert row.last_error == "LEASE_EXPIRED_MAX_ATTEMPTS"
+
+
+def test_postgres_queue_does_not_revive_expired_lease(database_url) -> None:
+    del database_url
+    settings = Settings(
+        task_queue_provider="postgres",
+        postgres_task_lease_seconds=30,
+        postgres_task_max_attempts=3,
+    )
+    PostgresTaskQueue().enqueue(
+        Task(task_type="RESUME_PARSE", payload={}, idempotency_key="lean:test:expired-renewal")
+    )
+    task_id = claim_task(settings, worker_id="worker-a")
+    assert task_id is not None
+
+    with SessionLocal() as session:
+        row = session.get(PostgresTask, task_id)
+        assert row is not None
+        row.lease_expires_at = utcnow() - timedelta(seconds=1)
+        session.commit()
+
+    assert extend_lease(task_id, worker_id="worker-a", settings=settings) is False
+    with SessionLocal() as session:
+        row = session.get(PostgresTask, task_id)
+        assert row is not None
+        assert row.lease_expires_at < utcnow()
 
 
 def test_postgres_queue_cancellation_prevents_claim(database_url) -> None:

@@ -1,0 +1,159 @@
+from types import SimpleNamespace
+
+from scripts.job_supply_initial_acceptance import (
+    completed_open_jobs_cycle,
+    evaluate_initial_acceptance,
+)
+
+
+def _run(**overrides):
+    values = {
+        "status": "PARTIAL",
+        "coverage_status": "PARTIAL",
+        "coverage_details": {
+            "status": "PARTIAL",
+            "completeness_checks": {
+                "cycle_complete": True,
+                "cycle_restarted_for_manifest_change": False,
+            },
+        },
+        "failed": 0,
+        "fetched": 12,
+        "valid": 12,
+    }
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
+def test_accepts_completed_discovery_cycle_without_marking_batch_complete():
+    run = _run()
+
+    assert completed_open_jobs_cycle(run) is True
+    assert run.status == "PARTIAL"
+    assert run.coverage_status == "PARTIAL"
+
+
+def test_rejects_incomplete_or_failed_discovery_cycle():
+    assert completed_open_jobs_cycle(None) is False
+    incomplete = _run(coverage_details={"completeness_checks": {"cycle_complete": False}})
+    assert completed_open_jobs_cycle(incomplete) is False
+    assert completed_open_jobs_cycle(_run(failed=1)) is False
+    assert completed_open_jobs_cycle(_run(status="COMPLETED")) is False
+
+
+def test_initial_supply_acceptance_uses_cycle_receipt_for_bounded_source():
+    evidence = {
+        "database_schema_present": True,
+        "open_jobs_source_active": True,
+        "successful_open_jobs_run": False,
+        "completed_open_jobs_cycle": True,
+        "real_canonical_jobs": 12,
+        "open_jobs_canonical_jobs": 12,
+        "latest_open_jobs_failed": 0,
+        "open_jobs_source_postings": 12,
+        "company_identity_preserved": True,
+    }
+
+    report = evaluate_initial_acceptance(evidence, min_jobs=1)
+
+    assert report["status"] == "PASS"
+    assert report["claim"] == "INITIAL_PRODUCTION_JOB_SUPPLY_VERIFIED"
+    assert report["source_postings"] == 12
+    assert report["source_canonical_jobs"] == 12
+    assert report["company_identity_preserved"] is True
+
+
+def test_missing_provenance_is_not_reported_as_employer_identity_collapse():
+    evidence = {
+        "database_schema_present": True,
+        "open_jobs_source_active": False,
+        "successful_open_jobs_run": False,
+        "completed_open_jobs_cycle": False,
+        "real_canonical_jobs": 0,
+        "latest_open_jobs_failed": 0,
+        "open_jobs_source_postings": 0,
+        "company_identity_preserved": False,
+    }
+
+    report = evaluate_initial_acceptance(evidence, min_jobs=1)
+
+    assert "No Open Jobs posting provenance was persisted." in report["blocking_dependencies"]
+    assert not any("identities appear collapsed" in item for item in report["blocking_dependencies"])
+
+
+def test_complete_employer_ats_run_can_cover_a_retired_discovery_feed():
+    evidence = {
+        "database_schema_present": True,
+        "open_jobs_source_active": False,
+        "successful_open_jobs_run": False,
+        "completed_open_jobs_cycle": False,
+        "real_canonical_jobs": 697,
+        "latest_open_jobs_failed": 0,
+        "open_jobs_source_postings": 0,
+        "company_identity_preserved": False,
+        "employer_source_verified": True,
+        "employer_source_type": "GREENHOUSE",
+        "employer_source_fetched": 727,
+        "employer_source_valid": 727,
+        "employer_source_failed": 0,
+        "employer_source_postings": 727,
+        "employer_source_canonical_jobs": 697,
+        "employer_company_identity_preserved": True,
+        "open_jobs_provider_warning": "upstream_unavailable",
+    }
+
+    report = evaluate_initial_acceptance(evidence, min_jobs=1, app_env="staging")
+
+    assert report["status"] == "PASS"
+    assert report["claim"] == "INITIAL_PRODUCTION_JOB_SUPPLY_VERIFIED"
+    assert report["source_path"] == "EMPLOYER_ATS"
+    assert report["source_postings"] == 727
+    assert report["source_canonical_jobs"] == 697
+    assert report["company_identity_preserved"] is True
+    assert report["open_jobs_provider_warning"] == "upstream_unavailable"
+
+
+def test_employer_ats_fallback_requires_a_complete_failure_free_verified_run():
+    evidence = {
+        "database_schema_present": True,
+        "open_jobs_source_active": False,
+        "successful_open_jobs_run": False,
+        "completed_open_jobs_cycle": False,
+        "real_canonical_jobs": 697,
+        "latest_open_jobs_failed": 0,
+        "open_jobs_source_postings": 0,
+        "company_identity_preserved": False,
+        "employer_source_verified": True,
+        "employer_source_type": "GREENHOUSE",
+        "employer_source_fetched": 727,
+        "employer_source_valid": 727,
+        "employer_source_failed": 1,
+        "employer_source_postings": 727,
+        "employer_source_canonical_jobs": 697,
+        "employer_company_identity_preserved": True,
+    }
+
+    report = evaluate_initial_acceptance(evidence, min_jobs=1, app_env="staging")
+
+    assert report["status"] == "BLOCKED_EXTERNAL_CONFIGURATION"
+    assert report["source_path"] is None
+    assert report["blocking_dependencies"]
+
+
+def test_local_supply_evidence_does_not_claim_production_certification():
+    evidence = {
+        "database_schema_present": True,
+        "open_jobs_source_active": True,
+        "successful_open_jobs_run": True,
+        "completed_open_jobs_cycle": False,
+        "real_canonical_jobs": 10,
+        "open_jobs_canonical_jobs": 10,
+        "latest_open_jobs_failed": 0,
+        "open_jobs_source_postings": 10,
+        "company_identity_preserved": True,
+    }
+
+    report = evaluate_initial_acceptance(evidence, min_jobs=1, app_env="development")
+
+    assert report["status"] == "RUNTIME_EVIDENCE_AVAILABLE"
+    assert report["claim"] == "REAL_JOB_SUPPLY_VERIFIED_NOT_STAGING"

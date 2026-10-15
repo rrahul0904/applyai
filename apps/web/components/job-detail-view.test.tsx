@@ -4,10 +4,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { JobDetailView } from "@/components/job-detail-view";
 import { api } from "@/lib/api/client";
 
-const { pushMock, successMock, errorMock } = vi.hoisted(() => ({
+const { pushMock, successMock, errorMock, viewedEventMock } = vi.hoisted(() => ({
   pushMock: vi.fn(),
   successMock: vi.fn(),
   errorMock: vi.fn(),
+  viewedEventMock: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -39,6 +40,10 @@ vi.mock("@/lib/api/client", () => ({
     savedJobs: { save: vi.fn(), unsave: vi.fn() },
     applications: { create: vi.fn() },
   },
+}));
+
+vi.mock("@/lib/api/platform-client", () => ({
+  platformApi: { trackAnalyticsEvent: viewedEventMock },
 }));
 
 const job: Awaited<ReturnType<typeof api.jobs.detail>> = {
@@ -81,6 +86,7 @@ function renderJobDetail() {
 describe("JobDetailView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    viewedEventMock.mockResolvedValue(undefined);
     vi.mocked(api.jobs.detail).mockResolvedValue(job);
     vi.mocked(api.savedJobs.save).mockResolvedValue(undefined);
     vi.mocked(api.savedJobs.unsave).mockResolvedValue(undefined);
@@ -97,6 +103,11 @@ describe("JobDetailView", () => {
     expect(screen.getByRole("link", { name: "View original listing" }).getAttribute("href")).toBe(job.source_url);
     expect(screen.getByTestId("career-system-panel").textContent).toContain("job-1");
     expect(screen.getByTestId("recruiter-lens-card").textContent).toContain("job-1");
+    await waitFor(() => expect(viewedEventMock).toHaveBeenCalledWith({
+      event_type: "JOB_VIEWED",
+      entity_type: "JOB",
+      entity_id: "job-1",
+    }));
   });
 
   it("persists a saved job through the real mutation boundary", async () => {

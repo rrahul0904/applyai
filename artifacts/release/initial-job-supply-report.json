@@ -1,0 +1,30 @@
+{
+  "blocking_dependencies": [
+    "The Open Jobs real source is not active.",
+    "No successful Open Jobs ingestion run has completed.",
+    "Real canonical job count 0 is below required minimum 1.",
+    "No Open Jobs posting provenance was persisted.",
+    "Open Jobs employer identities appear collapsed during canonicalization."
+  ],
+  "claim": "INITIAL_PRODUCTION_JOB_SUPPLY_NOT_VERIFIED",
+  "evidence": {
+    "alembic_revision": "d0v4z6s9w197",
+    "company_identity_preserved": false,
+    "database_schema_present": true,
+    "development_seed_jobs_counted_as_real": false,
+    "git_sha": null,
+    "latest_open_jobs_failed": 0,
+    "latest_open_jobs_fetched": 0,
+    "latest_open_jobs_status": null,
+    "latest_open_jobs_valid": 0,
+    "open_jobs_canonical_companies": 0,
+    "open_jobs_source_active": false,
+    "open_jobs_source_company_identities": 0,
+    "open_jobs_source_postings": 0,
+    "real_canonical_jobs": 0,
+    "successful_open_jobs_run": false
+  },
+  "minimum_real_jobs": 1,
+  "source_sha": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab",
+  "status": "BLOCKED_EXTERNAL_CONFIGURATION"
+}

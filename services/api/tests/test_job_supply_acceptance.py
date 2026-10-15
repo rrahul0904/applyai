@@ -1,4 +1,10 @@
-from scripts.job_supply_acceptance import REPRESENTATIVE_PROVIDER_TYPES, evaluate_acceptance
+from types import SimpleNamespace
+
+from scripts.job_supply_acceptance import (
+    REPRESENTATIVE_PROVIDER_TYPES,
+    evaluate_acceptance,
+    verified_provider_types,
+)
 
 
 def evidence(**overrides):
@@ -51,3 +57,31 @@ def test_staging_pass_requires_all_measured_evidence_and_representative_sources(
     assert result["claim"] == "LIVE_STAGING_VERIFIED"
     assert result["blocking_dependencies"] == []
     assert result["missing_representative_providers"] == []
+
+
+def test_partial_or_inconclusive_runs_cannot_verify_provider_coverage():
+    runs = [
+        SimpleNamespace(
+            source_type="GREENHOUSE",
+            status="COMPLETED",
+            coverage_status="PARTIAL",
+            fetched=24,
+            valid=23,
+        ),
+        SimpleNamespace(
+            source_type="LEVER",
+            status="INCONCLUSIVE",
+            coverage_status="INCONCLUSIVE",
+            fetched=18,
+            valid=18,
+        ),
+        SimpleNamespace(
+            source_type="ASHBY",
+            status="COMPLETED",
+            coverage_status="COMPLETE",
+            fetched=10,
+            valid=10,
+        ),
+    ]
+
+    assert verified_provider_types(runs) == {"ASHBY"}

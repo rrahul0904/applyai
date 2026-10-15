@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Literal
 
@@ -28,6 +28,7 @@ from app.preparation_models import (
     InterviewPackSection,
     InterviewRecording,
     InterviewTurnRecord,
+    InterviewTranscriptSegment,
     JobSkillGap,
     LearningExercise,
     LearningPath,
@@ -37,6 +38,7 @@ from app.preparation_models import (
     MockInterviewSession,
     UsageLedger,
 )
+from app.interview_session_lifecycle import ensure_available
 
 router = APIRouter(prefix="/career-v2", tags=["career preparation"])
 
@@ -70,6 +72,21 @@ class RecordingWrite(BaseModel):
     transcript_text: str | None = Field(default=None, max_length=30000)
     duration_seconds: int | None = Field(default=None, ge=0, le=14400)
     provider: str = Field(default="browser", min_length=1, max_length=64)
+
+
+class TranscriptConsentWrite(BaseModel):
+    consent: bool
+    retention_days: int = Field(default=90, ge=1, le=365)
+
+
+class TranscriptSegmentWrite(BaseModel):
+    client_segment_id: str = Field(min_length=1, max_length=120)
+    speaker: Literal["CANDIDATE", "INTERVIEWER"]
+    text: str = Field(min_length=1, max_length=5000)
+    turn_id: uuid.UUID | None = None
+    start_ms: int | None = Field(default=None, ge=0)
+    end_ms: int | None = Field(default=None, ge=0)
+    source: Literal["USER_TYPED", "BROWSER_TRANSCRIPT"] = "USER_TYPED"
 
 
 def _now() -> datetime:
@@ -473,7 +490,9 @@ def _session_owned(session: Session, user: User, session_id: uuid.UUID) -> MockI
 
 
 def _session_payload(session: Session, row: MockInterviewSession) -> dict:
+    ensure_available(row)
     turns = list(session.scalars(select(InterviewTurnRecord).where(InterviewTurnRecord.interview_session_id == row.id).order_by(InterviewTurnRecord.position)))
+    transcript = list(session.scalars(select(InterviewTranscriptSegment).where(InterviewTranscriptSegment.interview_session_id == row.id).order_by(InterviewTranscriptSegment.created_at, InterviewTranscriptSegment.id)))
     current = next((turn for turn in turns if turn.answer_text is None), None)
     return {
         "id": row.id,
@@ -483,11 +502,15 @@ def _session_payload(session: Session, row: MockInterviewSession) -> dict:
         "difficulty": row.difficulty,
         "status": row.status,
         "provider": row.provider,
+        "transcript_consent_at": row.transcript_consent_at,
+        "retention_expires_at": row.retention_expires_at,
+        "provenance": row.provenance_json,
         "overall_score": row.overall_score,
         "category_scores": row.category_scores_json,
         "feedback": row.final_feedback_json,
         "current_question": {"turn_id": current.id, "question": current.question, "position": current.position} if current else None,
         "turns": [{"id": turn.id, "position": turn.position, "question": turn.question, "answer": turn.answer_text, "score": turn.score, "evaluation": turn.evaluation_json, "follow_up": turn.follow_up} for turn in turns],
+        "transcript_segments": [{"id": item.id, "turn_id": item.turn_id, "client_segment_id": item.client_segment_id, "speaker": item.speaker, "text": item.text, "start_ms": item.start_ms, "end_ms": item.end_ms, "source": item.source, "created_at": item.created_at} for item in transcript],
     }
 
 
@@ -499,7 +522,7 @@ def create_mock_interview(job_id: uuid.UUID, payload: MockInterviewCreate, user:
     mode = InterviewMode(payload.mode)
     engine = choose_interview_engine(prefer_rigor=False)
     interview = engine.create_session(InterviewRequest(candidate_id=str(user.id), job_id=str(job.id), mode=mode, target_role=job.title, verified_skills=tuple(skill.name for skill in context["skills"][:8]), difficulty=payload.difficulty))
-    row = MockInterviewSession(user_id=user.id, job_id=job.id, interview_pack_id=pack.id, mode=payload.mode, channel=payload.channel, difficulty=payload.difficulty.upper(), status="IN_PROGRESS", provider=interview.provider, provider_session_id=interview.provider_session_id, total_questions=len(interview.questions))
+    row = MockInterviewSession(user_id=user.id, job_id=job.id, interview_pack_id=pack.id, mode=payload.mode, channel=payload.channel, difficulty=payload.difficulty.upper(), status="IN_PROGRESS", provider=interview.provider, provider_session_id=interview.provider_session_id, total_questions=len(interview.questions), provenance_json={"runtime": "applyai-canonical", "mode": payload.mode, "channel": payload.channel, "question_source": "ApplyAI interview pack", "transcription": "disabled_until_explicit_consent"})
     session.add(row)
     session.flush()
     for position, question in enumerate(interview.questions, start=1):
@@ -537,6 +560,7 @@ def _evaluate_answer(question: str, answer: str, mode: str) -> tuple[int, dict]:
 @router.post("/interviews/{session_id}/answers")
 def answer_mock_interview(session_id: uuid.UUID, payload: InterviewAnswerWrite, user: User = Depends(get_current_user), session: Session = Depends(get_session)) -> dict:
     row = _session_owned(session, user, session_id)
+    ensure_available(row, writing=True)
     if row.status != "IN_PROGRESS":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Interview is not in progress")
     turn = session.scalar(select(InterviewTurnRecord).where(InterviewTurnRecord.interview_session_id == row.id, InterviewTurnRecord.answer_text.is_(None)).order_by(InterviewTurnRecord.position).limit(1))
@@ -561,6 +585,7 @@ def answer_mock_interview(session_id: uuid.UUID, payload: InterviewAnswerWrite, 
 @router.post("/interviews/{session_id}/recordings")
 def save_recording(session_id: uuid.UUID, payload: RecordingWrite, user: User = Depends(get_current_user), session: Session = Depends(get_session)) -> dict:
     row = _session_owned(session, user, session_id)
+    ensure_available(row, writing=True, capture=True)
     recording = InterviewRecording(interview_session_id=row.id, media_type=payload.media_type, storage_key=payload.storage_key, transcript_text=payload.transcript_text, duration_seconds=payload.duration_seconds, provider=payload.provider)
     session.add(recording)
     _usage(session, user, "INTERVIEW_MEDIA_MINUTES", row.id, quantity=Decimal(str(round((payload.duration_seconds or 0) / 60, 4))), unit="minute", metadata={"media_type": payload.media_type})
@@ -591,6 +616,53 @@ def complete_mock_interview(session_id: uuid.UUID, user: User = Depends(get_curr
 def interview_report(session_id: uuid.UUID, user: User = Depends(get_current_user), session: Session = Depends(get_session)) -> dict:
     row = _session_owned(session, user, session_id)
     return _session_payload(session, row)
+
+
+@router.put("/interviews/{session_id}/transcript-consent")
+def set_interview_transcript_consent(session_id: uuid.UUID, payload: TranscriptConsentWrite, user: User = Depends(get_current_user), session: Session = Depends(get_session)) -> dict:
+    row = _session_owned(session, user, session_id)
+    ensure_available(row)
+    if payload.consent:
+        row.transcript_consent_at = _now()
+        row.retention_expires_at = _now() + timedelta(days=payload.retention_days)
+        row.provenance_json = {**(row.provenance_json or {}), "transcription": "explicit_candidate_consent", "consent_version": "transcript-consent-v1"}
+    else:
+        row.transcript_consent_at = None
+        row.retention_expires_at = None
+        row.provenance_json = {**(row.provenance_json or {}), "transcription": "revoked_by_candidate"}
+        session.execute(delete(InterviewTranscriptSegment).where(InterviewTranscriptSegment.interview_session_id == row.id))
+        for recording in session.scalars(select(InterviewRecording).where(InterviewRecording.interview_session_id == row.id)):
+            recording.transcript_text = None
+    session.commit()
+    return {"session_id": row.id, "transcript_consent": row.transcript_consent_at is not None, "retention_expires_at": row.retention_expires_at, "transcript_segments_deleted": not payload.consent}
+
+
+@router.post("/interviews/{session_id}/transcript-segments", status_code=status.HTTP_201_CREATED)
+def add_interview_transcript_segment(session_id: uuid.UUID, payload: TranscriptSegmentWrite, user: User = Depends(get_current_user), session: Session = Depends(get_session)) -> dict:
+    row = _session_owned(session, user, session_id)
+    ensure_available(row, writing=True, capture=True)
+    if payload.end_ms is not None and payload.start_ms is not None and payload.end_ms < payload.start_ms:
+        raise HTTPException(status_code=422, detail="Transcript segment end must follow start")
+    if payload.turn_id is not None and session.scalar(select(InterviewTurnRecord.id).where(InterviewTurnRecord.id == payload.turn_id, InterviewTurnRecord.interview_session_id == row.id)) is None:
+        raise HTTPException(status_code=404, detail="Interview turn not found")
+    existing = session.scalar(select(InterviewTranscriptSegment).where(InterviewTranscriptSegment.interview_session_id == row.id, InterviewTranscriptSegment.client_segment_id == payload.client_segment_id))
+    if existing is None:
+        existing = InterviewTranscriptSegment(interview_session_id=row.id, turn_id=payload.turn_id, client_segment_id=payload.client_segment_id, speaker=payload.speaker, text=payload.text.strip(), start_ms=payload.start_ms, end_ms=payload.end_ms, source=payload.source)
+        session.add(existing)
+        session.commit()
+    return {"id": existing.id, "session_id": row.id, "turn_id": existing.turn_id, "client_segment_id": existing.client_segment_id, "speaker": existing.speaker, "text": existing.text, "start_ms": existing.start_ms, "end_ms": existing.end_ms, "source": existing.source, "created_at": existing.created_at}
+
+
+@router.delete("/interviews/{session_id}/transcript-segments", status_code=status.HTTP_204_NO_CONTENT)
+def delete_interview_transcript(session_id: uuid.UUID, user: User = Depends(get_current_user), session: Session = Depends(get_session)) -> None:
+    row = _session_owned(session, user, session_id)
+    session.execute(delete(InterviewTranscriptSegment).where(InterviewTranscriptSegment.interview_session_id == row.id))
+    for recording in session.scalars(select(InterviewRecording).where(InterviewRecording.interview_session_id == row.id)):
+        recording.transcript_text = None
+    row.transcript_consent_at = None
+    row.retention_expires_at = None
+    row.provenance_json = {**(row.provenance_json or {}), "transcription": "deleted_by_candidate"}
+    session.commit()
 
 
 def _learning_score(session: Session, user: User, job_id: uuid.UUID) -> int:

@@ -1,15 +1,17 @@
 import re
 import uuid
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, select
+from sqlalchemy import case, delete, exists, func, literal, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
 from app.core.database import get_session
+from app.career_models import CareerMatch
 from app.models import (
     Application,
     ApplicationAnswer,
@@ -24,13 +26,22 @@ from app.models import (
     JobCompensation,
     JobLocation,
     JobSkill,
+    JobSource,
     JobSourceLink,
     SavedJob,
     User,
 )
+from app.platform_models import CandidateAnalyticsEvent
+from app.jobs.remote_eligibility import (
+    RemoteSourceEvidence,
+    assess_remote_eligibility,
+    assess_remote_sources,
+)
 
 router = APIRouter(prefix="/workspace", tags=["candidate workspace"])
 TAILORING_PREFIX = "APPLYAI_RESUME_EDIT"
+RECOMMENDATION_CANDIDATE_LIMIT = 1_500
+RECOMMENDATION_RECENT_FALLBACK_LIMIT = 300
 
 
 class TailoringEditWrite(BaseModel):
@@ -51,6 +62,90 @@ def tokens(value: str | None) -> set[str]:
         for token in re.findall(r"[a-z0-9+#.]+", value.lower())
         if len(token) > 2
     }
+
+
+def _candidate_geography(location: str | None) -> tuple[str | None, tuple[str, ...]]:
+    if not location:
+        return None, ()
+    value = location.strip().upper()
+    tokens_in_location = re.findall(r"[A-Z]{2,}", value)
+    country_aliases = {
+        "US": "US", "USA": "US", "UNITED STATES": "US", "CANADA": "CA",
+        "UK": "GB", "UNITED KINGDOM": "GB", "IRELAND": "IE", "GERMANY": "DE",
+        "FRANCE": "FR", "SPAIN": "ES", "ITALY": "IT", "AUSTRALIA": "AU",
+        "INDIA": "IN", "SINGAPORE": "SG", "NETHERLANDS": "NL",
+    }
+    normalized = " ".join(value.split())
+    for label, code in country_aliases.items():
+        if normalized == label or normalized.endswith(f", {label}") or normalized.endswith(f" {label}"):
+            region_tokens = tuple(token for token in tokens_in_location if token != label)
+            return code, region_tokens
+    us_states = {
+        "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID",
+        "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS",
+        "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK",
+        "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV",
+        "WI", "WY", "DC",
+    }
+    state = next((token for token in reversed(tokens_in_location) if token in us_states), None)
+    if state:
+        return "US", (state,)
+    return None, ()
+
+
+def _remote_sources_for_jobs(
+    session: Session,
+    jobs: list[Job],
+) -> dict[uuid.UUID, tuple[RemoteSourceEvidence, ...]]:
+    if not jobs:
+        return {}
+    job_ids = [job.id for job in jobs]
+    locations: dict[uuid.UUID, JobLocation] = {}
+    for location in session.scalars(
+        select(JobLocation).where(JobLocation.job_id.in_(job_ids)).order_by(JobLocation.id)
+    ):
+        locations.setdefault(location.job_id, location)
+    evidence: dict[uuid.UUID, list[RemoteSourceEvidence]] = defaultdict(list)
+    rows = session.execute(
+        select(JobSource, JobSourceLink)
+        .join(JobSourceLink, JobSourceLink.job_source_id == JobSource.id)
+        .where(JobSourceLink.job_id.in_(job_ids))
+        .order_by(JobSourceLink.is_primary.desc(), JobSource.connector_key, JobSource.source_url)
+    )
+    ats_types = {"GREENHOUSE", "LEVER", "ASHBY", "SMARTRECRUITERS", "WORKDAY", "WORKABLE", "ICIMS", "ORACLE", "SUCCESSFACTORS"}
+    employer_types = {"EMPLOYER_DIRECT", "CAREER_SITE", "JSON_LD", "EMPLOYER_JSONLD", "EMPLOYER_CAREER_SITE", "EMPLOYER_OFFICIAL_API"}
+    aggregator_types = {"OPEN_JOBS", "AUTHORIZED_AGGREGATOR_FEED", "LICENSED_FEED", "RELIEFWEB", "GOVERNMENT_FEED"}
+    for source, link in rows:
+        checkpoint = source.checkpoint if isinstance(source.checkpoint, dict) else {}
+        metadata = checkpoint.get("source_metadata")
+        metadata = metadata if isinstance(metadata, dict) else {}
+        source_type = str(checkpoint.get("source_type") or "").strip().upper()
+        connector_key = source.connector_key.strip().upper().replace("-", "_")
+        authority = (
+            "ATS" if source_type in ats_types or connector_key in ats_types else
+            "EMPLOYER" if source_type in employer_types or connector_key in employer_types else
+            "AGGREGATOR" if source_type in aggregator_types or connector_key in aggregator_types else
+            "UNKNOWN"
+        )
+        location = locations.get(link.job_id)
+
+        def strings(key: str) -> tuple[str, ...]:
+            value = metadata.get(key)
+            if not isinstance(value, (tuple, list)):
+                return ()
+            return tuple(item[:120] for item in value if isinstance(item, str) and item.strip())[:40]
+
+        evidence[link.job_id].append(RemoteSourceEvidence(
+            canonical_job_id=str(link.job_id),
+            source_url=source.source_url,
+            authority=authority,
+            work_mode=(metadata.get("work_mode") if isinstance(metadata.get("work_mode"), str) else location.work_mode if link.is_primary and location else None),
+            location=(metadata.get("location") if isinstance(metadata.get("location"), str) else location.location_text if link.is_primary and location else None),
+            scope=(metadata.get("remote_scope") if isinstance(metadata.get("remote_scope"), str) else None),
+            countries=strings("eligible_countries"),
+            regions=strings("eligible_regions"),
+        ))
+    return {job_id: tuple(items) for job_id, items in evidence.items()}
 
 
 def candidate_context(session: Session, user: User) -> dict:
@@ -97,21 +192,21 @@ def candidate_context(session: Session, user: User) -> dict:
     }
 
 
-def recommendation_rows(session: Session, user: User, limit: int) -> list[dict]:
-    context = candidate_context(session, user)
+def _recommendation_batch(
+    session: Session,
+    user: User,
+    context: dict,
+    jobs: list[Job],
+    *,
+    career_scores: dict[uuid.UUID, int],
+    applied_ids: set[uuid.UUID],
+    viewed_ids: set[str],
+    now: datetime,
+) -> list[dict]:
     preference: CandidatePreference | None = context["preference"]
-    jobs = list(
-        session.scalars(
-            select(Job)
-            .where(Job.status == "ACTIVE")
-            .order_by(Job.posted_at.desc().nullslast(), Job.last_seen_at.desc())
-            .limit(250)
-        )
-    )
-    if not jobs:
-        return []
-
     job_ids = [job.id for job in jobs]
+    if not job_ids:
+        return []
     company_ids = {job.company_id for job in jobs}
     companies = {
         company.id: company
@@ -163,14 +258,76 @@ def recommendation_rows(session: Session, user: User, limit: int) -> list[dict]:
         mode.upper() for mode in (preference.work_modes if preference else [])
     }
     minimum_compensation = preference.minimum_compensation if preference else None
+    remote_sources = _remote_sources_for_jobs(session, jobs)
+    candidate_country, candidate_regions = _candidate_geography(
+        preference.location_text if preference else None
+    )
+    preferred_employment = {
+        value.strip().upper()
+        for value in (preference.employment_types if preference else [])
+        if value and value.strip().upper() not in {"ANY", "ALL"}
+    }
+    relocation_open = bool(preference and preference.relocation_open)
 
     for job in jobs:
+        # Do not recommend already-started applications. Hard user constraints are
+        # applied before any fit or recency score is calculated.
+        if job.id in applied_ids:
+            continue
         company = companies.get(job.company_id)
         if company is None:
             continue
         location = locations.get(job.id)
         compensation = compensations.get(job.id)
         job_skills = skills_by_job.get(job.id, [])
+        work_mode = location.work_mode.upper() if location else None
+        if preferred_modes and (work_mode is None or work_mode not in preferred_modes):
+            continue
+        if preferred_employment and (
+            not job.employment_type
+            or job.employment_type.strip().upper() not in preferred_employment
+        ):
+            continue
+        if preferred_location and not relocation_open:
+            location_matches = bool(
+                location
+                and preferred_location in location.location_text.lower()
+            )
+            if not location_matches and work_mode != "REMOTE":
+                continue
+        else:
+            location_matches = False
+        candidate_geography_known = candidate_country is not None or bool(candidate_regions)
+        if (
+            work_mode == "REMOTE"
+            and not relocation_open
+            and (candidate_geography_known or "REMOTE" in preferred_modes)
+        ):
+            source_evidence = remote_sources.get(job.id, ())
+            eligibility = (
+                assess_remote_sources(
+                    canonical_job_id=str(job.id),
+                    sources=source_evidence,
+                    candidate_country=candidate_country,
+                    candidate_regions=candidate_regions,
+                )
+                if source_evidence
+                else assess_remote_eligibility(
+                    work_mode=work_mode,
+                    location=location.location_text if location else None,
+                    candidate_country=candidate_country,
+                    candidate_regions=candidate_regions,
+                )
+            )
+            if eligibility.decision != "ELIGIBLE":
+                continue
+        if (
+            minimum_compensation
+            and compensation
+            and compensation.maximum is not None
+            and compensation.maximum < minimum_compensation
+        ):
+            continue
         title_tokens = tokens(job.title)
         job_skill_tokens = {skill.normalized_name for skill in job_skills}
         role_overlap = context["role_tokens"] & title_tokens
@@ -201,7 +358,7 @@ def recommendation_rows(session: Session, user: User, limit: int) -> list[dict]:
             if preferred_location in location_text:
                 score += 8
                 strengths.append("The location matches your stated preference.")
-            elif location.work_mode.upper() == "REMOTE" and "REMOTE" in preferred_modes:
+            elif location.work_mode.upper() == "REMOTE":
                 score += 7
                 strengths.append("The remote arrangement matches your work preference.")
             else:
@@ -230,10 +387,30 @@ def recommendation_rows(session: Session, user: User, limit: int) -> list[dict]:
         if not gaps:
             gaps.append("Confirm team scope and first-year expectations during recruiter conversations.")
 
-        score = max(35, min(98, score))
+        deterministic_score = max(35, min(98, score))
+        career_score = career_scores.get(job.id)
+        score = (
+            round(deterministic_score * 0.65 + career_score * 0.35)
+            if career_score is not None
+            else deterministic_score
+        )
+        saved = job.id in saved_ids
+        recently_viewed = str(job.id) in viewed_ids
+        if saved:
+            score += 3
+            strengths.append("You saved this opportunity for follow-up.")
+        if recently_viewed:
+            score -= 4
+        last_seen = job.last_seen_at
+        if last_seen.tzinfo is None:
+            last_seen = last_seen.replace(tzinfo=timezone.utc)
+        age = now - last_seen
+        freshness_adjustment = 5 if age <= timedelta(hours=3) else 3 if age <= timedelta(hours=24) else 1 if age <= timedelta(days=7) else 0
+        score = max(0, min(100, score + freshness_adjustment))
         results.append(
             {
                 "id": job.id,
+                "job_id": str(job.id),
                 "title": job.title,
                 "company_name": company.canonical_name,
                 "location": location.location_text if location else None,
@@ -242,9 +419,15 @@ def recommendation_rows(session: Session, user: User, limit: int) -> list[dict]:
                 "maximum_compensation": compensation.maximum if compensation else None,
                 "posted_at": job.posted_at,
                 "last_seen_at": job.last_seen_at,
-                "saved": job.id in saved_ids,
+                "saved": saved,
+                "applied": False,
+                "recently_viewed": recently_viewed,
                 "match_score": score,
+                "deterministic_score": deterministic_score,
+                "career_v2_score": career_score,
+                "freshness_adjustment": freshness_adjustment,
                 "summary": job.description,
+                "explanation": strengths[0],
                 "strengths": strengths[:4],
                 "gaps": gaps[:3],
                 "skills": [skill.name for skill in job_skills[:8]],
@@ -256,15 +439,128 @@ def recommendation_rows(session: Session, user: User, limit: int) -> list[dict]:
                 "data_origin": job.data_origin,
             }
         )
+    return results
 
-    results.sort(
+
+def recommendation_rows(session: Session, user: User, limit: int) -> list[dict]:
+    context = candidate_context(session, user)
+    now = datetime.now(timezone.utc)
+    career_scores = {
+        job_id: score
+        for job_id, score in session.execute(
+            select(CareerMatch.job_id, CareerMatch.final_score)
+            .join(Job, Job.id == CareerMatch.job_id)
+            .where(
+                CareerMatch.user_id == user.id,
+                CareerMatch.engine_version == "applyai-hybrid-fit-v2",
+                Job.status == "ACTIVE",
+            )
+            .order_by(CareerMatch.final_score.desc(), CareerMatch.updated_at.desc())
+            .limit(RECOMMENDATION_CANDIDATE_LIMIT)
+        )
+    }
+    applied_ids = set(
+        session.scalars(select(Application.job_id).where(Application.user_id == user.id))
+    )
+    viewed_since = now - timedelta(days=14)
+    viewed_ids = set(
+        session.scalars(
+            select(CandidateAnalyticsEvent.entity_id).where(
+                CandidateAnalyticsEvent.user_id == user.id,
+                CandidateAnalyticsEvent.event_type == "JOB_VIEWED",
+                CandidateAnalyticsEvent.entity_type == "JOB",
+                CandidateAnalyticsEvent.occurred_at >= viewed_since,
+                CandidateAnalyticsEvent.entity_id.is_not(None),
+            )
+        )
+    )
+    # Keep request-time work bounded. Select a SQL-ranked pool from indexed
+    # role/skill/career evidence, then add a small recency fallback for sparse
+    # profiles. The Python scorer can apply the full hard filters and exact
+    # explanations to this bounded pool without deserializing the global job
+    # inventory on every page load.
+    role_predicates = [
+        Job.search_vector.op("@@")(func.plainto_tsquery("english", token))
+        for token in sorted(context["role_tokens"])[:40]
+    ]
+    skill_match = exists(
+        select(JobSkill.id).where(
+            JobSkill.job_id == Job.id,
+            JobSkill.normalized_name.in_(sorted(context["skill_tokens"])[:100]),
+        )
+    ) if context["skill_tokens"] else None
+    career_match = CareerMatch.job_id.in_(tuple(career_scores)) if career_scores else None
+    saved_match = exists(
+        select(SavedJob.job_id).where(SavedJob.user_id == user.id, SavedJob.job_id == Job.id)
+    )
+    viewed_match = exists(
+        select(CandidateAnalyticsEvent.id).where(
+            CandidateAnalyticsEvent.user_id == user.id,
+            CandidateAnalyticsEvent.event_type == "JOB_VIEWED",
+            CandidateAnalyticsEvent.entity_type == "JOB",
+            CandidateAnalyticsEvent.entity_id == func.cast(Job.id, CandidateAnalyticsEvent.entity_id.type),
+            CandidateAnalyticsEvent.occurred_at >= viewed_since,
+        )
+    )
+    relevance_signals = [*role_predicates, saved_match, viewed_match]
+    if skill_match is not None:
+        relevance_signals.append(skill_match)
+    if career_match is not None:
+        relevance_signals.append(career_match)
+
+    relevance_score = case(career_scores, value=Job.id, else_=0) if career_scores else literal(0)
+    role_score = case((or_(*role_predicates), 1), else_=0) if role_predicates else literal(0)
+    skill_score = case((skill_match, 1), else_=0) if skill_match is not None else literal(0)
+    relevant_statement = (
+        select(Job)
+        .where(Job.status == "ACTIVE", or_(*relevance_signals))
+        .order_by(
+            relevance_score.desc(),
+            role_score.desc(),
+            skill_score.desc(),
+            Job.posted_at.desc().nullslast(),
+            Job.last_seen_at.desc(),
+            Job.id.asc(),
+        )
+        .limit(RECOMMENDATION_CANDIDATE_LIMIT)
+    )
+    relevant_jobs = list(session.scalars(relevant_statement))
+    selected_ids = {job.id for job in relevant_jobs}
+    fallback_jobs = list(
+        session.scalars(
+            select(Job)
+            .where(Job.status == "ACTIVE", Job.id.not_in(selected_ids))
+            .order_by(Job.posted_at.desc().nullslast(), Job.last_seen_at.desc(), Job.id.asc())
+            .limit(RECOMMENDATION_RECENT_FALLBACK_LIMIT)
+        )
+    )
+    candidate_jobs = relevant_jobs + fallback_jobs
+
+    ranked: list[dict] = []
+    for start in range(0, len(candidate_jobs), 500):
+        batch = candidate_jobs[start : start + 500]
+        ranked.extend(
+            _recommendation_batch(
+                session,
+                user,
+                context,
+                batch,
+                career_scores=career_scores,
+                applied_ids=applied_ids,
+                viewed_ids=viewed_ids,
+                now=now,
+            )
+        )
+    ranked.sort(
         key=lambda item: (
             item["match_score"],
             item["posted_at"] or item["last_seen_at"],
+            str(item["id"]),
         ),
         reverse=True,
     )
-    return results[:limit]
+
+    return ranked[:limit]
 
 
 @router.get("/recommendations")
@@ -277,6 +573,8 @@ def get_recommendations(
     profile: CandidateProfile | None = context["profile"]
     preference: CandidatePreference | None = context["preference"]
     return {
+        "ranking_scope": "BOUNDED_RELEVANT_AND_RECENT_CANDIDATE_POOL",
+        "candidate_pool_limit": RECOMMENDATION_CANDIDATE_LIMIT + RECOMMENDATION_RECENT_FALLBACK_LIMIT,
         "profile_ready": profile is not None,
         "search_goal": {
             "target_roles": [role.title for role in context["roles"]],

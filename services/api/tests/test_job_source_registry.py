@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, func, select
@@ -9,7 +10,11 @@ from app.durability_models import JobIngestionRun
 from app.job_source_models import JobSourceRegistry
 from app.jobs.connectors import ConnectorHealth, JobSourceConnector, NormalizedJob
 from app.jobs.contracts import JobSourceType, RawJobPosting
-from app.jobs.registry import claim_due_source_ids, sync_configured_sources
+from app.jobs.registry import (
+    bootstrap_open_jobs_source,
+    claim_due_source_ids,
+    sync_configured_sources,
+)
 from app.jobs.source_pipeline import RegisteredSourceIngestionPipeline
 from app.models import Job, JobSource, JobVersion, RawJobPosting as RawJobPostingModel
 
@@ -219,6 +224,35 @@ def test_configured_source_sync_is_idempotent(database_url):
             source.source_type for source in session.scalars(select(JobSourceRegistry))
         } == {"GREENHOUSE", "LEVER", "ASHBY"}
     engine.dispose()
+
+
+def test_open_jobs_bootstrap_activates_due_source_and_preserves_checkpoint(monkeypatch):
+    source = SimpleNamespace(
+        id="open-jobs-id",
+        configuration={"connector_checkpoint": {"last_leaf_id": "17"}},
+    )
+    received = {}
+
+    def fake_upsert(session, **kwargs):
+        del session
+        received.update(kwargs)
+        return source
+
+    monkeypatch.setattr("app.jobs.registry.upsert_source", fake_upsert)
+    settings = Settings(job_source_min_interval_seconds=900)
+
+    result = bootstrap_open_jobs_source(object(), settings)
+
+    assert result.enabled is True
+    assert result.crawl_allowed is True
+    assert result.health_status == "HEALTHY"
+    assert result.next_run_at <= datetime.now(timezone.utc)
+    assert result.configuration["connector_checkpoint"] == {"last_leaf_id": "17"}
+    assert received["source_identity"] == "open-jobs"
+    assert received["configuration"]["authoritative_snapshot"] is False
+    assert received["configuration"]["closure_authority"] is False
+    assert received["configuration"]["dataset_license"] == "CC0-1.0"
+    assert received["interval_seconds"] == 900
 
 
 def test_internal_source_api_requires_separate_operator_token(client: TestClient):

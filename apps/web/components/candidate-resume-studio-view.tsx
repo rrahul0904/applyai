@@ -18,6 +18,7 @@ export function CandidateResumeStudioView() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = useMemo(() => docs.data?.find((item) => item.id === selectedId) ?? docs.data?.[0] ?? null, [docs.data, selectedId]);
   const [draftSummary, setDraftSummary] = useState("");
+  const [exportNotice, setExportNotice] = useState<string | null>(null);
 
   const create = useMutation({
     mutationFn: () => platformApi.resumeStudio.create({ title: "New resume", content: { summary: "", sections: [] } }),
@@ -39,17 +40,24 @@ export function CandidateResumeStudioView() {
     },
   });
   const exportDoc = useMutation({
-    mutationFn: async () => selected ? platformApi.resumeStudio.export(selected.id, "txt") : null,
+    mutationFn: async (format: "txt" | "pdf") => selected ? platformApi.resumeStudio.export(selected.id, format) : null,
     onSuccess: (file) => {
       if (!file) return;
-      const blob = new Blob([file.content], { type: file.content_type });
+      const content = file.content_encoding === "base64"
+        ? Uint8Array.from(atob(file.content), (character) => character.charCodeAt(0))
+        : file.content;
+      const blob = new Blob([content], { type: file.content_type });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
       anchor.download = file.filename;
       anchor.click();
       URL.revokeObjectURL(url);
+      setExportNotice(file.content_type === "application/pdf" && file.composition?.page_status === "OVERFLOW_REQUIRES_REVIEW"
+        ? `Your PDF contains ${file.composition.page_count} pages. All content is included; review the layout before use.`
+        : null);
     },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Resume export failed"),
   });
 
   if (docs.isLoading) return <Skeleton className="page-skeleton" />;
@@ -71,7 +79,7 @@ export function CandidateResumeStudioView() {
               type="button"
               key={item.id}
               className={selected?.id === item.id ? "cx-resume-item active" : "cx-resume-item"}
-              onClick={() => { setSelectedId(item.id); setDraftSummary(""); }}
+              onClick={() => { setSelectedId(item.id); setDraftSummary(""); setExportNotice(null); }}
             >
               <FileText size={17} />
               <span><strong>{item.title}</strong><small>Updated version {item.version}</small></span>
@@ -98,8 +106,10 @@ export function CandidateResumeStudioView() {
 
               <div className="button-row">
                 <Button onClick={() => save.mutate()} disabled={save.isPending}>{save.isPending ? "Saving…" : "Save changes"}</Button>
-                <Button variant="secondary" onClick={() => exportDoc.mutate()} disabled={exportDoc.isPending}><Download size={16}/>Download</Button>
+                <Button variant="secondary" onClick={() => exportDoc.mutate("pdf")} disabled={exportDoc.isPending}><Download size={16}/>Download PDF</Button>
+                <Button variant="secondary" onClick={() => exportDoc.mutate("txt")} disabled={exportDoc.isPending}>Download text</Button>
               </div>
+              {exportNotice ? <p role="status">{exportNotice}</p> : null}
             </Card>
           ) : (
             <Card><EmptyState icon={<FileText size={22} />} title="Create your first resume" description="Start with a clean version, then tailor it as strong opportunities come in." action={<Button onClick={() => create.mutate()}>Create resume</Button>} /></Card>

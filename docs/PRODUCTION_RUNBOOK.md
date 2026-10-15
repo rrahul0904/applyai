@@ -107,8 +107,13 @@ Register production source:
 
 ```bash
 cd services/api
-python -m scripts.register_public_job_sources --open-jobs
+python -m scripts.bootstrap_open_jobs_source
 ```
+
+The bootstrap is safe to repeat, preserves the durable cursor, activates the source,
+and makes its next run due immediately. It records the CC0 discovery role and keeps
+the source non-authoritative for job closure. The existing multi-feed command remains
+available with `python -m scripts.register_public_job_sources --open-jobs`.
 
 Start bounded:
 

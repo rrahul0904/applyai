@@ -165,6 +165,24 @@ def test_interview_recording_proxy_storage_is_private_and_replayable(client, dat
     assert started.status_code == 200, started.text
     session_id = started.json()["id"]
 
+    consent = client.put(
+        f"/api/v1/career-v2/interviews/{session_id}/transcript-consent",
+        json={"consent": True, "retention_days": 30},
+    )
+    assert consent.status_code == 200, consent.text
+    assert consent.json()["transcript_consent"] is True
+    transcript = client.post(
+        f"/api/v1/career-v2/interviews/{session_id}/transcript-segments",
+        json={"client_segment_id": "candidate-1", "speaker": "CANDIDATE", "text": "A candidate answer."},
+    )
+    assert transcript.status_code == 201, transcript.text
+    duplicate = client.post(
+        f"/api/v1/career-v2/interviews/{session_id}/transcript-segments",
+        json={"client_segment_id": "candidate-1", "speaker": "CANDIDATE", "text": "A candidate answer."},
+    )
+    assert duplicate.status_code == 201
+    assert duplicate.json()["id"] == transcript.json()["id"]
+
     intent = client.post(
         f"/api/v1/career-v2/interviews/{session_id}/recording-upload-intents",
         json={"filename": "answer.webm", "content_type": "audio/webm", "file_size": 18, "media_type": "AUDIO"},
@@ -198,3 +216,13 @@ def test_interview_recording_proxy_storage_is_private_and_replayable(client, dat
     assert replay.status_code == 200
     assert replay.content == b"mock-audio-content"
     assert replay.headers["cache-control"] == "private, no-store"
+
+    revoked = client.put(
+        f"/api/v1/career-v2/interviews/{session_id}/transcript-consent",
+        json={"consent": False},
+    )
+    assert revoked.status_code == 200
+    assert revoked.json()["transcript_segments_deleted"] is True
+    report = client.get(f"/api/v1/career-v2/interviews/{session_id}/report")
+    assert report.status_code == 200
+    assert report.json()["transcript_segments"] == []

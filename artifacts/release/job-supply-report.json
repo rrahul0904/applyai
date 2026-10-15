@@ -1,0 +1,237 @@
+{
+  "blocking_dependencies": [
+    "No non-demo organization universe has been loaded.",
+    "No active non-development job sources are configured.",
+    "No successful real-source ingestion run has been observed.",
+    "No canonical jobs with a non-development data origin are present."
+  ],
+  "claim": "SOURCE_IMPLEMENTED_NOT_LIVE_VERIFIED",
+  "evidence": {
+    "active_real_sources": 0,
+    "alembic_revision": "d0v4z6s9w197",
+    "app_env": "development",
+    "claims": {
+      "marketplace_partnerships_assumed": false,
+      "production_verified": false,
+      "synthetic_scale_is_live_inventory": false
+    },
+    "coverage": {
+      "companies_discovered": 0,
+      "companies_total": 0,
+      "companies_with_active_source": 0,
+      "companies_with_career_sites": 0,
+      "companies_with_detected_ats": 0,
+      "organizations_by_type": {},
+      "organizations_total": 0,
+      "sources_by_type": {},
+      "sources_with_successful_ingestion": 0
+    },
+    "database_schema_present": true,
+    "external_dependencies": [
+      {
+        "access_mode": "PARTNERSHIP_REQUIRED",
+        "implementation_status": "PARTNERSHIP_REQUIRED",
+        "provider": "devex",
+        "requires_credentials": true,
+        "requires_partnership": true
+      },
+      {
+        "access_mode": "PARTNERSHIP_REQUIRED",
+        "implementation_status": "PARTNERSHIP_REQUIRED",
+        "provider": "careerbuilder",
+        "requires_credentials": true,
+        "requires_partnership": true
+      },
+      {
+        "access_mode": "PARTNERSHIP_REQUIRED",
+        "implementation_status": "PARTNERSHIP_REQUIRED",
+        "provider": "workforgood",
+        "requires_credentials": false,
+        "requires_partnership": true
+      },
+      {
+        "access_mode": "DIRECT_PUBLIC_API",
+        "implementation_status": "SOURCE_TESTED",
+        "provider": "reliefweb",
+        "requires_credentials": true,
+        "requires_partnership": false
+      },
+      {
+        "access_mode": "PARTNERSHIP_REQUIRED",
+        "implementation_status": "PARTNERSHIP_REQUIRED",
+        "provider": "builtin",
+        "requires_credentials": false,
+        "requires_partnership": true
+      },
+      {
+        "access_mode": "PARTNERSHIP_REQUIRED",
+        "implementation_status": "PARTNERSHIP_REQUIRED",
+        "provider": "handshake",
+        "requires_credentials": true,
+        "requires_partnership": true
+      },
+      {
+        "access_mode": "PARTNERSHIP_REQUIRED",
+        "implementation_status": "PARTNERSHIP_REQUIRED",
+        "provider": "ziprecruiter",
+        "requires_credentials": true,
+        "requires_partnership": true
+      },
+      {
+        "access_mode": "PARTNERSHIP_REQUIRED",
+        "implementation_status": "PARTNERSHIP_REQUIRED",
+        "provider": "wellfound",
+        "requires_credentials": false,
+        "requires_partnership": true
+      },
+      {
+        "access_mode": "PARTNERSHIP_REQUIRED",
+        "implementation_status": "PARTNERSHIP_REQUIRED",
+        "provider": "idealist",
+        "requires_credentials": false,
+        "requires_partnership": true
+      },
+      {
+        "access_mode": "PARTNERSHIP_REQUIRED",
+        "implementation_status": "PARTNERSHIP_REQUIRED",
+        "provider": "glassdoor",
+        "requires_credentials": true,
+        "requires_partnership": true
+      },
+      {
+        "access_mode": "PARTNERSHIP_REQUIRED",
+        "implementation_status": "PARTNERSHIP_REQUIRED",
+        "provider": "simplyhired",
+        "requires_credentials": false,
+        "requires_partnership": true
+      },
+      {
+        "access_mode": "PARTNERSHIP_REQUIRED",
+        "implementation_status": "PARTNERSHIP_REQUIRED",
+        "provider": "dice",
+        "requires_credentials": true,
+        "requires_partnership": true
+      },
+      {
+        "access_mode": "PARTNERSHIP_REQUIRED",
+        "implementation_status": "PARTNERSHIP_REQUIRED",
+        "provider": "monster",
+        "requires_credentials": true,
+        "requires_partnership": true
+      },
+      {
+        "access_mode": "PARTNERSHIP_REQUIRED",
+        "implementation_status": "PARTNERSHIP_REQUIRED",
+        "provider": "higheredjobs",
+        "requires_credentials": false,
+        "requires_partnership": true
+      },
+      {
+        "access_mode": "PARTNERSHIP_REQUIRED",
+        "implementation_status": "PARTNERSHIP_REQUIRED",
+        "provider": "indeed",
+        "requires_credentials": true,
+        "requires_partnership": true
+      },
+      {
+        "access_mode": "DIRECT_PUBLIC_API",
+        "implementation_status": "SOURCE_TESTED",
+        "provider": "usajobs",
+        "requires_credentials": true,
+        "requires_partnership": false
+      },
+      {
+        "access_mode": "PARTNERSHIP_REQUIRED",
+        "implementation_status": "PARTNERSHIP_REQUIRED",
+        "provider": "linkedin",
+        "requires_credentials": true,
+        "requires_partnership": true
+      },
+      {
+        "access_mode": "PARTNERSHIP_REQUIRED",
+        "implementation_status": "PARTNERSHIP_REQUIRED",
+        "provider": "uncareers",
+        "requires_credentials": false,
+        "requires_partnership": true
+      }
+    ],
+    "generated_at": "2026-10-14T02:32:51.179362+00:00",
+    "git_sha": null,
+    "organizations_total": 0,
+    "provider_capabilities_total": 46,
+    "quality": {
+      "apply_url_validity_percentage": null,
+      "apply_urls_checked": 0,
+      "average_verification_age_seconds": null,
+      "canonical_active_jobs": 0,
+      "canonical_closed_jobs": 0,
+      "canonical_source_ratio": null,
+      "canonical_stale_jobs": 0,
+      "canonical_total_jobs": 0,
+      "closed_jobs": 0,
+      "closed_jobs_per_hour": 0.0,
+      "cross_source_jobs": 0,
+      "duplicate_percentage": 0.0,
+      "freshness": {
+        "gte_24h": 0,
+        "lt_12h": 0,
+        "lt_24h": 0,
+        "lt_3h": 0,
+        "lt_6h": 0
+      },
+      "generated_at": "2026-10-14 02:32:51.587544+00:00",
+      "ingestion_duration_p50_ms": null,
+      "ingestion_duration_p95_ms": null,
+      "invalid_percentage": 0.0,
+      "jobs_by_source_authority": {},
+      "location_coverage_percentage": 0.0,
+      "measured_estimated_cost_usd": null,
+      "measured_network_bytes": 0,
+      "measured_source_postings": 0,
+      "measured_worker_seconds": 0.0,
+      "new_jobs": 0,
+      "new_jobs_per_hour": 0.0,
+      "organizations_by_type": {},
+      "organizations_total": 0,
+      "organizations_with_career_sites": 0,
+      "organizations_with_detected_ats": 0,
+      "organizations_with_domains": 0,
+      "orphan_source_jobs": 0,
+      "quarantine_percentage": 0.0,
+      "raw_jobs_seen": 0,
+      "reopened_jobs": 0,
+      "requests_per_1000_jobs": null,
+      "run_count": 0,
+      "salary_coverage_percentage": 0.0,
+      "source_failure_rate_percentage": 0.0,
+      "source_postings": 0,
+      "sources_blocked": 0,
+      "sources_by_type": {},
+      "sources_enabled": 0,
+      "sources_failing": 0,
+      "sources_healthy": 0,
+      "sources_total": 0,
+      "updated_jobs": 0,
+      "updated_jobs_per_hour": 0.0,
+      "window_hours": 24,
+      "worker_seconds_per_1000_jobs": null
+    },
+    "real_canonical_jobs": 0,
+    "representative_providers_verified": [],
+    "successful_real_source_runs": 0,
+    "successful_real_source_runs_24h": 0,
+    "task_outbox_by_status": {}
+  },
+  "is_staging_environment": false,
+  "missing_representative_providers": [
+    "ASHBY",
+    "CAREER_SITE",
+    "GREENHOUSE",
+    "LEVER",
+    "RELIEFWEB",
+    "SMARTRECRUITERS",
+    "USAJOBS"
+  ],
+  "source_sha": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab",
+  "status": "BLOCKED_EXTERNAL_CONFIGURATION"
+}

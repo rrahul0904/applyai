@@ -1,0 +1,37 @@
+{
+  "SAST": "PASS exact PR #80 head fcda353; Python SAST passed.",
+  "automated_tests": "API test suite includes SSRF, owner scoping, auth and privacy regression tests; full suite passed.",
+  "dependency_audit": {
+    "advisories": [],
+    "command": "pnpm audit --prod --audit-level high --json",
+    "critical": 0,
+    "fixed_packages": {
+      "eslint-config-next": "16.3.6 -> 16.3.8",
+      "next": "16.3.6 -> 16.3.8",
+      "sharp": "0.35.4 -> 0.35.5",
+      "source-map-js": "1.2.1 -> 1.2.2"
+    },
+    "high": 0,
+    "status": "PASS",
+    "tested_sha": "d9530a632af91fe3a7608240644bb42a20174c95"
+  },
+  "dependency_audit_pre_fix": {
+    "critical": 0,
+    "high_findings": 3,
+    "tested_sha": "7700fe3a25466e9209402389dda8a33f08175958"
+  },
+  "production_security_smoke": "NOT_RUN",
+  "recorded_at": "2026-10-14",
+  "secret_scan": "PASS exact PR #80 head fcda353; high-confidence secret pattern gate passed.",
+  "source_sha": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab",
+  "status": "LOCAL_AND_HOSTED_CODE_GATES_PASS; PREVIEW_DEPLOYED_BUT_RUNTIME_NOT_READY",
+  "application_execution_security_tests": {
+    "status": "PASS",
+    "tested_sha": "dd54eb6246a2814eb2bcc3a1b9e8ce21d8b7f2ab",
+    "focused_tests": 11,
+    "full_api_suite_passed": 450,
+    "skipped": 1
+  },
+  "hosted_head": "fcda353f50e9217d3de1a0d51a9d0515f4fdeaa8",
+  "preview_deployment": "DEPLOYED; READINESS_FAIL_CLOSED_INVALID_READINESS_PAYLOAD"
+}

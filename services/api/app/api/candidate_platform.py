@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import html
 import uuid
 from datetime import datetime, timezone
@@ -13,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.career_memory_models import CandidateCareerFact
 from app.core.auth import get_current_user
 from app.core.database import get_session
-from app.models import Application, ApplicationEvent, Job, Notification, SavedJob, User
+from app.models import Application, ApplicationEvent, Job, Notification, ResumeVersion, SavedJob, User
 from app.platform_models import (
     ApplicationSubmissionRequest,
     CandidateAnalyticsEvent,
@@ -25,6 +26,8 @@ from app.platform_models import (
     ResumeStudioDocument,
     SavedSearch,
 )
+from app.resume_evidence import composition_review, select_verified_facts, unsupported_numeric_claims
+from app.resumes.pdf_export import UnsupportedPdfText, export_resume_pdf
 
 router = APIRouter(tags=["candidate platform"])
 
@@ -338,6 +341,8 @@ def list_resume_documents(user: User = Depends(get_current_user), session: Sessi
 def create_resume_document(payload: ResumeDocumentWrite, user: User = Depends(get_current_user), session: Session = Depends(get_session)):
     if payload.job_id and session.get(Job, payload.job_id) is None:
         raise HTTPException(status_code=404, detail="Job not found")
+    if payload.base_resume_version_id is not None and session.scalar(select(ResumeVersion.id).where(ResumeVersion.id == payload.base_resume_version_id, ResumeVersion.user_id == user.id)) is None:
+        raise HTTPException(status_code=404, detail="Resume version not found")
     item = ResumeStudioDocument(user_id=user.id, **payload.model_dump())
     session.add(item); session.commit(); session.refresh(item)
     return item
@@ -348,8 +353,11 @@ def create_resume_for_job(job_id: uuid.UUID, user: User = Depends(get_current_us
     job = session.get(Job, job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
-    facts = list(session.scalars(select(CandidateCareerFact).where(CandidateCareerFact.user_id == user.id, CandidateCareerFact.archived_at.is_(None), CandidateCareerFact.user_verified.is_(True)).order_by(CandidateCareerFact.occurred_at.desc().nullslast()).limit(50)))
-    item = ResumeStudioDocument(user_id=user.id, job_id=job.id, title=f"{job.title} resume", content={"target_role": job.title, "summary": "", "evidence": [{"id": str(fact.id), "category": fact.category, "title": fact.title, "text": fact.fact_text} for fact in facts], "sections": []})
+    facts = list(session.scalars(select(CandidateCareerFact).where(CandidateCareerFact.user_id == user.id, CandidateCareerFact.archived_at.is_(None), CandidateCareerFact.user_verified.is_(True))))
+    selected = select_verified_facts(f"{job.title} {job.description}", facts)
+    application = session.scalar(select(Application).where(Application.user_id == user.id, Application.job_id == job.id).order_by(Application.created_at.desc()).limit(1))
+    evidence = [{"id": str(fact.id), "category": fact.category, "title": fact.title, "text": fact.fact_text, "tags": fact.tags, "source_kind": fact.source_kind, "source_ref": fact.source_ref, "provenance": fact.provenance, "selection_score": score, "immutable_source_fact": True} for fact, score in selected]
+    item = ResumeStudioDocument(user_id=user.id, job_id=job.id, title=f"{job.title} resume", content={"target_role": job.title, "application_id": str(application.id) if application else None, "summary": "", "evidence": evidence, "evidence_lock": {"enabled": True, "source_fact_ids": [entry["id"] for entry in evidence], "policy": "No employer, title, date, skill, metric, achievement or scope may be added without source evidence."}, "revision_invalidated": False, "sections": []})
     session.add(item); session.commit(); session.refresh(item)
     return item
 
@@ -363,6 +371,29 @@ def get_resume_document(document_id: uuid.UUID, user: User = Depends(get_current
 def update_resume_document(document_id: uuid.UUID, payload: ResumeDocumentUpdate, user: User = Depends(get_current_user), session: Session = Depends(get_session)):
     item = _owned_resume_document(session, user, document_id)
     changes = payload.model_dump(exclude_unset=True)
+    evidence_lock = (item.content.get("evidence_lock") or {}) if isinstance(item.content, dict) else {}
+    if "content" in changes and evidence_lock.get("enabled"):
+        if not isinstance(changes["content"], dict):
+            raise HTTPException(status_code=422, detail="Evidence-locked resume content must be an object")
+        old_evidence = {entry.get("id"): entry for entry in item.content.get("evidence", []) if isinstance(entry, dict) and entry.get("id")}
+        new_evidence = changes["content"].get("evidence", [])
+        new_ids = {entry.get("id") for entry in new_evidence if isinstance(entry, dict)}
+        if new_ids != set(old_evidence):
+            raise HTTPException(status_code=422, detail="Evidence-locked resume must keep its immutable source fact IDs")
+        fact_ids = [uuid.UUID(value) for value in old_evidence]
+        current_facts = {str(fact.id): fact for fact in session.scalars(select(CandidateCareerFact).where(CandidateCareerFact.id.in_(fact_ids), CandidateCareerFact.user_id == user.id, CandidateCareerFact.user_verified.is_(True), CandidateCareerFact.archived_at.is_(None)))}
+        stale = [fact_id for fact_id, old in old_evidence.items() if fact_id not in current_facts or current_facts[fact_id].fact_text != old.get("text") or current_facts[fact_id].provenance != old.get("provenance")]
+        if stale:
+            item.content = {**item.content, "revision_invalidated": True, "invalidated_source_fact_ids": stale}
+            session.commit()
+            raise HTTPException(status_code=409, detail={"code": "SOURCE_FACT_REVISION_INVALIDATED", "fact_ids": stale})
+        source_text = [str(entry.get("text", "")) for entry in old_evidence.values()]
+        proposal_text = str(changes["content"].get("summary", "")) + " " + " ".join(str(line) for section in changes["content"].get("sections", []) if isinstance(section, dict) for line in (section.get("body", []) if isinstance(section.get("body"), list) else [section.get("body", "")]))
+        unsupported = unsupported_numeric_claims(proposal_text, source_text)
+        if unsupported:
+            raise HTTPException(status_code=422, detail={"code": "UNSUPPORTED_NUMERIC_CLAIMS", "claims": unsupported})
+        changes["content"]["evidence"] = list(old_evidence.values())
+        changes["content"]["evidence_lock"] = evidence_lock
     for key, value in changes.items(): setattr(item, key, value)
     if "content" in changes: item.version += 1
     session.commit(); session.refresh(item)
@@ -386,15 +417,39 @@ def _flatten_resume(content: dict[str, Any]) -> str:
 
 
 @router.get("/resume-studio/{document_id}/export")
-def export_resume_document(document_id: uuid.UUID, format: Literal["txt", "html"] = Query(default="txt"), user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+def export_resume_document(document_id: uuid.UUID, format: Literal["txt", "html", "pdf"] = Query(default="txt"), user: User = Depends(get_current_user), session: Session = Depends(get_session)):
     item = _owned_resume_document(session, user, document_id)
     text = _flatten_resume(item.content)
+    if format == "pdf":
+        name = " ".join(part for part in (user.first_name, user.last_name) if part)
+        text = "\n".join(line for line in (name, user.email, "", text) if line is not None)
+        try:
+            pdf = export_resume_pdf(text)
+        except UnsupportedPdfText as exc:
+            raise HTTPException(status_code=422, detail={
+                "code": "PDF_TEXT_UNSUPPORTED",
+                "message": "This resume contains characters the PDF font cannot render. Download text instead; no content was removed.",
+            }) from exc
+        return {
+            "filename": f"{item.title.replace(' ', '-')}.pdf",
+            "content_type": "application/pdf",
+            "content": base64.b64encode(pdf.content).decode("ascii"),
+            "content_encoding": "base64",
+            "version": item.version,
+            "composition": {
+                "characters": len(text), "page_count": pdf.page_count,
+                "page_status": "WITHIN_ONE_PAGE_TARGET" if pdf.page_count == 1 else "OVERFLOW_REQUIRES_REVIEW",
+                "extractable_text": bool(text.strip()),
+                "universal_ats_compatibility": "NOT_CLAIMED",
+            },
+        }
     if format == "html":
         content = "<!doctype html><html><body><pre>" + html.escape(text) + "</pre></body></html>"
         content_type = "text/html"
     else:
         content, content_type = text, "text/plain"
-    return {"filename": f"{item.title.replace(' ', '-')}.{format}", "content_type": content_type, "content": content, "version": item.version}
+    review = composition_review(text)
+    return {"filename": f"{item.title.replace(' ', '-')}.{format}", "content_type": content_type, "content": content, "version": item.version, "composition": {"characters": review.characters, "one_page_target_characters": review.one_page_target_characters, "page_status": review.page_status, "extractable_text": review.extractable_text, "universal_ats_compatibility": "NOT_CLAIMED"}}
 
 
 @router.get("/interview-practice", response_model=list[InterviewPracticeResponse])

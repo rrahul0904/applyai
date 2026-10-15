@@ -19,7 +19,7 @@ function cookieOptions() {
 }
 
 export async function refreshSupabaseSessionProxy(request: NextRequest) {
-  const response = NextResponse.next({ request });
+  let response = NextResponse.next({ request });
   if (!supabaseConfigured()) return response;
 
   const accessToken = request.cookies.get(SUPABASE_ACCESS_COOKIE)?.value;
@@ -29,6 +29,11 @@ export async function refreshSupabaseSessionProxy(request: NextRequest) {
 
   try {
     const session = await refreshSupabaseToken(refreshToken);
+    // Server components and API forwarding run during this request, before the
+    // browser receives Set-Cookie. Forward the refreshed tokens to them as well.
+    request.cookies.set(SUPABASE_ACCESS_COOKIE, session.access_token);
+    request.cookies.set(SUPABASE_REFRESH_COOKIE, session.refresh_token);
+    response = NextResponse.next({ request: { headers: request.headers } });
     response.cookies.set(SUPABASE_ACCESS_COOKIE, session.access_token, {
       ...cookieOptions(),
       maxAge: Math.max(60, session.expires_in),
@@ -38,6 +43,9 @@ export async function refreshSupabaseSessionProxy(request: NextRequest) {
       maxAge: REFRESH_COOKIE_SECONDS,
     });
   } catch {
+    request.cookies.delete(SUPABASE_ACCESS_COOKIE);
+    request.cookies.delete(SUPABASE_REFRESH_COOKIE);
+    response = NextResponse.next({ request: { headers: request.headers } });
     response.cookies.delete(SUPABASE_ACCESS_COOKIE);
     response.cookies.delete(SUPABASE_REFRESH_COOKIE);
   }

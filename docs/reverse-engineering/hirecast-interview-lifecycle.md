@@ -44,4 +44,4 @@ Extend the existing ApplyAI Prepare job workspace and backend. Reuse current moc
 
 ## Implementation status
 
-**INTEGRATING.** The earlier experimental PR #39 is source evidence only. Its unique qualifying behaviors are being consolidated onto current `main`; overlapping Prepare functionality remains owned by the shipped ApplyAI Prepare stack.
+**INTEGRATED INTO THE CANONICAL PREPARE STACK — REPOSITORY-VERIFIED.** ApplyAI reuses its existing mock interview session/turn runtime and adds transcript consent, retention and deletion contracts. API and migration checks passed on PR #80 SHA `3515e522264c18cc7a21eebc7e954a620461cc55`. This does not prove real-time provider behavior or human interview-practice acceptance.

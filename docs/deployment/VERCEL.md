@@ -2,6 +2,8 @@
 
 Updated: 2026-08-31
 
+> **Historical Vercel web + Railway API + Clerk/R2 profile.** The current source-controlled target is Vercel web + API with Supabase; the current production deployment is unhealthy (readiness HTTP 503). This file contains old setup examples and is not an operational runbook. Follow [`LEAN_PRODUCTION_ARCHITECTURE.md`](../LEAN_PRODUCTION_ARCHITECTURE.md) for the current contract and observed state.
+
 ## Deployment model
 
 Vercel hosts the **Next.js web application only**.

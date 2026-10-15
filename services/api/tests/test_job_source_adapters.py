@@ -15,6 +15,7 @@ from app.jobs.contracts import (
     normalize_title,
     validate_raw_job,
 )
+from app.jobs.partner_feed import PartnerFeedConnector
 from app.jobs.pipeline import MAX_JOB_LOCATION_TEXT_LENGTH, bounded_job_locations
 from app.api.internal_job_sources import _ImportedGreenhousePayloadConnector
 from app.jobs.source_completeness import SourceCompleteness, connector_completeness
@@ -49,6 +50,11 @@ def lever_handler(request: httpx.Request) -> httpx.Response:
                 "hostedUrl": "https://jobs.lever.co/example/lever-posting-1",
                 "applyUrl": "https://jobs.lever.co/example/lever-posting-1/apply",
                 "workplaceType": "hybrid",
+                "remote_scope": "WORLDWIDE",
+                "eligible_countries": [],
+                "eligible_regions": [],
+                "tags": ["Data Platform", "Python", "python"],
+                "updatedAt": "2026-08-01T10:00:00Z",
                 "salaryRange": {
                     "min": 150000,
                     "max": 190000,
@@ -76,6 +82,10 @@ def ashby_handler(request: httpx.Request) -> httpx.Response:
                     "department": "Engineering",
                     "team": "Infrastructure",
                     "employmentType": "Full-time",
+                    "seniority": "Principal",
+                    "remote_scope": "COUNTRY_RESTRICTED",
+                    "eligible_countries": ["US"],
+                    "tags": ["Platform Engineering", "Kubernetes"],
                     "isRemote": True,
                     "descriptionPlain": (
                         "Design resilient application platforms and deployment systems "
@@ -116,6 +126,12 @@ def test_lever_public_postings_connector_preserves_provenance():
     assert raw.salary_min == 150000
     assert raw.salary_max == 190000
     assert raw.source_metadata["team"] == "Data"
+    assert raw.source_metadata["remote_scope"] == "WORLDWIDE"
+    assert raw.source_metadata["source_url"] == raw.source_url
+    assert raw.source_metadata["application_url"] == raw.apply_url
+    assert raw.source_metadata["tags"] == ("DATA_PLATFORM", "PYTHON")
+    assert raw.source_updated_at is not None
+    assert raw.seniority == "SENIOR"
     assert normalized.external_job_id == "example:lever-posting-1"
     assert validate_raw_job(raw).status == ValidationStatus.VALID
 
@@ -137,7 +153,80 @@ def test_ashby_public_board_connector_preserves_secondary_locations_and_salary()
     assert raw.salary_min == 210000
     assert raw.salary_max == 260000
     assert raw.date_posted is not None
+    assert raw.seniority == "PRINCIPAL"
+    assert raw.source_metadata["eligible_countries"] == ("US",)
+    assert raw.source_metadata["tags"] == ("PLATFORM_ENGINEERING", "KUBERNETES")
     assert validate_raw_job(raw).accepted is True
+
+
+def test_authorized_aggregator_feed_preserves_remote_source_and_salary_evidence():
+    connector = PartnerFeedConnector(
+        feed_url="https://feed.example/jobs.json",
+        source_identity="licensed-remote-jobs",
+        provider_key="remoteitjobs",
+        field_map={"source_updated_at": "updated_at", "seniority": "level", "tags": "facets"},
+    )
+    raw = connector.to_raw({
+        "id": "remote-123",
+        "title": "Senior Data Engineer",
+        "company": "Example Labs",
+        "description": "Build and maintain production data systems for product teams.",
+        "url": "https://remoteitjobs.example/jobs/remote-123",
+        "apply_url": "https://jobs.example/apply/remote-123",
+        "location": "Remote - EEA",
+        "workplace_type": "remote",
+        "employment_type": "Full-time",
+        "level": "Senior",
+        "remote_scope": "REGION_RESTRICTED",
+        "eligible_regions": ["EEA"],
+        "eligible_countries": [],
+        "facets": ["Data Platform", "Python", "python"],
+        "salary_min": "120000",
+        "salary_max": "150000",
+        "salary_currency": "EUR",
+        "salary_interval": "YEAR",
+        "date_posted": "2026-09-30T12:00:00Z",
+        "updated_at": "2026-10-01T09:30:00Z",
+    })
+
+    assert raw.source_type == JobSourceType.AUTHORIZED_AGGREGATOR_FEED
+    assert raw.source_metadata["provider_key"] == "remoteitjobs"
+    assert raw.source_metadata["trust_level"] == "AUTHORIZED_AGGREGATOR_FEED"
+    assert raw.source_metadata["remote_scope"] == "REGION_RESTRICTED"
+    assert raw.source_metadata["eligible_regions"] == ("EEA",)
+    assert raw.source_metadata["remote_restriction_provenance"]["source_field"] == "remote_scope"
+    assert raw.source_metadata["source_url"] == raw.source_url
+    assert raw.source_metadata["application_url"] == raw.apply_url
+    assert raw.source_metadata["tags"] == ("DATA_PLATFORM", "PYTHON")
+    assert raw.skills == ()
+    assert raw.employment_type == "FULL_TIME"
+    assert raw.seniority == "SENIOR"
+    assert raw.source_updated_at is not None
+    assert raw.date_posted is not None
+    assert raw.salary_provenance == "SOURCE_REPORTED"
+
+
+def test_partner_feed_does_not_infer_remote_scope_from_remote_label():
+    connector = PartnerFeedConnector(
+        feed_url="https://feed.example/jobs.json",
+        source_identity="licensed-feed",
+        provider_key="licensed-remote",
+    )
+    raw = connector.to_raw({
+        "id": "unknown-remote-1",
+        "title": "Backend Engineer",
+        "company": "Example Labs",
+        "description": "Build backend services supporting customer workflows.",
+        "url": "https://feed.example/jobs/unknown-remote-1",
+        "location": "Remote",
+        "workplace_type": "remote",
+    })
+
+    assert raw.workplace_type == "REMOTE"
+    assert raw.source_metadata["remote_scope"] is None
+    assert raw.source_metadata["eligible_countries"] == ()
+    assert raw.source_metadata["eligible_regions"] == ()
+    assert raw.seniority == "UNKNOWN"
 
 
 def test_adapter_factory_routes_registry_source_without_scattered_conditionals():

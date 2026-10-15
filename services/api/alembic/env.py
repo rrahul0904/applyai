@@ -17,6 +17,7 @@ from app import (  # noqa: F401
     growth_models,
     interview_intelligence_models,
     job_quality_models,
+    job_radar_models,
     job_source_models,
     models,
     operations_models,
@@ -29,6 +30,7 @@ from app import (  # noqa: F401
     resume_share_models,
     reverse_engineering_models,
     zero_cost_models,
+    worker_runtime_models,
 )
 
 

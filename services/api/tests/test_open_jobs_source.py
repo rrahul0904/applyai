@@ -7,6 +7,8 @@ import httpx
 from app.jobs.adapter_factory import create_source_adapter
 from app.jobs.contracts import JobSourceType, SourceTrustLevel
 from app.jobs.open_jobs import OpenJobsConnector
+from app.jobs.source_completeness import CoverageStatus, observed_coverage
+from app.jobs.source_pipeline import _record_partial_coverage_health
 
 
 BASE = "https://open-jobs.test/data"
@@ -98,11 +100,128 @@ def test_open_jobs_connector_reads_bounded_leaf_groups_and_advances_checkpoint()
     assert first_checkpoint["last_leaf_id"] == "1"
     assert first_checkpoint["manifest_jobs"] == 3
     assert first_checkpoint["cycle_complete"] is False
+    assert connector.completeness_checks()["cycle_complete"] is False
 
     second = connector.fetch(first_checkpoint)
     assert [row["company"] for row in second] == ["Gamma AI"]
     assert connector.checkpoint()["last_leaf_id"] == "2"
     assert connector.checkpoint()["cycle_complete"] is True
+    assert connector.completeness_checks()["cycle_complete"] is True
+    receipt = observed_coverage(
+        connector,
+        {"fetched": 1, "failed": 0},
+    )
+    assert receipt.status is CoverageStatus.PARTIAL
+    assert dict(receipt.completeness_checks)["cycle_complete"] is True
+
+
+def test_open_jobs_restarts_traversal_when_manifest_recipe_changes() -> None:
+    connector = OpenJobsConnector(
+        data_base_url=BASE,
+        max_groups_per_run=1,
+        client=_client(),
+    )
+
+    rows = connector.fetch(
+        {
+            "last_leaf_id": "2",
+            "manifest_recipe": "older:1536:v1",
+            "manifest_leaves": 2,
+        }
+    )
+
+    assert len(rows) == 2
+    assert connector.checkpoint()["last_leaf_id"] == "1"
+    assert connector.completeness_checks() == {
+        "cycle_complete": False,
+        "cycle_restarted_for_manifest_change": True,
+    }
+
+
+def test_open_jobs_advances_only_failure_free_partial_checkpoints() -> None:
+    connector = OpenJobsConnector(
+        data_base_url=BASE,
+        max_groups_per_run=1,
+        client=_client(),
+    )
+
+    assert connector.checkpoint_advance_safe(
+        coverage_status="PARTIAL",
+        processing_failures=0,
+    )
+    assert not connector.checkpoint_advance_safe(
+        coverage_status="PARTIAL",
+        processing_failures=1,
+    )
+    assert not connector.checkpoint_advance_safe(
+        coverage_status="COMPLETE",
+        processing_failures=0,
+    )
+
+
+def test_open_jobs_promotes_legacy_pending_cursor_only_after_success() -> None:
+    successful_record = SimpleNamespace(
+        configuration={
+            "connector_checkpoint": {"last_leaf_id": "1"},
+            "open_jobs_pending_checkpoint": {"last_leaf_id": "2"},
+            "last_source_completeness_at": "2026-10-14T12:00:00+00:00",
+            "last_source_completeness_counts": {"failed": 0},
+        }
+    )
+    connector = OpenJobsConnector(
+        data_base_url=BASE,
+        max_groups_per_run=1,
+        client=_client(),
+        source_record=successful_record,
+    )
+
+    assert connector._committed_checkpoint(None) == {"last_leaf_id": "2"}
+    assert successful_record.configuration["connector_checkpoint"] == {"last_leaf_id": "2"}
+    assert "open_jobs_pending_checkpoint" not in successful_record.configuration
+
+    failed_record = SimpleNamespace(
+        configuration={
+            "connector_checkpoint": {"last_leaf_id": "1"},
+            "open_jobs_pending_checkpoint": {"last_leaf_id": "2"},
+            "last_source_completeness_at": "2026-10-14T12:00:00+00:00",
+            "last_source_completeness_counts": {"failed": 1},
+        }
+    )
+    retry_connector = OpenJobsConnector(
+        data_base_url=BASE,
+        max_groups_per_run=1,
+        client=_client(),
+        source_record=failed_record,
+    )
+
+    assert retry_connector._committed_checkpoint(None) == {"last_leaf_id": "1"}
+    assert failed_record.configuration["connector_checkpoint"] == {"last_leaf_id": "1"}
+    assert "open_jobs_pending_checkpoint" not in failed_record.configuration
+
+
+def test_successful_open_jobs_partial_run_does_not_increment_source_failures() -> None:
+    source = SimpleNamespace(
+        health_status="DEGRADED",
+        consecutive_failures=3,
+        last_failure_at="previous failure",
+        last_error_category="INCOMPLETE_SOURCE_COVERAGE",
+        last_error_summary="Source did not prove complete coverage",
+        last_success_at=None,
+    )
+    connector = OpenJobsConnector(
+        data_base_url=BASE,
+        max_groups_per_run=1,
+        client=_client(),
+    )
+
+    _record_partial_coverage_health(source, connector)
+
+    assert source.health_status == "HEALTHY"
+    assert source.consecutive_failures == 0
+    assert source.last_failure_at is None
+    assert source.last_error_category is None
+    assert source.last_error_summary is None
+    assert source.last_success_at is not None
 
 
 def test_open_jobs_mapping_preserves_employer_board_identity_and_low_authority_metadata() -> None:

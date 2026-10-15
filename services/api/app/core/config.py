@@ -1,6 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -98,6 +98,7 @@ class Settings(BaseSettings):
     postgres_task_max_attempts: int = Field(default=5, ge=1, le=100)
     postgres_task_retry_base_seconds: int = Field(default=5, ge=1, le=300)
     postgres_worker_poll_seconds: float = Field(default=1.0, ge=0.1, le=30.0)
+    worker_runtime_heartbeat_seconds: int = Field(default=30, ge=5, le=300)
     radar_watch_poll_seconds: float = Field(default=30.0, ge=1.0, le=300.0)
     radar_watch_lease_seconds: int = Field(default=300, ge=60, le=3600)
     request_triggered_tasks_enabled: bool = False
@@ -419,6 +420,29 @@ class Settings(BaseSettings):
                 raise ValueError(
                     f"{environment.title()} Clerk auth requires CLERK_ISSUER and CLERK_JWKS_URL"
                 )
+            auth_urls: tuple[tuple[str, str | None], ...] = ()
+            if self.auth_provider == "clerk":
+                auth_urls = (
+                    ("CLERK_ISSUER", self.clerk_issuer),
+                    ("CLERK_JWKS_URL", self.clerk_jwks_url),
+                )
+            elif self.auth_provider == "supabase":
+                auth_urls = (
+                    ("SUPABASE_URL", self.supabase_url),
+                    ("SUPABASE_JWKS_URL", self.resolved_supabase_jwks_url),
+                )
+            for name, value in auth_urls:
+                if not value:
+                    continue
+                try:
+                    parsed = urlsplit(value)
+                    valid_https_url = parsed.scheme == "https" and bool(parsed.hostname)
+                except ValueError:
+                    valid_https_url = False
+                if not valid_https_url:
+                    raise ValueError(
+                        f"{environment.title()} {name} must be an absolute HTTPS URL"
+                    )
             if self.auth_provider == "supabase" and not self.supabase_url:
                 raise ValueError(
                     f"{environment.title()} Supabase auth requires SUPABASE_URL"

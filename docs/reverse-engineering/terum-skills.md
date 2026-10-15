@@ -63,4 +63,4 @@ The first ApplyAI destination is the existing governed-agent and AI-evaluation l
 
 This slice implements the ApplyAI Fit registry and deterministic classifier plus the Terum-inspired baseline/candidate release evaluator. The evaluator records content-bound immutable receipts, regression verdicts, trigger precision/recall, cost and latency deltas, provenance, execution completeness, and a fail-closed release gate for partial or regressing runs.
 
-Repository tests certify the deterministic scoring contract once CI passes. A live hosted run against production agents/models remains a separate release-evidence boundary and must not be inferred from repository code alone.
+Repository tests, including the exact-head ApplyAI CI and release-validator suite, passed on PR #80 SHA `3515e522264c18cc7a21eebc7e954a620461cc55`. A live hosted run against production agents/models remains a separate release-evidence boundary and must not be inferred from repository code alone.

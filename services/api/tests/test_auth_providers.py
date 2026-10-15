@@ -147,3 +147,54 @@ def test_production_supabase_lean_profile_is_accepted():
     )
     assert settings.auth_provider == "supabase"
     assert settings.task_queue_provider == "postgres"
+
+
+@pytest.mark.parametrize(
+    ("auth_provider", "overrides", "setting_name"),
+    [
+        (
+            "clerk",
+            {
+                "clerk_issuer": "http://clerk.example.test",
+                "clerk_jwks_url": "https://clerk.example.test/.well-known/jwks.json",
+            },
+            "CLERK_ISSUER",
+        ),
+        (
+            "clerk",
+            {
+                "clerk_issuer": "https://clerk.example.test",
+                "clerk_jwks_url": "http://clerk.example.test/.well-known/jwks.json",
+            },
+            "CLERK_JWKS_URL",
+        ),
+        (
+            "supabase",
+            {"supabase_url": "http://applyai-test.supabase.co"},
+            "SUPABASE_URL",
+        ),
+        (
+            "supabase",
+            {
+                "supabase_url": "https://applyai-test.supabase.co",
+                "supabase_jwks_url": "http://applyai-test.supabase.co/auth/v1/jwks.json",
+            },
+            "SUPABASE_JWKS_URL",
+        ),
+    ],
+)
+def test_durable_auth_rejects_non_https_verification_urls(
+    auth_provider: str, overrides: dict[str, str], setting_name: str
+):
+    values = {
+        "app_env": "production",
+        "deployment_profile": "lean",
+        "auth_provider": auth_provider,
+        "object_storage_provider": "postgres",
+        "task_queue_provider": "postgres",
+        "web_origin": "https://applyai.example.test",
+    }
+    values.update(overrides)
+
+    with pytest.raises(ValueError, match=f"{setting_name} must be an absolute HTTPS URL"):
+        Settings(**values)

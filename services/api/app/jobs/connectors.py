@@ -50,6 +50,15 @@ class JobSourceConnector(ABC):
     def checkpoint(self) -> dict[str, Any]:
         raise NotImplementedError
 
+    def checkpoint_advance_safe(
+        self,
+        *,
+        coverage_status: str,
+        processing_failures: int,
+    ) -> bool:
+        """Whether this completed fetch can safely replace its saved cursor/validator."""
+        return coverage_status == "COMPLETE" and processing_failures == 0
+
     @abstractmethod
     def health(self) -> ConnectorHealth:
         raise NotImplementedError

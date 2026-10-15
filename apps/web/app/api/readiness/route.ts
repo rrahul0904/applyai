@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { authInstanceMatches, backendReadiness } from "./backend-readiness";
 import { clerkPublishableKeyInstanceFingerprint } from "@/lib/auth/clerk-instance";
 import { supabaseProjectFingerprint } from "@/lib/auth/supabase-instance";
 import {
@@ -13,63 +14,6 @@ function keyMode(value: string | undefined, livePrefix: string, testPrefix: stri
   return "unknown" as const;
 }
 
-async function backendReadiness(apiUrl: string | undefined) {
-  const empty = {
-    reachable: false,
-    databaseReachable: false,
-    operatorConfigured: false,
-    operatorAuthLocation: "",
-    storageConfigured: false,
-    backgroundWorkerConfigured: false,
-    authProvider: "",
-    clerkFingerprint: "",
-    supabaseFingerprint: "",
-  };
-  if (!apiUrl) return empty;
-  try {
-    const response = await fetch(new URL("/ready", apiUrl), {
-      cache: "no-store",
-      signal: AbortSignal.timeout(3_000),
-    });
-    if (!response.ok) return empty;
-    const payload = (await response.json().catch(() => null)) as
-      | {
-          database_reachable?: boolean;
-          operator_auth_configured?: boolean;
-          operator_auth_location?: string;
-          storage_configured?: boolean;
-          background_worker_configured?: boolean;
-          auth_provider?: string;
-          clerk_instance_fingerprint?: string;
-          supabase_project_fingerprint?: string;
-        }
-      | null;
-    return {
-      reachable: true,
-      databaseReachable: payload?.database_reachable === true,
-      operatorConfigured: payload?.operator_auth_configured === true,
-      operatorAuthLocation:
-        typeof payload?.operator_auth_location === "string"
-          ? payload.operator_auth_location
-          : "",
-      storageConfigured: payload?.storage_configured === true,
-      backgroundWorkerConfigured:
-        payload?.background_worker_configured === true,
-      authProvider:
-        typeof payload?.auth_provider === "string" ? payload.auth_provider : "",
-      clerkFingerprint:
-        typeof payload?.clerk_instance_fingerprint === "string"
-          ? payload.clerk_instance_fingerprint
-          : "",
-      supabaseFingerprint:
-        typeof payload?.supabase_project_fingerprint === "string"
-          ? payload.supabase_project_fingerprint
-          : "",
-    };
-  } catch {
-    return empty;
-  }
-}
 
 export async function GET() {
   const apiConfigured = Boolean(process.env.APPLYAI_API_URL);
@@ -80,10 +24,9 @@ export async function GET() {
   const supabasePublishableKey = configuredSupabasePublishableKey();
   const useSupabase = Boolean(supabaseUrl || supabasePublishableKey);
   const webSupabaseFingerprint = supabaseProjectFingerprint(supabaseUrl);
-  const supabaseInstanceMatch = Boolean(
-    webSupabaseFingerprint &&
-      backend.supabaseFingerprint &&
-      webSupabaseFingerprint === backend.supabaseFingerprint,
+  const supabaseInstanceMatch = authInstanceMatches(
+    webSupabaseFingerprint,
+    backend.supabaseFingerprint,
   );
 
   const clerkPublishableMode = keyMode(
@@ -99,10 +42,9 @@ export async function GET() {
   const webClerkFingerprint = clerkPublishableKeyInstanceFingerprint(
     process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
   );
-  const clerkInstanceMatch = Boolean(
-    webClerkFingerprint &&
-      backend.clerkFingerprint &&
-      webClerkFingerprint === backend.clerkFingerprint,
+  const clerkInstanceMatch = authInstanceMatches(
+    webClerkFingerprint,
+    backend.clerkFingerprint,
   );
 
   const providerReady = useSupabase
@@ -110,13 +52,16 @@ export async function GET() {
         supabaseUrl &&
           supabasePublishableKey &&
           backend.authProvider === "supabase" &&
-          backend.backgroundWorkerConfigured &&
+          backend.authConfigured &&
+          backend.authInstanceMatch &&
           supabaseInstanceMatch,
       )
     : Boolean(
         clerkPublishableMode !== "missing" &&
           clerkSecretMode !== "missing" &&
           backend.authProvider === "clerk" &&
+          backend.authConfigured &&
+          backend.authInstanceMatch &&
           clerkInstanceMatch,
       );
 
@@ -124,7 +69,12 @@ export async function GET() {
     apiConfigured &&
     backend.reachable &&
     backend.databaseReachable &&
+    backend.databaseMigrationsCurrent &&
     backend.storageConfigured &&
+    backend.storageReachable &&
+    backend.taskQueueConfigured &&
+    backend.backgroundWorkerConfigured &&
+    backend.backgroundWorkerHealthy &&
     providerReady &&
     !devAuthEnabled;
 
@@ -144,9 +94,19 @@ export async function GET() {
       checks: {
         api_configured: apiConfigured,
         api_reachable: backend.reachable,
+        api_contract_valid: backend.contractValid,
+        api_upstream_status: backend.upstreamStatus,
+        api_failure_class: backend.failureClass,
         database_reachable: backend.databaseReachable,
+        database_migrations_current: backend.databaseMigrationsCurrent,
         storage_configured: backend.storageConfigured,
+        storage_reachable: backend.storageReachable,
+        auth_configured: backend.authConfigured,
+        auth_instance_match: backend.authInstanceMatch,
+        task_queue_configured: backend.taskQueueConfigured,
         background_worker_configured: backend.backgroundWorkerConfigured,
+        background_worker_healthy: backend.backgroundWorkerHealthy,
+        api_deployment_sha: backend.deploymentSha,
         auth_provider: backend.authProvider,
         supabase_auth_configured: Boolean(
           supabaseUrl && supabasePublishableKey,

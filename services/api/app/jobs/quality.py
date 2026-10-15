@@ -341,6 +341,7 @@ def source_coverage_metrics(session: Session) -> dict:
         session.scalars(
             select(JobIngestionRun.source_id).where(
                 JobIngestionRun.status == "COMPLETED",
+                JobIngestionRun.coverage_status == "COMPLETE",
                 JobIngestionRun.source_id.is_not(None),
             )
         )

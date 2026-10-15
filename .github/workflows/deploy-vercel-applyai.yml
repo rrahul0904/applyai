@@ -259,6 +259,56 @@ jobs:
           curl --fail --show-error --silent --location             --retry 5 --retry-delay 3             --output /tmp/applyai-vercel-home.html             "$DEPLOYMENT_URL/"
           test -s /tmp/applyai-vercel-home.html
 
+      - name: Require Preview service readiness
+        if: ${{ steps.preflight.outputs.ready == 'true' && env.DEPLOY_TARGET == 'preview' }}
+        env:
+          APPLYAI_API_URL: ${{ secrets.APPLYAI_VERCEL_API_URL }}
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.url }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test -n "$APPLYAI_API_URL"
+          API_BASE_URL="${APPLYAI_API_URL%/}"
+          curl --fail --silent --show-error --location --max-time 20 \
+            "$API_BASE_URL/health" >/tmp/applyai-preview-api-health.json
+          jq -e '.status == "ok"' /tmp/applyai-preview-api-health.json >/dev/null
+          curl --fail --silent --show-error --location --max-time 20 \
+            "$API_BASE_URL/ready" >/tmp/applyai-preview-api-ready.json
+          jq -e '
+            .status == "ready" and
+            .database_reachable == true and
+            .database_migrations_current == true and
+            .storage_configured == true and
+            .storage_reachable == true and
+            (.auth_provider == "clerk" or .auth_provider == "supabase") and
+            .auth_configured == true and
+            .auth_instance_match == true and
+            .operator_auth_configured == true and
+            .task_queue_configured == true and
+            .background_worker_configured == true and
+            .background_worker_healthy == true and
+            .deployment_sha == env.EXPECTED_SHA
+          ' /tmp/applyai-preview-api-ready.json >/dev/null
+          curl --fail --silent --show-error --location --max-time 20 \
+            "$DEPLOYMENT_URL/api/readiness" >/tmp/applyai-preview-web-readiness.json
+          jq -e '
+            .runtime_ready == true and
+            .checks.api_configured == true and
+            .checks.api_reachable == true and
+            .checks.api_contract_valid == true and
+            .checks.database_reachable == true and
+            .checks.database_migrations_current == true and
+            .checks.storage_configured == true and
+            .checks.storage_reachable == true and
+            .checks.auth_configured == true and
+            .checks.auth_instance_match == true and
+            .checks.task_queue_configured == true and
+            .checks.background_worker_configured == true and
+            .checks.background_worker_healthy == true and
+            .checks.api_deployment_sha == env.EXPECTED_SHA
+          ' /tmp/applyai-preview-web-readiness.json >/dev/null
+          echo "Preview API and web readiness passed for $EXPECTED_SHA" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Require Supabase production readiness
         if: ${{ steps.preflight.outputs.ready == 'true' && env.DEPLOY_TARGET == 'production' }}
         env:
@@ -271,8 +321,12 @@ jobs:
                  .checks.api_configured == true and
                  .checks.api_reachable == true and
                  .checks.database_reachable == true and
+                 .checks.database_migrations_current == true and
                  .checks.storage_configured == true and
+                 .checks.storage_reachable == true and
+                 .checks.task_queue_configured == true and
                  .checks.background_worker_configured == true and
+                 .checks.background_worker_healthy == true and
                  .checks.auth_provider == "supabase" and
                  .checks.supabase_auth_configured == true and
                  .checks.supabase_instance_match == true and

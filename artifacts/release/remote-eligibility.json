@@ -1,0 +1,19 @@
+{
+  "recorded_at": "2026-10-02T15:27:37Z",
+  "source_sha": "95f2cd38ebfc4e97599103b33cd385eed684acc9",
+  "environment": "local PostgreSQL/API tests and GitHub Actions exact-head CI",
+  "commands": [
+    "services/api/.venv/bin/pytest -q tests/test_job_source_adapters.py tests/test_partner_feed.py tests/test_remote_source_authority.py tests/test_job_radar_opportunity_evidence.py",
+    "services/api/.venv/bin/pytest -q tests/test_candidate_workspace.py"
+  ],
+  "result": {
+    "adapter_authority_tests_passed": 45,
+    "recommendation_endpoint_tests_passed": 3,
+    "remote_gate": "Non-eligible or unknown source-backed remote jobs are excluded before fit scoring when candidate geography is known."
+  },
+  "limitations": [
+    "No live RemoteITJobs crawl/registration or provider agreement is verified.",
+    "No end-to-end database dedupe-ingest acceptance is claimed.",
+    "The existing canonical scheduler is reused; no parallel scheduler was introduced."
+  ]
+}

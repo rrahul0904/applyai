@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import { ArrowLeft, Bookmark, BriefcaseBusiness, Building2, CalendarDays, CheckCircle2, MapPin, Share2, ShieldCheck, Sparkles, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -10,6 +11,7 @@ import { CareerSystemPanel } from "@/components/career-system-panel";
 import { CompanyIntelligenceCard } from "@/components/company-intelligence-card";
 import { RecruiterLensCard } from "@/components/recruiter-lens-card";
 import { api } from "@/lib/api/client";
+import { platformApi } from "@/lib/api/platform-client";
 import { Badge, Button, Card, ErrorState, Skeleton } from "@/components/ui";
 import { formatDate, formatMoney, titleCase } from "@/lib/utils";
 
@@ -17,6 +19,17 @@ export function JobDetailView({ jobId }: { jobId: string }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const job = useQuery({ queryKey: ["job", jobId], queryFn: ({ signal }) => api.jobs.detail(jobId, signal) });
+  const trackedView = useRef<string | null>(null);
+  useEffect(() => {
+    const viewedId = job.data?.id;
+    if (!viewedId || trackedView.current === viewedId) return;
+    trackedView.current = viewedId;
+    void platformApi.trackAnalyticsEvent({
+      event_type: "JOB_VIEWED",
+      entity_type: "JOB",
+      entity_id: viewedId,
+    }).catch(() => undefined);
+  }, [job.data?.id]);
   const saving = useMutation({
     mutationFn: () => job.data?.saved ? api.savedJobs.unsave(jobId) : api.savedJobs.save(jobId),
     onSuccess: async () => {

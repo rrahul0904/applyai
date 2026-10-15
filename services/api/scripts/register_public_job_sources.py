@@ -6,7 +6,7 @@ import json
 from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.jobs.contracts import JobSourceType, SourceTrustLevel
-from app.jobs.registry import upsert_source
+from app.jobs.registry import bootstrap_open_jobs_source, upsert_source
 from app.jobs.source_capabilities import seed_source_capabilities
 
 
@@ -64,27 +64,7 @@ def main() -> None:
             )
             registered.append("RELIEFWEB")
         if args.open_jobs or args.all:
-            upsert_source(
-                session,
-                source_type=JobSourceType.AUTHORIZED_AGGREGATOR_FEED,
-                source_name="Open Jobs CC0 public corpus",
-                source_identity="open-jobs",
-                base_url="https://backend.dehnbostele.workers.dev/data",
-                configuration={
-                    "provider_key": "OPEN_JOBS",
-                    "data_base_url": "https://backend.dehnbostele.workers.dev/data",
-                    "max_groups_per_run": 25,
-                    "max_jobs_per_group": 1000,
-                    "timeout_seconds": 30,
-                    "authoritative_snapshot": False,
-                    "dataset_license": "CC0-1.0",
-                    "dataset_role": "DISCOVERY_COVERAGE",
-                },
-                # A bounded slice is processed on each run. Fifteen-minute cadence lets an
-                # initial corpus sweep progress without turning one source task into a multi-GB job.
-                interval_seconds=max(900, settings.job_source_min_interval_seconds),
-                trust_level=SourceTrustLevel.AUTHORIZED_AGGREGATOR_FEED,
-            )
+            bootstrap_open_jobs_source(session, settings)
             registered.append("OPEN_JOBS")
         session.commit()
 

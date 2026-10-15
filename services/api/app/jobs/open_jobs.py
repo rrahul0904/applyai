@@ -47,15 +47,15 @@ class OpenJobsConnector(JobSourceConnector):
     The source is discovery/coverage evidence, not closure authority. Employer-origin ATS
     observations remain higher-authority canonical sources when the same role is observed.
 
-    Checkpointing is retry-safe without changing the generic source pipeline: a run writes a
-    pending checkpoint onto its attached registry record. The next run promotes that pending
-    checkpoint only when the previous run recorded zero failed postings. A partial run therefore
-    replays the same bounded slice, and canonical ingestion makes that replay idempotent.
+    The generic source pipeline commits the next cursor only after all records in the bounded
+    run have been processed without errors. Partial coverage is expected for this source, so a
+    successful slice may advance the cursor while remaining non-authoritative for job closure.
     """
 
     key = "open-jobs"
     authoritative_snapshot = False
     source_completeness = "PARTIAL"
+    successful_partial_runs_are_healthy = True
 
     def __init__(
         self,
@@ -125,29 +125,23 @@ class OpenJobsConnector(JobSourceConnector):
     def _committed_checkpoint(self, supplied: dict[str, Any] | None) -> dict[str, Any]:
         if self.source_record is None:
             return dict(supplied or {})
-
         configuration = dict(self.source_record.configuration or {})
         committed = dict(configuration.get("connector_checkpoint") or supplied or {})
+        # Promote a safe cursor staged by the previous implementation. New runs
+        # persist directly through checkpoint_advance_safe after record processing.
         pending = configuration.get("open_jobs_pending_checkpoint")
-        previous_counts = configuration.get("last_source_completeness_counts")
-        previous_completed = bool(configuration.get("last_source_completeness_at"))
+        counts = configuration.get("last_source_completeness_counts")
         if isinstance(pending, dict) and pending:
-            failed = None
-            if isinstance(previous_counts, dict):
-                failed = int(previous_counts.get("failed", 0))
-            if previous_completed and failed == 0:
+            try:
+                failed = int(counts.get("failed", 0)) if isinstance(counts, dict) else None
+            except (TypeError, ValueError):
+                failed = None
+            if configuration.get("last_source_completeness_at") and failed == 0:
                 committed = dict(pending)
                 configuration["connector_checkpoint"] = committed
             configuration.pop("open_jobs_pending_checkpoint", None)
             self.source_record.configuration = configuration
         return committed
-
-    def _stage_checkpoint(self) -> None:
-        if self.source_record is None:
-            return
-        configuration = dict(self.source_record.configuration or {})
-        configuration["open_jobs_pending_checkpoint"] = self.checkpoint()
-        self.source_record.configuration = configuration
 
     def iter_batches(
         self,
@@ -220,7 +214,6 @@ class OpenJobsConnector(JobSourceConnector):
             self._jobs_seen += len(records)
             yield records
 
-        self._stage_checkpoint()
 
     def fetch(self, checkpoint: dict[str, Any] | None) -> list[dict[str, Any]]:
         # Compatibility path for the existing registered-source runner. The group bound keeps
@@ -326,6 +319,15 @@ class OpenJobsConnector(JobSourceConnector):
             "jobs_seen": self._jobs_seen,
             "cycle_complete": self._cycle_complete,
         }
+
+    def checkpoint_advance_safe(
+        self,
+        *,
+        coverage_status: str,
+        processing_failures: int,
+    ) -> bool:
+        """Advance successful bounded slices without promoting them to full coverage."""
+        return coverage_status == "PARTIAL" and processing_failures == 0
 
     def completeness_checks(self) -> dict[str, bool]:
         """Report cycle traversal without upgrading this discovery feed to a snapshot.

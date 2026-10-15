@@ -47,6 +47,24 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _record_partial_coverage_health(source, connector) -> None:
+    if getattr(connector, "successful_partial_runs_are_healthy", False):
+        # Some discovery feeds intentionally process bounded slices. Their PARTIAL
+        # receipt describes coverage, not a failed source execution.
+        source.health_status = SourceHealthStatus.HEALTHY.value
+        source.consecutive_failures = 0
+        source.last_success_at = utcnow()
+        source.last_failure_at = None
+        source.last_error_category = None
+        source.last_error_summary = None
+        return
+    source.health_status = SourceHealthStatus.DEGRADED.value
+    source.consecutive_failures += 1
+    source.last_failure_at = utcnow()
+    source.last_error_category = "INCOMPLETE_SOURCE_COVERAGE"
+    source.last_error_summary = "Source did not prove complete coverage"
+
+
 class AuthorityAwareJobIngestionPipeline(JobIngestionPipeline):
     """Preserve all source links while allowing only the selected source to mutate canonical fields."""
 
@@ -330,11 +348,7 @@ class RegisteredSourceIngestionPipeline:
                 source.last_error_summary = None
             elif coverage.status is CoverageStatus.PARTIAL:
                 run.status = "PARTIAL"
-                source.health_status = SourceHealthStatus.DEGRADED.value
-                source.consecutive_failures += 1
-                source.last_failure_at = utcnow()
-                source.last_error_category = "INCOMPLETE_SOURCE_COVERAGE"
-                source.last_error_summary = "Source did not prove complete coverage"
+                _record_partial_coverage_health(source, connector)
             elif coverage.status is CoverageStatus.FAILED:
                 run.status = "FAILED"
                 source.health_status = SourceHealthStatus.DEGRADED.value

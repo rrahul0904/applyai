@@ -99,6 +99,41 @@ def upsert_source(
     return source
 
 
+def bootstrap_open_jobs_source(
+    session: Session,
+    settings: Settings | None = None,
+) -> JobSourceRegistry:
+    """Idempotently register and schedule the public CC0 discovery feed."""
+    settings = settings or get_settings()
+    source = upsert_source(
+        session,
+        source_type=JobSourceType.AUTHORIZED_AGGREGATOR_FEED,
+        source_name="Open Jobs CC0 public corpus",
+        source_identity="open-jobs",
+        base_url="https://backend.dehnbostele.workers.dev/data",
+        configuration={
+            "provider_key": "OPEN_JOBS",
+            "data_base_url": "https://backend.dehnbostele.workers.dev/data",
+            "max_groups_per_run": 25,
+            "max_jobs_per_group": 1000,
+            "timeout_seconds": 30,
+            "authoritative_snapshot": False,
+            "dataset_license": "CC0-1.0",
+            "dataset_role": "DISCOVERY_COVERAGE",
+            "closure_authority": False,
+        },
+        interval_seconds=max(900, settings.job_source_min_interval_seconds),
+        trust_level=SourceTrustLevel.AUTHORIZED_AGGREGATOR_FEED,
+    )
+    # An explicit bootstrap is an operator action to activate the source. Preserve
+    # its existing connector_checkpoint while making the first due run deterministic.
+    source.enabled = True
+    source.crawl_allowed = True
+    source.health_status = SourceHealthStatus.HEALTHY.value
+    source.next_run_at = utcnow()
+    return source
+
+
 def sync_configured_sources(
     session: Session,
     settings: Settings | None = None,

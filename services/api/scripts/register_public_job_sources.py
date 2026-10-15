@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 
 from app.core.config import get_settings
 from app.core.database import SessionLocal
@@ -19,17 +20,42 @@ def main() -> None:
         action="store_true",
         help="Register the public CC0 Open Jobs discovery corpus",
     )
+    parser.add_argument(
+        "--greenhouse-board",
+        action="append",
+        default=[],
+        metavar="TOKEN",
+        help="Register a public employer Greenhouse board; repeat for multiple boards",
+    )
     parser.add_argument("--all", action="store_true", help="Register every implemented public feed")
     args = parser.parse_args()
 
-    if not (args.usajobs or args.reliefweb or args.open_jobs or args.all):
-        parser.error("select --usajobs, --reliefweb, --open-jobs or --all")
+    if not (args.usajobs or args.reliefweb or args.open_jobs or args.greenhouse_board or args.all):
+        parser.error("select --usajobs, --reliefweb, --open-jobs, --greenhouse-board or --all")
 
     settings = get_settings()
     registered: list[str] = []
+    greenhouse_board_tokens = list(args.greenhouse_board)
+    if args.all:
+        greenhouse_board_tokens.extend(settings.greenhouse_board_tokens)
     with SessionLocal() as session:
         seed_source_capabilities(session)
         interval = settings.job_source_default_interval_seconds
+        for value in dict.fromkeys(greenhouse_board_tokens):
+            token = value.strip().lower()
+            if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,127}", token):
+                parser.error(f"invalid Greenhouse board token: {value!r}")
+            upsert_source(
+                session,
+                source_type=JobSourceType.GREENHOUSE,
+                source_name=f"Greenhouse official employer board: {token}",
+                source_identity=token,
+                base_url=f"https://boards.greenhouse.io/{token}",
+                configuration={"board_token": token},
+                interval_seconds=interval,
+                trust_level=SourceTrustLevel.OFFICIAL_ATS,
+            )
+            registered.append(f"GREENHOUSE:{token}")
         if args.usajobs or args.all:
             upsert_source(
                 session,

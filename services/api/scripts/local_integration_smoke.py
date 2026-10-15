@@ -200,8 +200,15 @@ def stripe_signature(raw: bytes, secret: str) -> str:
 
 def assert_local_api_and_stripe() -> None:
     with TestClient(app) as client:
+        health = client.get("/health")
+        assert health.status_code == 200, health.text
+
         ready = client.get("/ready")
-        assert ready.status_code == 200, ready.text
+        readiness = ready.json()
+        assert ready.status_code == 503, ready.text
+        assert readiness["status"] == "not_ready"
+        assert readiness["auth_provider"] == "dev-test"
+        assert readiness["auth_configured"] is False
 
         me = client.get("/api/v1/me", headers=dev_headers())
         assert me.status_code == 200, me.text

@@ -277,9 +277,9 @@ def run_registered_source(
         connector = create_source_adapter(source)
         counts: dict[str, int] | None = None
         try:
-            health = connector.health()
-            if not health.healthy:
-                raise RuntimeError(health.detail)
+            # Let the ingestion pipeline perform the request and persist a failed
+            # JobIngestionRun if the provider is unavailable. A preflight-only
+            # health probe used to throw here before creating any durable receipt.
             counts = RegisteredSourceIngestionPipeline(session).run(source, connector)
             source = session.get(JobSourceRegistry, source_id)
             if source is not None:

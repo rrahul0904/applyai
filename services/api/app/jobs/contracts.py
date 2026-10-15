@@ -351,6 +351,18 @@ def validate_raw_job(posting: RawJobPosting) -> ValidationResult:
 def classify_ingestion_error(exc: Exception) -> IngestionErrorCategory:
     name = type(exc).__name__.casefold()
     message = str(exc).casefold()
+    response = getattr(exc, "response", None)
+    status_code = getattr(response, "status_code", None)
+    if status_code == 429:
+        return IngestionErrorCategory.RATE_LIMITED
+    if status_code in {401, 403}:
+        return IngestionErrorCategory.AUTH_REQUIRED
+    if status_code == 404:
+        return IngestionErrorCategory.SOURCE_NOT_FOUND
+    if isinstance(status_code, int) and status_code >= 500:
+        return IngestionErrorCategory.NETWORK
+    if isinstance(status_code, int) and status_code >= 400:
+        return IngestionErrorCategory.INVALID_RESPONSE
     if "timeout" in name or "timeout" in message:
         return IngestionErrorCategory.TIMEOUT
     if "429" in message or "rate" in message:

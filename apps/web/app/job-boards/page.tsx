@@ -1,11 +1,11 @@
 import Link from "next/link";
-import { listPublicJobBoards } from "@/lib/public-job-boards";
+import { listPublicJobBoards, type PublicJobBoard } from "@/lib/public-job-boards";
 import styles from "./job-boards.module.css";
 
 export const dynamic = "force-dynamic";
 
 export default async function JobBoardsPage() {
-  let boards = [];
+  let boards: PublicJobBoard[] = [];
   try {
     boards = await listPublicJobBoards();
   } catch {

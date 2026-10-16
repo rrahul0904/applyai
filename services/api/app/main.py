@@ -11,7 +11,7 @@ from app.api import (
     candidate_platform, candidate_workspace, career_intelligence_v2, career_memory, career_prepare, career_product,
     career_product_contract, career_product_polish, career_radar, career_system, company_intelligence, employer_platform,
     internal_agents, internal_ai_evaluation, internal_ai_quality, internal_ai_release_evaluation,
-    internal_interview_intelligence_catalog, internal_job_discoveries, internal_job_distribution, internal_job_quality,
+    internal_interview_intelligence_catalog, internal_job_board_admin, internal_job_discoveries, internal_job_distribution, internal_job_quality,
     internal_job_sources, internal_job_supply, internal_operations, internal_platform_admin,
     internal_reverse_engineering, internal_worker, interview_execution, interview_intelligence, interview_media,
     job_boards, job_imports, jobs, mcp, me, onboarding, privacy,
@@ -46,7 +46,6 @@ app.add_middleware(
 @app.middleware("http")
 async def request_triggered_tasks(request: Request, call_next):
     response = await call_next(request)
-    # Route/status-derived observability only; no request/response body is inspected.
     dispatch_request_event(request.method, request.url.path, response.status_code)
     if settings.request_triggered_tasks_enabled and settings.task_queue_provider == "postgres" and request.method not in {"GET", "HEAD", "OPTIONS"} and response.status_code < 500:
         await anyio.to_thread.run_sync(lambda: drain_bounded(settings, maximum_tasks=settings.request_triggered_task_limit))
@@ -66,24 +65,11 @@ async def distributed_rate_limit(request: Request, call_next):
                 )
             )
         except SQLAlchemyError:
-            return JSONResponse(
-                status_code=503,
-                content={
-                    "error": {
-                        "code": "RATE_LIMIT_BACKEND_UNAVAILABLE",
-                        "message": "A required service is unavailable",
-                    }
-                },
-            )
+            return JSONResponse(status_code=503, content={"error":{"code":"RATE_LIMIT_BACKEND_UNAVAILABLE","message":"A required service is unavailable"}})
         if decision is not None and not decision.allowed:
             return JSONResponse(
                 status_code=429,
-                content={
-                    "error": {
-                        "code": "RATE_LIMITED",
-                        "message": "Too many requests. Please try again shortly.",
-                    }
-                },
+                content={"error":{"code":"RATE_LIMITED","message":"Too many requests. Please try again shortly."}},
                 headers={
                     "Retry-After": str(decision.reset_seconds),
                     "RateLimit-Limit": str(decision.limit),
@@ -157,10 +143,6 @@ def ready() -> dict[str, str | bool]:
         "clerk_instance_fingerprint": clerk_instance_fingerprint(settings.clerk_issuer),
     }
 
-# Prepare exposes static POST routes such as /career-v2/jobs/{job_id}/skill-analysis.
-# Register them before Career Intelligence V2's dynamic /jobs/{job_id}/{task_path}
-# route so Starlette resolves the specific product routes first without changing
-# or breaking the existing AI task-path contract.
 app.include_router(career_prepare.router,prefix="/api/v1",include_in_schema=False)
 app.include_router(application_materials.router,prefix="/api/v1",include_in_schema=False)
 app.include_router(interview_media.router,prefix="/api/v1",include_in_schema=False)
@@ -172,4 +154,4 @@ app.include_router(career_radar.router,prefix="/api/v1",include_in_schema=False)
 for router in (me.router,onboarding.router,profiles.router,resumes.router,jobs.router,job_boards.router,applications.router,career_memory.router,career_intelligence_v2.router,candidate_platform.router,semantic_matching.router,company_intelligence.router,employer_platform.router,billing_platform.router,privacy.router,referrals.router): app.include_router(router,prefix="/api/v1")
 for product_router in (candidate_workspace.router,career_product_contract.router,career_product_polish.router,career_product.router,career_system.router,recruiter_lens.router,resume_shares.router,agents.router,application_agent.router,application_agent_documents.router): app.include_router(product_router,prefix="/api/v1",include_in_schema=False)
 app.include_router(job_imports.router,prefix="/api/v1",include_in_schema=False)
-for internal_router in (internal_agents.router,application_agent.internal_router,application_agent_documents.internal_router,internal_job_sources.router,internal_job_discoveries.router,internal_job_quality.router,internal_job_supply.router,job_boards.internal_router,internal_job_distribution.router,internal_ai_quality.router,internal_ai_evaluation.router,internal_ai_release_evaluation.router,internal_reverse_engineering.router,interview_intelligence.internal_router,internal_interview_intelligence_catalog.router,referrals.internal_router,internal_operations.router,internal_platform_admin.router,internal_worker.router): app.include_router(internal_router,prefix="/api/v1",include_in_schema=False)
+for internal_router in (internal_agents.router,application_agent.internal_router,application_agent_documents.internal_router,internal_job_sources.router,internal_job_discoveries.router,internal_job_quality.router,internal_job_supply.router,job_boards.internal_router,internal_job_distribution.router,internal_job_board_admin.router,internal_ai_quality.router,internal_ai_evaluation.router,internal_ai_release_evaluation.router,internal_reverse_engineering.router,interview_intelligence.internal_router,internal_interview_intelligence_catalog.router,referrals.internal_router,internal_operations.router,internal_platform_admin.router,internal_worker.router): app.include_router(internal_router,prefix="/api/v1",include_in_schema=False)

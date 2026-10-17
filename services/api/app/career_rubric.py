@@ -104,7 +104,9 @@ DEFAULT_CAREER_RUBRIC = CareerRubric(
         RubricDimension(
             id="decision_scope",
             label="Decision scope / autonomy",
-            description="Independent judgment, ownership, and decision rights required by the role.",
+            description=(
+                "Independent judgment, ownership, and decision rights required by the role."
+            ),
         ),
         RubricDimension(
             id="business_accountability",
@@ -119,7 +121,9 @@ DEFAULT_CAREER_RUBRIC = CareerRubric(
         RubricDimension(
             id="scale_context",
             label="Scale / operating context",
-            description="System, data, customer, team, geographic, or financial scale when evidenced.",
+            description=(
+                "System, data, customer, team, geographic, or financial scale when evidenced."
+            ),
         ),
         RubricDimension(
             id="role_level_consistency",

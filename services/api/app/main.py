@@ -9,7 +9,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.api import (
     agents, application_agent, application_agent_documents, application_materials, applications, billing_platform,
     candidate_platform, candidate_workspace, career_intelligence_v2, career_memory, career_prepare, career_product,
-    career_product_contract, career_product_polish, career_radar, career_system, company_intelligence, employer_platform,
+    career_product_contract, career_product_polish, career_radar, career_rubric_preview, career_system, company_intelligence, employer_platform,
     internal_agents, internal_ai_evaluation, internal_ai_quality, internal_ai_release_evaluation,
     internal_interview_intelligence_catalog, internal_job_discoveries, internal_job_quality,
     internal_job_sources, internal_job_supply, internal_operations, internal_platform_admin,
@@ -161,6 +161,7 @@ def ready() -> dict[str, str | bool]:
 # route so Starlette resolves the specific product routes first without changing
 # or breaking the existing AI task-path contract.
 app.include_router(career_prepare.router,prefix="/api/v1",include_in_schema=False)
+app.include_router(career_rubric_preview.router,prefix="/api/v1",include_in_schema=False)
 app.include_router(application_materials.router,prefix="/api/v1",include_in_schema=False)
 app.include_router(interview_media.router,prefix="/api/v1",include_in_schema=False)
 app.include_router(interview_intelligence.router,prefix="/api/v1",include_in_schema=False)

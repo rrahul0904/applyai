@@ -24,7 +24,8 @@ def make_pdf(
         )
         pdf.drawString(
             50, 700,
-            "Produced reliable data pipelines and managed auditable evidence-based delivery outcomes.",
+            "Produced reliable data pipelines and managed auditable "
+            "evidence-based delivery outcomes.",
         )
         pdf.showPage()
     pdf.save()

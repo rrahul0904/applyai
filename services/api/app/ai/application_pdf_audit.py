@@ -89,8 +89,14 @@ def audit_application_pdf(
     characters = len("".join(extracted.split()))
     record("text_layer_readable", characters >= 80 and "\ufffd" not in extracted)
     folded = _fold(extracted)
-    record("candidate_name_present", bool(_fold(candidate_name)) and _fold(candidate_name) in folded)
-    record("candidate_email_present", bool(candidate_email.strip()) and _fold(candidate_email) in folded)
+    record(
+        "candidate_name_present",
+        bool(_fold(candidate_name)) and _fold(candidate_name) in folded,
+    )
+    record(
+        "candidate_email_present",
+        bool(candidate_email.strip()) and _fold(candidate_email) in folded,
+    )
     record("date_ranges_ascii_safe", not bool(_UNICODE_DATE_RANGE.search(extracted)))
     for index, phrase in enumerate(required_phrases):
         record(f"verified_phrase_{index}_present", bool(_fold(phrase)) and _fold(phrase) in folded)

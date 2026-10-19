@@ -1,0 +1,120 @@
+{
+  "schema_version": "rea-intake.v1",
+  "record_id": "REA-APPLYAI-SEALAPPLY-2026-10-19",
+  "target": {
+    "name": "SealApply",
+    "canonical_reddit": "https://www.reddit.com/r/saasbuild/comments/1x9p4k8/",
+    "product_url": "https://sealapply.com/",
+    "demo_url": "https://demo.sealapply.com/",
+    "demo_verified": false,
+    "upstream_license": "not-established",
+    "repo_source_verified": false
+  },
+  "routing": {
+    "classification": "DONOR_EXTENSION",
+    "canonical_owner": "rrahul0904/applyai",
+    "governance_issue": "https://github.com/rrahul0904/agent-work-os/issues/306",
+    "new_standalone_repo": false,
+    "branch": "research/rea-sealapply-20261019"
+  },
+  "observation_confidence": "marketing and founder descriptions only; no authenticated product run",
+  "reviewed_owned_paths": [
+    "README.md",
+    "apps/extension/manifest.json",
+    "apps/extension/popup.js",
+    "apps/extension/README.md",
+    "docs/LEAN_PRODUCTION_ARCHITECTURE.md",
+    "docs/PRODUCTION_RELEASE_CHECKLIST.md"
+  ],
+  "capabilities": [
+    {
+      "id": "job_capture",
+      "upstream_evidence": "PUBLIC_CLAIM",
+      "applyai_source": "SOURCE_DESCRIBED",
+      "gap": "P0: paste workflow + fixture acceptance"
+    },
+    {
+      "id": "job_requirement_parser",
+      "upstream_evidence": "PUBLIC_CLAIM",
+      "applyai_source": "SOURCE_DESCRIBED",
+      "gap": "P1: evidence spans and structured fixtures"
+    },
+    {
+      "id": "explainable_fit_score",
+      "upstream_evidence": "PUBLIC_CLAIM",
+      "applyai_source": "SOURCE_DESCRIBED",
+      "gap": "P1: explain UI; not ATS pass probability"
+    },
+    {
+      "id": "resume_tailor",
+      "upstream_evidence": "PUBLIC_CLAIM",
+      "applyai_source": "SOURCE_DESCRIBED",
+      "gap": "P1: truthfulness/provenance acceptance"
+    },
+    {
+      "id": "per_hunk_approval",
+      "upstream_evidence": "LANDING_UI_SHOWN",
+      "applyai_source": "NOT_VERIFIED",
+      "gap": "P1: reviewable versioned diffs"
+    },
+    {
+      "id": "coverletter_pdf_html",
+      "upstream_evidence": "PUBLIC_CLAIM",
+      "applyai_source": "SOURCE_DESCRIBED",
+      "gap": "P1: export/test parity"
+    },
+    {
+      "id": "external_form_assist",
+      "upstream_evidence": "LANDING_DEMO_SHOWN",
+      "applyai_source": "VERIFIED_URL_HANDOFF_ONLY",
+      "gap": "P2: opt-in scanner->review->fill, never auto-submit"
+    },
+    {
+      "id": "local_storage_backup",
+      "upstream_evidence": "PUBLIC_CLAIM",
+      "applyai_source": "CANONICAL_SERVER_RECORDS",
+      "gap": "P3: optional local drafts/backup"
+    },
+    {
+      "id": "provider_choice_byok",
+      "upstream_evidence": "PUBLIC_CLAIM",
+      "applyai_source": "PROVIDER_ABSTRACTION_DESCRIBED",
+      "gap": "P3: security/privacy/vendor review"
+    },
+    {
+      "id": "app_tracker",
+      "upstream_evidence": "LANDING_UI_SHOWN",
+      "applyai_source": "SOURCE_DESCRIBED",
+      "gap": "P1: preserve canonical record and human receipt"
+    }
+  ],
+  "non_goals": [
+    "unattended third-party submissions",
+    "captcha or login circumvention",
+    "fabricated skills or achievements",
+    "copying upstream unlicensed assets",
+    "unverified free unlimited provider claims"
+  ],
+  "prototype": {
+    "files": [
+      "apps/extension/form-assist/field-map.mjs",
+      "apps/extension/form-assist/field-map.test.mjs"
+    ],
+    "runnable": "node --test apps/extension/form-assist/field-map.test.mjs",
+    "tests_passed_locally": 5,
+    "integrated_into_extension": false,
+    "live_provider_acceptance": false,
+    "merged": false,
+    "deployed": false
+  },
+  "acceptance": [
+    "synthetic test forms",
+    "redaction review",
+    "candidate approval",
+    "unknowns manually handled",
+    "no calls to submit",
+    "source-backed resume facts",
+    "exact-sha CI",
+    "existing provider/preview/production gates"
+  ]
+}

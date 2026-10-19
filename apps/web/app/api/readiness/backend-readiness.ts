@@ -1,5 +1,6 @@
 type BackendReadiness = {
   reachable: boolean;
+  ready: boolean;
   contractValid: boolean;
   upstreamStatus: number | null;
   failureClass: "API_NOT_CONFIGURED" | "UPSTREAM_NON_2XX" | "INVALID_READINESS_PAYLOAD" | "UPSTREAM_UNREACHABLE" | null;
@@ -21,7 +22,7 @@ type BackendReadiness = {
 };
 
 function isBackendReadinessPayload(value: unknown): value is {
-  status: "ready";
+  status: "ready" | "not_ready";
   database_reachable: boolean;
   database_migrations_current: boolean;
   storage_reachable: boolean;
@@ -41,7 +42,7 @@ function isBackendReadinessPayload(value: unknown): value is {
   if (!value || typeof value !== "object") return false;
   const payload = value as Record<string, unknown>;
   return (
-    payload.status === "ready" &&
+    (payload.status === "ready" || payload.status === "not_ready") &&
     typeof payload.database_reachable === "boolean" &&
     typeof payload.database_migrations_current === "boolean" &&
     typeof payload.storage_reachable === "boolean" &&
@@ -67,6 +68,7 @@ export function authInstanceMatches(expectedFingerprint: string, actualFingerpri
 export async function backendReadiness(apiUrl: string | undefined): Promise<BackendReadiness> {
   const empty = {
     reachable: false,
+    ready: false,
     contractValid: false,
     upstreamStatus: null,
     failureClass: apiUrl
@@ -94,18 +96,23 @@ export async function backendReadiness(apiUrl: string | undefined): Promise<Back
       cache: "no-store",
       signal: AbortSignal.timeout(3_000),
     });
-    if (!response.ok) {
-      return { ...empty, upstreamStatus: response.status, failureClass: "UPSTREAM_NON_2XX" };
-    }
-    const payload: unknown = await response.json().catch(() => null);
+    // A well-formed HTTP 503 is diagnostic evidence, not an invalid API contract.
+    // Preserve component health while explicitly blocking a production-ready claim.
+    const payload: unknown =
+      typeof response.json === "function" ? await response.json().catch(() => null) : null;
     if (!isBackendReadinessPayload(payload)) {
-      return { ...empty, upstreamStatus: response.status, failureClass: "INVALID_READINESS_PAYLOAD" };
+      return {
+        ...empty,
+        upstreamStatus: response.status,
+        failureClass: response.ok ? "INVALID_READINESS_PAYLOAD" : "UPSTREAM_NON_2XX",
+      };
     }
     return {
       reachable: true,
+      ready: response.ok && payload.status === "ready",
       contractValid: true,
       upstreamStatus: response.status,
-      failureClass: null,
+      failureClass: response.ok ? null : "UPSTREAM_NON_2XX",
       databaseReachable: payload.database_reachable,
       databaseMigrationsCurrent: payload.database_migrations_current,
       operatorConfigured: payload.operator_auth_configured,

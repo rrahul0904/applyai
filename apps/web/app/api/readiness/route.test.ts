@@ -39,6 +39,7 @@ describe("API readiness contract", () => {
 
     await expect(backendReadiness("https://api.example.test")).resolves.toMatchObject({
       reachable: true,
+      ready: true,
       contractValid: true,
       upstreamStatus: 200,
       failureClass: null,
@@ -46,6 +47,57 @@ describe("API readiness contract", () => {
       databaseMigrationsCurrent: true,
       authProvider: "supabase",
       deploymentSha: "abc123",
+    });
+  });
+
+  it("preserves valid 503 diagnostics for an unavailable database without claiming readiness", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 503,
+        json: async () => ({
+          ...readyPayload,
+          status: "not_ready",
+          database_reachable: false,
+          database_migrations_current: false,
+          background_worker_healthy: false,
+        }),
+      }),
+    );
+
+    await expect(backendReadiness("https://api.example.test")).resolves.toMatchObject({
+      reachable: true,
+      ready: false,
+      contractValid: true,
+      upstreamStatus: 503,
+      failureClass: "UPSTREAM_NON_2XX",
+      databaseReachable: false,
+      databaseMigrationsCurrent: false,
+      backgroundWorkerHealthy: false,
+      deploymentSha: "abc123",
+    });
+  });
+
+  it("rejects a logically non-ready payload even when HTTP is 200 and component flags are true", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ...readyPayload,
+          status: "not_ready",
+        }),
+      }),
+    );
+
+    await expect(backendReadiness("https://api.example.test")).resolves.toMatchObject({
+      reachable: true,
+      ready: false,
+      contractValid: true,
+      upstreamStatus: 200,
+      failureClass: null,
     });
   });
 

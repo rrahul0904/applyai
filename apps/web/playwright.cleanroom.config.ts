@@ -23,7 +23,11 @@ export default defineConfig({
   webServer: [
     {
       command: "cd ../../services/api && uv run uvicorn app.main:app --host 127.0.0.1 --port 8000",
-      url: "http://127.0.0.1:8000/ready",
+      // /ready is a full production dependency gate and may legitimately return 503
+      // while local auth/operator/worker fixtures are being initialized.
+      // Playwright webServer should only wait for the API process to listen;
+      // the candidate tests and local integration smoke certify functionality.
+      url: "http://127.0.0.1:8000/health",
       reuseExistingServer: false,
       timeout: 120_000,
       env: childEnv,

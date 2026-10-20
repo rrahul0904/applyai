@@ -68,6 +68,7 @@ export async function GET() {
   const runtimeReady =
     apiConfigured &&
     backend.reachable &&
+    backend.ready &&
     backend.databaseReachable &&
     backend.databaseMigrationsCurrent &&
     backend.storageConfigured &&
